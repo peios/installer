@@ -364,7 +364,7 @@ fn an_upgrade_that_would_go_nowhere_is_offered_greyed_with_the_reason() {
     use installerd::executor::Release;
     use installerd::flow::upgrade_confirm_page;
     let same = Release {
-        edition: "peios-experimental".into(),
+        edition: "dev.peios.peios-experimental".into(),
         version: "2026.8-2".into(),
     };
     let page = upgrade_confirm_page(
@@ -386,7 +386,7 @@ fn an_upgrade_that_would_go_nowhere_is_offered_greyed_with_the_reason() {
         "Virtio disk, 8.0 GiB",
         Err("no Peios system on /dev/vdb2".into()),
         Ok(Release {
-            edition: "peios-experimental".into(),
+            edition: "dev.peios.peios-experimental".into(),
             version: "2026.8-2".into(),
         }),
     );

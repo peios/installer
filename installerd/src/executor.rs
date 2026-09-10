@@ -162,7 +162,7 @@ pub struct Phase {
 /// to the upgrade page too.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
-    /// `peios-experimental`: `peios-` plus os-release's VARIANT_ID.
+    /// `dev.peios.peios-experimental`: the qualified edition package.
     pub edition: String,
     /// `2026.8-7`.
     pub version: String,
@@ -171,7 +171,10 @@ pub struct Release {
 impl Release {
     /// "Peios 2026.8-7 (experimental)".
     pub fn text(&self) -> String {
-        let variant = self.edition.strip_prefix("peios-").unwrap_or(&self.edition);
+        let variant = self
+            .edition
+            .strip_prefix("dev.peios.peios-")
+            .unwrap_or(&self.edition);
         format!("Peios {} ({variant})", self.version)
     }
 }
@@ -271,14 +274,14 @@ impl Executor for DryRun {
     /// upgrade page can be walked.
     fn medium_release(&self) -> Result<Release, String> {
         Ok(Release {
-            edition: "peios-experimental".into(),
+            edition: "dev.peios.peios-experimental".into(),
             version: "2026.8-2".into(),
         })
     }
 
     fn installed_release(&self, _target: &str) -> Result<Release, String> {
         Ok(Release {
-            edition: "peios-experimental".into(),
+            edition: "dev.peios.peios-experimental".into(),
             version: "2026.8-1".into(),
         })
     }

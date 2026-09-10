@@ -50,6 +50,9 @@ const ROOT_SDDL: &str =
 const ESP_SIZE: &str = "512M";
 const MEDIUM_REPO: &str = "peios-medium";
 const CMDLINE_TEMPLATE_REL: &str = "usr/share/disk-boot/cmdline";
+const LIVE_BOOT_PACKAGE: &str = "dev.peios.live-boot";
+const LIVE_BOOT_IRF_PACKAGE: &str = "dev.peios.live-boot-irf";
+const DISK_BOOT_PACKAGE: &str = "dev.peios.disk-boot";
 
 pub struct Real {
     /// Where the boot medium is mounted; live-boot mount-moves it here.
@@ -518,7 +521,7 @@ impl Real {
     fn repair_boot(&self, p: &dyn Progress, root_part: &str) -> Result<(), String> {
         let root_s = self.root_mnt().to_string_lossy().into_owned();
         p.phase("phase.boot", 5);
-        if self.package_installed(&root_s, "live-boot") {
+        if self.package_installed(&root_s, LIVE_BOOT_PACKAGE) {
             p.log("the disk still carries the medium's boot package: finishing the install".into());
             self.settle_seed_queues(p)?;
             self.swap_boot_packages(p)?;
@@ -622,12 +625,18 @@ impl Real {
         self.run(
             p,
             "peipkg",
-            &["--root", &root_s, "uninstall", "live-boot", "--yes"],
+            &["--root", &root_s, "uninstall", LIVE_BOOT_PACKAGE, "--yes"],
         )?;
         self.run(
             p,
             "peipkg",
-            &["--root", &irf_root, "uninstall", "live-boot-irf", "--yes"],
+            &[
+                "--root",
+                &irf_root,
+                "uninstall",
+                LIVE_BOOT_IRF_PACKAGE,
+                "--yes",
+            ],
         )?;
         self.run(
             p,
@@ -636,7 +645,7 @@ impl Real {
                 "--root",
                 &root_s,
                 "install",
-                "disk-boot",
+                DISK_BOOT_PACKAGE,
                 "--yes",
                 "--allow-stale",
             ],
@@ -809,7 +818,7 @@ impl Executor for Real {
     }
 }
 
-/// `peios-<VARIANT_ID>` from an os-release, refusing anything that is
+/// `dev.peios.peios-<VARIANT_ID>` from an os-release, refusing anything that is
 /// not a Peios one.
 pub fn edition_of(os_release: &str) -> Result<String, String> {
     let unquote = |v: &str| v.trim().trim_matches('"').to_string();
@@ -826,7 +835,7 @@ pub fn edition_of(os_release: &str) -> Result<String, String> {
         return Err("this is not a Peios system (os-release ID is not peios)".into());
     }
     match variant {
-        Some(v) if !v.is_empty() => Ok(format!("peios-{v}")),
+        Some(v) if !v.is_empty() => Ok(format!("dev.peios.peios-{v}")),
         _ => Err("os-release has no VARIANT_ID; cannot tell which edition is installed".into()),
     }
 }
@@ -951,12 +960,12 @@ mod tests {
     #[test]
     fn the_edition_is_read_the_way_upgrade_peios_reads_it() {
         let text = "NAME=\"Peios\"\nID=peios\nVERSION_ID=\"2026.8\"\nVARIANT_ID=experimental\n";
-        assert_eq!(edition_of(text).unwrap(), "peios-experimental");
+        assert_eq!(edition_of(text).unwrap(), "dev.peios.peios-experimental");
         assert!(edition_of("ID=debian\nVARIANT_ID=x\n").is_err());
         assert!(edition_of("ID=peios\n").is_err());
         assert_eq!(
             version_of(
-                "name:         peios-experimental\nversion:      2026.8-7\narchitecture: noarch\n"
+                "name:         dev.peios.peios-experimental\nversion:      2026.8-7\narchitecture: noarch\n"
             )
             .as_deref(),
             Some("2026.8-7")
