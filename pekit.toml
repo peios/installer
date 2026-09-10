@@ -222,6 +222,7 @@ done
 [build.main.dependencies.peipkg]
 "org.git.kernel.dash"      = "*"
 "org.gnu.coreutils"        = "*"
+"org.gnu.diffutils"        = "*"
 "org.gnu.findutils"        = "*"
 "org.gnu.grep"             = "*"
 "org.gnu.sed"              = "*"
@@ -234,6 +235,7 @@ done
 [build.main.dependencies.apt]
 dash = "*"
 coreutils = "*"
+diffutils = "*"
 findutils = "*"
 grep = "*"
 sed = "*"
