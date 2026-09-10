@@ -1,0 +1,8 @@
+[package]
+name = "dev.peios.peios-installer-debugsource"
+description = "Exact debug sources for the Peios installer and first-boot family"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.peios-installer-debugsource/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.peios-installer-debugsource/third-party"
+":usr/src/debug/**" = "usr/src/debug"

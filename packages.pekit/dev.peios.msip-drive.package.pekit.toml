@@ -1,0 +1,14 @@
+side_effects = ["man-db"]
+
+[package]
+name = "dev.peios.msip-drive"
+description = "Non-interactive MSIP conversation driver"
+
+[provides]
+"msip-drive" = "{{version}}-18"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.msip-drive/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.msip-drive/third-party"
+":usr/bin/msip-drive" = "usr/bin/msip-drive"
+":usr/share/man/man1/msip-drive.1.gz" = "usr/share/man/man1/msip-drive.1.gz"

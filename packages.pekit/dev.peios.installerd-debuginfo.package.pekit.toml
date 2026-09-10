@@ -1,0 +1,12 @@
+[package]
+name = "dev.peios.installerd-debuginfo"
+description = "Debugging symbols for the Peios installer service"
+
+[dependencies]
+"dev.peios.installerd" = "= {{version}}-18"
+"dev.peios.peios-installer-debugsource" = "= {{version}}-18"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.installerd-debuginfo/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.installerd-debuginfo/third-party"
+":debug/installerd/usr/lib/debug/**" = "usr/lib/debug"

@@ -1,0 +1,12 @@
+[package]
+name = "dev.peios.oobe-tui-debuginfo"
+description = "Debugging symbols for the Peios first-boot terminal surface"
+
+[dependencies]
+"dev.peios.oobe-tui" = "= {{version}}-18"
+"dev.peios.peios-installer-debugsource" = "= {{version}}-18"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.oobe-tui-debuginfo/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.oobe-tui-debuginfo/third-party"
+":debug/oobe-tui/usr/lib/debug/**" = "usr/lib/debug"

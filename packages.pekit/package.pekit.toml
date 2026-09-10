@@ -1,0 +1,11 @@
+# One source release, split along privilege and lifecycle boundaries. Revision
+# 18 succeeds the seventeen monolithic installer development packages.
+
+format = "peipkg"
+
+[package]
+version       = "{{version}}-18"
+architecture  = "x86_64"
+license       = "MIT AND Apache-2.0 AND Unicode-3.0 AND Zlib"
+license_class = "free"
+homepage      = "https://github.com/peios/installer"

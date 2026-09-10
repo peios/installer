@@ -1,0 +1,57 @@
+.TH INSTALLERD 8 "September 2026" "Peios" "System Administration"
+.SH NAME
+installerd \- Peios installation and repair service
+.SH SYNOPSIS
+.B installerd
+.RB [ --socket " " PATH ]
+.RB [ --medium " " PATH ]
+.RB [ --force ]
+.RB [ --dry-run ]
+.SH DESCRIPTION
+.B installerd
+owns the privileged installation, repair, and upgrade flow.  It exposes that
+flow over MSIP; presentation programs such as
+.BR install-tui (1)
+connect to its Unix-domain socket and hold no disk-management privilege.
+.PP
+The service normally reads the pristine system image from the mounted
+installation medium, writes the selected disk, exchanges live-boot for
+disk-boot in the target package database, stages installed-system registry
+seeds, and regenerates the initramfs and UKI.
+.SH OPTIONS
+.TP
+.BI --socket " PATH"
+Listen on PATH instead of
+.IR /run/installerd.sock .
+.TP
+.BI --medium " PATH"
+Use PATH as the mounted installation medium instead of
+.IR /media/peios .
+.TP
+.B --force
+Allow the partitioning tool to replace a table it did not create.  This never
+suppresses the mounted-device guard or the confirmation in the MSIP flow.
+.TP
+.B --dry-run
+Exercise the complete conversation without changing disks.
+.TP
+.BR -h , " --help"
+Show command help.
+.TP
+.BR -V , " --version"
+Show the program version.
+.SH SECURITY
+The daemon is intended to run as SYSTEM.  Its socket descriptor grants access
+only to SYSTEM and Administrators.  The terminal surface is deliberately a
+separate process.
+.SH FILES
+.TP
+.I /run/installerd.sock
+Default MSIP socket.
+.TP
+.I /media/peios/rootfs.squashfs
+Default pristine system image.
+.SH SEE ALSO
+.BR install-tui (1),
+.BR msip-drive (1),
+.BR peipkg (8)

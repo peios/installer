@@ -1,0 +1,44 @@
+.TH OOBED 8 "September 2026" "Peios" "System Administration"
+.SH NAME
+oobed \- Peios first-boot setup service
+.SH SYNOPSIS
+.B oobed
+.RB [ --socket " " PATH ]
+.RB [ --dry-run ]
+.SH DESCRIPTION
+.B oobed
+owns the privileged first-boot conversation.  It creates the first
+administrator account, records the machine name in the registry, and retires
+its own service definitions only after setup completes.
+.PP
+The terminal presentation is provided by
+.BR oobe-tui (1)
+so that user-interface code does not own account or registry privilege.
+.SH OPTIONS
+.TP
+.BI --socket " PATH"
+Listen on PATH instead of
+.IR /run/oobed.sock .
+.TP
+.B --dry-run
+Exercise the setup conversation without changing the machine.
+.TP
+.BR -h , " --help"
+Show command help.
+.TP
+.BR -V , " --version"
+Show the program version.
+.SH SECURITY
+The service runs as SYSTEM and accepts MSIP connections only from SYSTEM and
+Administrators.  Passwords are sent to
+.B lps
+over standard input, never as process arguments, and are not written to the
+MSIP log.
+.SH FILES
+.TP
+.I /run/oobed.sock
+Default MSIP socket.
+.SH SEE ALSO
+.BR oobe-tui (1),
+.BR lps (1),
+.BR reg (1)

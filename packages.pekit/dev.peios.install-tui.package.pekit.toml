@@ -1,0 +1,14 @@
+side_effects = ["man-db"]
+
+[package]
+name = "dev.peios.install-tui"
+description = "Terminal surface for the Peios installer"
+
+[provides]
+"install-tui" = "{{version}}-18"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.install-tui/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.install-tui/third-party"
+":usr/bin/install-tui" = "usr/bin/install-tui"
+":usr/share/man/man1/install-tui.1.gz" = "usr/share/man/man1/install-tui.1.gz"

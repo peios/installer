@@ -1,0 +1,14 @@
+side_effects = ["man-db"]
+
+[package]
+name = "dev.peios.oobe-tui"
+description = "Terminal surface for Peios first-boot setup"
+
+[provides]
+"oobe-tui" = "{{version}}-18"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.oobe-tui/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.oobe-tui/third-party"
+":usr/bin/oobe-tui" = "usr/bin/oobe-tui"
+":usr/share/man/man1/oobe-tui.1.gz" = "usr/share/man/man1/oobe-tui.1.gz"

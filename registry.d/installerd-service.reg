@@ -1,0 +1,57 @@
+{
+  "_comment": [
+    "The installerd service definition: the installer engine, listening.",
+    "",
+    "installerd owns the installation and speaks MSIP (PGSS §3) on",
+    "/run/installerd.sock; the surfaces that render it -- install-tui today, a",
+    "graphical or web surface later -- connect to it and hold no privilege of",
+    "their own. That separation is the reason this is a service at all rather",
+    "than something a surface spawns: partitioning, formatting, mounting and",
+    "writing an ESP need privilege that a program drawing boxes on a terminal",
+    "must not have, and peinit is what starts privileged processes here.",
+    "",
+    "Identity is SYSTEM because every phase needs it: mounting is",
+    "SeManageVolumePrivilege, seeding a descriptor onto a fresh filesystem is",
+    "SeRestorePrivilege, and peipkg against the target root is an elevated",
+    "action. A logged-in administrator is deliberately NOT enough (PEI-549).",
+    "",
+    "Readiness is Alive (1): installerd does not speak the notify protocol. It",
+    "binds its socket and waits, and nothing is ordered after it, so there is",
+    "nothing that needs a stronger signal than 'exec succeeded'.",
+    "",
+    "RestartPolicy is Always (2) so that a crash mid-conversation leaves a",
+    "daemon to reconnect to. Note what that does NOT preserve: conversations",
+    "live in memory, so a restart loses the one in progress and the surface",
+    "sees its connection drop rather than a resumable conversation. Persisting",
+    "them across a restart is a larger question than this field.",
+    "",
+    "ErrorControl is Normal (0): a boot with no installer is a perfectly good",
+    "boot. Nothing else on the system depends on this being up.",
+    "",
+    "It idles until a surface opens a conversation, so an installed system",
+    "carrying it costs a process and nothing else -- which is why this ships",
+    "with the installer package rather than with live-boot. Whether an",
+    "installed system should run it at all, or start it on demand, is a",
+    "decision recorded on PEI-52 and not yet acted on.",
+    "",
+    "Shipped into /usr/share/regim/; inert until an image names it in",
+    "[registry] autoapply."
+  ],
+  "keys": [
+    { "path": "Machine\\System" },
+    { "path": "Machine\\System\\Services" },
+    {
+      "path": "Machine\\System\\Services\\installerd",
+      "values": [
+        { "name": "ImagePath",     "type": "sz",    "data": "/sbin/installerd" },
+        { "name": "Triggers",      "type": "multi", "data": ["boot"] },
+        { "name": "Identity",      "type": "sz",    "data": "SYSTEM" },
+        { "name": "Readiness",     "type": "dword", "data": 1 },
+        { "name": "RestartPolicy", "type": "dword", "data": 2 },
+        { "name": "ErrorControl",  "type": "dword", "data": 0 },
+        { "name": "DisplayName",   "type": "sz",    "data": "Peios installer engine" },
+        { "name": "Description",   "type": "sz",    "data": "Owns installation and repair; drives UI surfaces over MSIP" }
+      ]
+    }
+  ]
+}

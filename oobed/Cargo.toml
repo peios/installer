@@ -1,0 +1,19 @@
+[package]
+name = "oobed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Peios first-boot setup: owns the machine's first account and its name, and drives UI surfaces over MSIP"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+msip = { workspace = true }
+msip-serve = { path = "../msip-serve" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+msip-serve = { path = "../msip-serve" }

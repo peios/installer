@@ -1,0 +1,39 @@
+.TH INSTALL-TUI 1 "September 2026" "Peios" "User Commands"
+.SH NAME
+install-tui \- terminal surface for the Peios installer
+.SH SYNOPSIS
+.B install-tui
+.RB [ --socket " " PATH ]
+.RB [ --kind " " NAME ]
+.RB [ --plain ]
+.RB [ --size " " COLSxROWS ]
+.SH DESCRIPTION
+.B install-tui
+renders the installation conversation owned by
+.BR installerd (8).
+Closing the surface does not stop an installation already in progress; a new
+surface can attach to the same conversation.
+.SH OPTIONS
+.TP
+.BI --socket " PATH"
+Connect to PATH instead of
+.IR /run/installerd.sock .
+.TP
+.BI --kind " NAME"
+Request an MSIP kind other than
+.BR install .
+.TP
+.B --plain
+Use the conservative serial-console presentation.
+.TP
+.BI --size " COLSxROWS"
+Override terminal geometry.  Both dimensions must be non-zero.
+.TP
+.BR -h , " --help"
+Show command help.
+.TP
+.BR -V , " --version"
+Show the program version.
+.SH SEE ALSO
+.BR installerd (8),
+.BR msip-drive (1)
