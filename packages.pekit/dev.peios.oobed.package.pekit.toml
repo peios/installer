@@ -4,8 +4,6 @@ side_effects = ["man-db"]
 name = "dev.peios.oobed"
 description = "Privileged Peios first-boot account and machine setup service"
 
-[provides]
-oobed = "{{version}}-18"
 
 [dependencies]
 "dev.peios.peiosutils" = ">= 0.8.5-1"

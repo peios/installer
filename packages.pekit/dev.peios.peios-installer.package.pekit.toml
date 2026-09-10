@@ -9,8 +9,6 @@ license = "MIT"
 "dev.peios.install-tui" = "= {{version}}-18"
 "dev.peios.msip-drive" = "= {{version}}-18"
 
-[replaces]
-"dev.peios.peios-installer" = "<= 0.1.0-17"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.peios-installer/LICENSE"

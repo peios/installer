@@ -4,8 +4,6 @@ side_effects = ["man-db"]
 name = "dev.peios.msip-drive"
 description = "Non-interactive MSIP conversation driver"
 
-[provides]
-"msip-drive" = "{{version}}-18"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.msip-drive/LICENSE"

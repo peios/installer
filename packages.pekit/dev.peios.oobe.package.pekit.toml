@@ -8,8 +8,6 @@ license = "MIT"
 "dev.peios.oobed" = "= {{version}}-18"
 "dev.peios.oobe-tui" = "= {{version}}-18"
 
-[replaces]
-"dev.peios.oobe" = "<= 0.1.0-7"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobe/LICENSE"
