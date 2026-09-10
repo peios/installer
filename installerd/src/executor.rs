@@ -248,16 +248,19 @@ pub const REPAIR_SD_PHASES: &[Phase] = &[Phase {
     name: "Reseeding security descriptors",
 }];
 
-/// Touches nothing. Probes real block devices read-only so the disk
-/// page is honest, then pretends to work.
+/// Touches nothing. By default it probes real block devices read-only so the
+/// interactive dry run is honest. Tests can supply a fixed inventory so their
+/// result does not depend on the build host's devices or `/sys` visibility.
 pub struct DryRun {
     /// Milliseconds per simulated step; tests set this low.
     pub step_ms: u64,
+    /// A deterministic disk inventory, or `None` to probe this machine.
+    pub disks: Option<Vec<Disk>>,
 }
 
 impl Executor for DryRun {
     fn probe_disks(&self) -> Vec<Disk> {
-        probe_sys_block()
+        self.disks.clone().unwrap_or_else(probe_sys_block)
     }
 
     fn phases(&self, kind: JobKind) -> &'static [Phase] {
