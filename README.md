@@ -30,8 +30,8 @@ The source-owned Pekit recipe builds the production packages offline after its
 vendor stage:
 
 ```sh
-pekit package --all --version 0.1.1
-pekit lint --version 0.1.1
+pekit package --all --version 0.1.3
+pekit lint --version 0.1.3
 ```
 
 Run any shipped program with `--help` for its command-line interface. Manual

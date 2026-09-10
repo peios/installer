@@ -51,7 +51,10 @@ fn main() {
         }
     }
     let executor: Arc<dyn Executor> = if dry_run {
-        Arc::new(DryRun { step_ms: 400 })
+        Arc::new(DryRun {
+            step_ms: 400,
+            disks: None,
+        })
     } else {
         Arc::new(real)
     };
