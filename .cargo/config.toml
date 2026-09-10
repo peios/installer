@@ -1,0 +1,10 @@
+# musl + static, as prelude does. installerd and install-tui link nothing
+# from Peios userspace — no libpeios, no peios-sys — so a static binary is
+# both possible and the simplest thing to place on an image: it depends on
+# the kernel and nothing else.
+[target.x86_64-unknown-linux-musl]
+linker    = "rust-lld"
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[build]
+target = "x86_64-unknown-linux-musl"

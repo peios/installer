@@ -1,0 +1,20 @@
+side_effects = ["man-db"]
+
+[package]
+name = "dev.peios.installerd"
+description = "Privileged Peios installation, repair, and upgrade service"
+
+[provides]
+installerd = "{{version}}-18"
+
+[dependencies]
+"dev.peios.peiosutils" = ">= 0.8.5-1"
+peipkg = ">= 0.1.1-2"
+"net.sourceforge.e2fsprogs" = ">= 1.47.4-1"
+"io.github.dosfstools.dosfstools" = ">= 4.2-4"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.installerd/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.installerd/third-party"
+":usr/sbin/installerd" = "usr/sbin/installerd"
+":usr/share/man/man8/installerd.8.gz" = "usr/share/man/man8/installerd.8.gz"

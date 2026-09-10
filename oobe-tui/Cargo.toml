@@ -1,0 +1,13 @@
+[package]
+name = "oobe-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The Peios first-boot setup terminal surface"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+msip-tui = { path = "../msip-tui" }

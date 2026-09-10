@@ -1,0 +1,12 @@
+[package]
+name = "dev.peios.oobed-debuginfo"
+description = "Debugging symbols for the Peios first-boot setup service"
+
+[dependencies]
+"dev.peios.oobed" = "= {{version}}-18"
+"dev.peios.peios-installer-debugsource" = "= {{version}}-18"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.oobed-debuginfo/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.oobed-debuginfo/third-party"
+":debug/oobed/usr/lib/debug/**" = "usr/lib/debug"

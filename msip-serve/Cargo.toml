@@ -1,0 +1,15 @@
+[package]
+name = "msip-serve"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Serve one MSIP conversation kind on a unix socket: connections, broadcast, and the answer loop"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+msip = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

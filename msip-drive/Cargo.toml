@@ -1,0 +1,14 @@
+[package]
+name = "msip-drive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Drive an MSIP conversation non-interactively: fill refs, press actions, print every turn"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+msip = { workspace = true }
+serde_json = { workspace = true }

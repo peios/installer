@@ -1,0 +1,12 @@
+[package]
+name = "dev.peios.install-tui-debuginfo"
+description = "Debugging symbols for the Peios installer terminal surface"
+
+[dependencies]
+"dev.peios.install-tui" = "= {{version}}-18"
+"dev.peios.peios-installer-debugsource" = "= {{version}}-18"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.install-tui-debuginfo/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.install-tui-debuginfo/third-party"
+":debug/install-tui/usr/lib/debug/**" = "usr/lib/debug"

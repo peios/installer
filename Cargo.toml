@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["installerd", "install-tui", "msip-drive", "msip-tui", "msip-serve", "oobe-tui", "oobed"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.98.1"
+license = "MIT"
+repository = "https://github.com/peios/installer"
+homepage = "https://github.com/peios/installer"
+publish = false
+
+[workspace.dependencies]
+msip = { git = "https://github.com/peios/msip.git", rev = "c2c5424f784e9d58ee548200eb2d723aa9539f52", version = "=0.1.1" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# Pekit detaches full DWARF after linking. Keeping it here permits complete
+# per-binary debuginfo and exact debugsource packages without weakening the
+# installed executables.
+debug = 2
+split-debuginfo = "off"
+incremental = false

@@ -1,0 +1,19 @@
+side_effects = ["man-db"]
+
+[package]
+name = "dev.peios.oobed"
+description = "Privileged Peios first-boot account and machine setup service"
+
+[provides]
+oobed = "{{version}}-18"
+
+[dependencies]
+"dev.peios.peiosutils" = ">= 0.8.5-1"
+"dev.peios.authd-lps" = ">= 0.0.14-1"
+"dev.peios.net" = ">= 0.1.1-15"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.oobed/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.oobed/third-party"
+":usr/sbin/oobed" = "usr/sbin/oobed"
+":usr/share/man/man8/oobed.8.gz" = "usr/share/man/man8/oobed.8.gz"
