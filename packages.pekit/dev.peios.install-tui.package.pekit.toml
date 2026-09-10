@@ -4,8 +4,6 @@ side_effects = ["man-db"]
 name = "dev.peios.install-tui"
 description = "Terminal surface for the Peios installer"
 
-[provides]
-"install-tui" = "{{version}}-18"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.install-tui/LICENSE"

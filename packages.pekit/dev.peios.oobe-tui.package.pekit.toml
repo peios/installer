@@ -4,8 +4,6 @@ side_effects = ["man-db"]
 name = "dev.peios.oobe-tui"
 description = "Terminal surface for Peios first-boot setup"
 
-[provides]
-"oobe-tui" = "{{version}}-18"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobe-tui/LICENSE"
