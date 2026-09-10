@@ -271,6 +271,3 @@ dash = "*"
 coreutils = "*"
 cargo = "*"
 rustc = "*"
-
-[clean]
-command = "rm -rf out"
