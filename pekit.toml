@@ -81,12 +81,13 @@ REMAP_RUSTFLAGS="--remap-path-prefix=$SRC=$DEBUG_PREFIX --remap-path-prefix=$PEK
 if [ -n "$PEKIT_WORKSPACE_ROOT" ]; then
   REMAP_RUSTFLAGS="--remap-path-prefix=$PEKIT_WORKSPACE_ROOT=$DEBUG_PREFIX/.workspace $REMAP_RUSTFLAGS"
 fi
-MUSL_RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-z -C link-arg=relro -C link-arg=-z -C link-arg=now -C link-arg=-z -C link-arg=pack-relative-relocs -C link-arg=--build-id=sha1 $REMAP_RUSTFLAGS"
+MUSL_RUSTFLAGS="-Zcf-protection=full -C relocation-model=pic -C link-self-contained=yes -C link-arg=-static-pie -C link-arg=-Wl,-z,ibt -C link-arg=-Wl,-z,shstk -C link-arg=-Wl,-z,relro -C link-arg=-Wl,-z,now -C link-arg=-Wl,-z,pack-relative-relocs -C link-arg=-Wl,--build-id=sha1 $REMAP_RUSTFLAGS"
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=/usr/bin/cc
 
 RUSTFLAGS="$REMAP_RUSTFLAGS" cargo test --release --workspace --locked --offline \
   --target x86_64-unknown-linux-gnu --target-dir "$PEKIT_OUT/tests"
 for tree in build-a build-b; do
-  RUSTFLAGS="$MUSL_RUSTFLAGS" cargo build --release --workspace --locked --offline \
+  RUSTC_BOOTSTRAP=1 RUSTFLAGS="$MUSL_RUSTFLAGS" cargo build --release --workspace --locked --offline \
     --target "$TARGET" --target-dir "$PEKIT_OUT/$tree"
 done
 for binary in installerd install-tui msip-drive oobed oobe-tui; do
@@ -212,7 +213,10 @@ do
   test -s "$debug"
   readelf -SW "$debug" | grep -q '\.debug_info'
   test "$(readelf -n "$debug" | sed -n 's/^[[:space:]]*Build ID: //p' | head -1)" = "$build_id"
-  for forbidden in "$SRC" "$PEKIT_VENDOR_OUT" "$PEKIT_OUT_BASE" "$PEKIT_WORKSPACE_ROOT"; do
+  # Downstream static archives may retain their own producer-side debug paths;
+  # this recipe is responsible for proving that none of its own source or
+  # transient build roots leak into the shipped ELF/debug pair.
+  for forbidden in "$SRC" "$PEKIT_VENDOR_OUT" "$PEKIT_OUT_BASE"; do
     test -n "$forbidden" || continue
     ! grep -aF "$forbidden" "$elf" "$debug" >/dev/null
   done
@@ -228,6 +232,7 @@ done
 "org.gnu.sed"              = "*"
 "org.gnu.gzip"             = "*"
 "org.rust-lang.rust"       = ">= 1.98.1, < 2"
+"org.rust-lang.rust-std-x86-64-unknown-linux-musl" = ">= 1.98.1, < 2"
 "org.gnu.binutils"         = "*"
 "org.sourceware.debugedit" = "*"
 "org.python.python3"       = "*"

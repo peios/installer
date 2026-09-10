@@ -183,14 +183,14 @@ dependencies = [
 
 [[package]]
 name = "install-tui"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "msip-tui",
 ]
 
 [[package]]
 name = "installerd"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "libc",
  "msip",
@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "msip-drive"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "msip",
  "serde_json",
@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "msip-serve"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "msip",
  "serde",
@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "msip-tui"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "crossterm",
  "libc",
@@ -307,14 +307,14 @@ dependencies = [
 
 [[package]]
 name = "oobe-tui"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "msip-tui",
 ]
 
 [[package]]
 name = "oobed"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "msip",
  "msip-serve",
