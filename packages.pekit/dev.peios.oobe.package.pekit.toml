@@ -5,8 +5,8 @@ description = "Complete Peios first-boot setup service and console surface"
 license = "MIT"
 
 [dependencies]
-"dev.peios.oobed" = "= {{version}}-18"
-"dev.peios.oobe-tui" = "= {{version}}-18"
+"dev.peios.oobed" = "= {{version}}-1"
+"dev.peios.oobe-tui" = "= {{version}}-1"
 
 
 [files]

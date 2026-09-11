@@ -3,8 +3,8 @@ name = "dev.peios.install-tui-debuginfo"
 description = "Debugging symbols for the Peios installer terminal surface"
 
 [dependencies]
-"dev.peios.install-tui" = "= {{version}}-18"
-"dev.peios.peios-installer-debugsource" = "= {{version}}-18"
+"dev.peios.install-tui" = "= {{version}}-1"
+"dev.peios.peios-installer-debugsource" = "= {{version}}-1"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.install-tui-debuginfo/LICENSE"

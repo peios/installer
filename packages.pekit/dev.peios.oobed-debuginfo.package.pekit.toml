@@ -3,8 +3,8 @@ name = "dev.peios.oobed-debuginfo"
 description = "Debugging symbols for the Peios first-boot setup service"
 
 [dependencies]
-"dev.peios.oobed" = "= {{version}}-18"
-"dev.peios.peios-installer-debugsource" = "= {{version}}-18"
+"dev.peios.oobed" = "= {{version}}-1"
+"dev.peios.peios-installer-debugsource" = "= {{version}}-1"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobed-debuginfo/LICENSE"
