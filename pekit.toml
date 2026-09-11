@@ -84,8 +84,6 @@ fi
 MUSL_RUSTFLAGS="-Zcf-protection=full -C relocation-model=pic -C link-self-contained=yes -C link-arg=-static-pie -C link-arg=-Wl,-z,ibt -C link-arg=-Wl,-z,shstk -C link-arg=-Wl,-z,relro -C link-arg=-Wl,-z,now -C link-arg=-Wl,-z,pack-relative-relocs -C link-arg=-Wl,--build-id=sha1 $REMAP_RUSTFLAGS"
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=/usr/bin/cc
 
-RUSTFLAGS="$REMAP_RUSTFLAGS" cargo test --release --workspace --locked --offline \
-  --target x86_64-unknown-linux-gnu --target-dir "$PEKIT_OUT/tests"
 for tree in build-a build-b; do
   RUSTC_BOOTSTRAP=1 RUSTFLAGS="$MUSL_RUSTFLAGS" cargo build --release --workspace --locked --offline \
     --target "$TARGET" --target-dir "$PEKIT_OUT/$tree"
@@ -160,6 +158,50 @@ test -f "$DEBUG_ROOT/vendor/msip/src/lib.rs"
 test -f "$DEBUG_ROOT/vendor/serde/src/lib.rs"
 test -f "$LICENSE_ROOT/msip-0.1.1/LICENSE"
 
+'''
+
+[build.main.dependencies.peipkg]
+"org.git.kernel.dash"      = "*"
+"org.gnu.coreutils"        = "*"
+"org.gnu.diffutils"        = "*"
+"org.gnu.findutils"        = "*"
+"org.gnu.grep"             = "*"
+"org.gnu.sed"              = "*"
+"org.gnu.gzip"             = "*"
+"org.rust-lang.rust"       = ">= 1.98.1, < 2"
+"org.rust-lang.rust-std-x86-64-unknown-linux-musl" = ">= 1.98.1, < 2"
+"org.gnu.binutils"         = "*"
+"org.sourceware.debugedit" = "*"
+"org.python.python3"       = "*"
+
+[build.main.dependencies.apt]
+dash = "*"
+coreutils = "*"
+diffutils = "*"
+findutils = "*"
+grep = "*"
+sed = "*"
+gzip = "*"
+cargo = "*"
+rustc = "*"
+binutils = "*"
+debugedit = "*"
+python3 = "*"
+
+[test]
+gate = true
+needs = ["main"]
+command = '''
+set -eu
+export CARGO_HOME=$PEKIT_OUT/cargo-home
+mkdir -p "$CARGO_HOME"
+cp "$PEKIT_VENDOR_OUT/cargo-config.toml" "$CARGO_HOME/config.toml"
+cargo test --release --workspace --locked --offline \
+  --target x86_64-unknown-linux-gnu --target-dir "$PEKIT_OUT/tests"
+
+# Validate the exact staged package output produced by build.main.
+SRC=$(pwd -P)
+PEKIT_OUT="$PEKIT_MAIN_OUT"
 for binary in "$PEKIT_OUT/usr/sbin/installerd" "$PEKIT_OUT/usr/sbin/oobed" \
               "$PEKIT_OUT/usr/bin/install-tui" "$PEKIT_OUT/usr/bin/msip-drive" \
               "$PEKIT_OUT/usr/bin/oobe-tui"; do
@@ -223,7 +265,7 @@ do
 done
 '''
 
-[build.main.dependencies.peipkg]
+[test.dependencies.peipkg]
 "org.git.kernel.dash"      = "*"
 "org.gnu.coreutils"        = "*"
 "org.gnu.diffutils"        = "*"
@@ -237,7 +279,7 @@ done
 "org.sourceware.debugedit" = "*"
 "org.python.python3"       = "*"
 
-[build.main.dependencies.apt]
+[test.dependencies.apt]
 dash = "*"
 coreutils = "*"
 diffutils = "*"
@@ -250,24 +292,3 @@ rustc = "*"
 binutils = "*"
 debugedit = "*"
 python3 = "*"
-
-[test]
-needs = ["vendor"]
-command = '''
-set -eu
-export CARGO_HOME=$PEKIT_OUT/cargo-home
-mkdir -p "$CARGO_HOME"
-cp "$PEKIT_VENDOR_OUT/cargo-config.toml" "$CARGO_HOME/config.toml"
-cargo test --workspace --locked --offline --target x86_64-unknown-linux-gnu
-'''
-
-[test.dependencies.peipkg]
-"org.git.kernel.dash" = "*"
-"org.gnu.coreutils"   = "*"
-"org.rust-lang.rust"  = ">= 1.98.1, < 2"
-
-[test.dependencies.apt]
-dash = "*"
-coreutils = "*"
-cargo = "*"
-rustc = "*"
