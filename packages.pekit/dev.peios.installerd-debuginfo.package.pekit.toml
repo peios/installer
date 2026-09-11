@@ -3,8 +3,8 @@ name = "dev.peios.installerd-debuginfo"
 description = "Debugging symbols for the Peios installer service"
 
 [dependencies]
-"dev.peios.installerd" = "= {{version}}-18"
-"dev.peios.peios-installer-debugsource" = "= {{version}}-18"
+"dev.peios.installerd" = "= {{version}}-1"
+"dev.peios.peios-installer-debugsource" = "= {{version}}-1"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.installerd-debuginfo/LICENSE"

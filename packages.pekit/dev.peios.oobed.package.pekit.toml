@@ -8,7 +8,7 @@ description = "Privileged Peios first-boot account and machine setup service"
 [dependencies]
 "dev.peios.peiosutils" = ">= 0.8.5-1"
 "dev.peios.authd-lps" = ">= 0.0.14-1"
-"dev.peios.net" = ">= 0.1.1-15"
+"dev.peios.net" = ">= 0.1.1-1"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobed/LICENSE"
