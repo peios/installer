@@ -3,6 +3,9 @@ side_effects = ["man-db"]
 [package]
 name = "dev.peios.oobed"
 description = "Privileged Peios first-boot account and machine setup service"
+# The crate closure oobed links; build.main's collect-rust-licences --check
+# holds this to what those crates declare.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)"
 
 
 [dependencies]
@@ -12,6 +15,6 @@ description = "Privileged Peios first-boot account and machine setup service"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobed/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.oobed/third-party"
+":licenses/oobed/**" = "usr/share/licenses/dev.peios.oobed/third-party"
 ":usr/sbin/oobed" = "usr/sbin/oobed"
 ":usr/share/man/man8/oobed.8.gz" = "usr/share/man/man8/oobed.8.gz"

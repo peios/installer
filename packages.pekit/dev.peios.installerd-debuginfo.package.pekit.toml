@@ -1,6 +1,8 @@
 [package]
 name = "dev.peios.installerd-debuginfo"
 description = "Debugging symbols for the Peios installer service"
+# The same crate closure as installerd; checked by build.main.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)"
 
 [dependencies]
 "dev.peios.installerd" = "= {{release}}"
@@ -8,5 +10,5 @@ description = "Debugging symbols for the Peios installer service"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.installerd-debuginfo/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.installerd-debuginfo/third-party"
+":licenses/installerd/**" = "usr/share/licenses/dev.peios.installerd-debuginfo/third-party"
 ":debug/installerd/usr/lib/debug/**" = "usr/lib/debug"

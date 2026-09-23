@@ -1,6 +1,8 @@
 [package]
 name = "dev.peios.msip-drive-debuginfo"
 description = "Debugging symbols for the MSIP automation client"
+# The same crate closure as msip-drive; checked by build.main.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)"
 
 [dependencies]
 "dev.peios.msip-drive" = "= {{release}}"
@@ -8,5 +10,5 @@ description = "Debugging symbols for the MSIP automation client"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.msip-drive-debuginfo/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.msip-drive-debuginfo/third-party"
+":licenses/msip-drive/**" = "usr/share/licenses/dev.peios.msip-drive-debuginfo/third-party"
 ":debug/msip-drive/usr/lib/debug/**" = "usr/lib/debug"

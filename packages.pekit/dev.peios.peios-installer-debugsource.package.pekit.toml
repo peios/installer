@@ -2,8 +2,10 @@
 name = "dev.peios.peios-installer-debugsource"
 architecture = "noarch"
 description = "Exact debug sources for the Peios installer and first-boot family"
+# The union of all five binaries' crate closures; checked by build.main.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense) AND Zlib"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.peios-installer-debugsource/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.peios-installer-debugsource/third-party"
+":licenses/debugsource/**" = "usr/share/licenses/dev.peios.peios-installer-debugsource/third-party"
 ":usr/src/debug/**" = "usr/src/debug"

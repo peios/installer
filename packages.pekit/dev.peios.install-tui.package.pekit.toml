@@ -3,10 +3,13 @@ side_effects = ["man-db"]
 [package]
 name = "dev.peios.install-tui"
 description = "Terminal surface for the Peios installer"
+# The crate closure install-tui links; build.main's collect-rust-licences
+# --check holds this to what those crates declare.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense) AND Zlib"
 
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.install-tui/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.install-tui/third-party"
+":licenses/install-tui/**" = "usr/share/licenses/dev.peios.install-tui/third-party"
 ":usr/bin/install-tui" = "usr/bin/install-tui"
 ":usr/share/man/man1/install-tui.1.gz" = "usr/share/man/man1/install-tui.1.gz"

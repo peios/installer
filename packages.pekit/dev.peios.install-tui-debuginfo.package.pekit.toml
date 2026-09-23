@@ -1,6 +1,8 @@
 [package]
 name = "dev.peios.install-tui-debuginfo"
 description = "Debugging symbols for the Peios installer terminal surface"
+# The same crate closure as install-tui; checked by build.main.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense) AND Zlib"
 
 [dependencies]
 "dev.peios.install-tui" = "= {{release}}"
@@ -8,5 +10,5 @@ description = "Debugging symbols for the Peios installer terminal surface"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.install-tui-debuginfo/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.install-tui-debuginfo/third-party"
+":licenses/install-tui/**" = "usr/share/licenses/dev.peios.install-tui-debuginfo/third-party"
 ":debug/install-tui/usr/lib/debug/**" = "usr/lib/debug"

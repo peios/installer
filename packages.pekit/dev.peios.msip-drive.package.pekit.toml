@@ -3,10 +3,13 @@ side_effects = ["man-db"]
 [package]
 name = "dev.peios.msip-drive"
 description = "Non-interactive MSIP conversation driver"
+# The crate closure msip-drive links; build.main's collect-rust-licences
+# --check holds this to what those crates declare.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)"
 
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.msip-drive/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.msip-drive/third-party"
+":licenses/msip-drive/**" = "usr/share/licenses/dev.peios.msip-drive/third-party"
 ":usr/bin/msip-drive" = "usr/bin/msip-drive"
 ":usr/share/man/man1/msip-drive.1.gz" = "usr/share/man/man1/msip-drive.1.gz"
