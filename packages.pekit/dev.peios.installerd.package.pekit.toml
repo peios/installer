@@ -7,7 +7,8 @@ description = "Privileged Peios installation, repair, and upgrade service"
 
 [dependencies]
 "dev.peios.peiosutils" = ">= 0.8.5-1"
-"dev.peios.peipkg" = ">= 0.1.1-1"
+# 0.1.3 is the distribution's qualified peipkg baseline.
+"dev.peios.peipkg" = ">= 0.1.3-1"
 "net.sourceforge.e2fsprogs" = ">= 1.47.4-1"
 "io.github.dosfstools.dosfstools" = ">= 4.2-1"
 
