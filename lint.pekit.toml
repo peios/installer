@@ -44,4 +44,4 @@ build_paths = "forbidden"
 soname      = true
 
 [allow]
-"elf.cet" = "Rust 1.98 does not emit the x86 GNU property note for IBT or shadow-stack compatibility; the fully Rust static binaries retain NX stack and relocation hardening"
+"elf.cet" = "All Rust code is built with -Zcf-protection=full; the static musl libc's x86_64 assembly (memcpy, memmove, memset) has no ENDBR and musl has no shadow-stack support (PEI-1159)"
