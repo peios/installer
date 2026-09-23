@@ -3,6 +3,9 @@ side_effects = ["man-db"]
 [package]
 name = "dev.peios.installerd"
 description = "Privileged Peios installation, repair, and upgrade service"
+# The crate closure installerd links; build.main's collect-rust-licences
+# --check holds this to what those crates declare.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)"
 
 
 [dependencies]
@@ -14,6 +17,6 @@ description = "Privileged Peios installation, repair, and upgrade service"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.installerd/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.installerd/third-party"
+":licenses/installerd/**" = "usr/share/licenses/dev.peios.installerd/third-party"
 ":usr/sbin/installerd" = "usr/sbin/installerd"
 ":usr/share/man/man8/installerd.8.gz" = "usr/share/man/man8/installerd.8.gz"

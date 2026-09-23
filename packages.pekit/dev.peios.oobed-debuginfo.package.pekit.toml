@@ -1,6 +1,8 @@
 [package]
 name = "dev.peios.oobed-debuginfo"
 description = "Debugging symbols for the Peios first-boot setup service"
+# The same crate closure as oobed; checked by build.main.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)"
 
 [dependencies]
 "dev.peios.oobed" = "= {{release}}"
@@ -8,5 +10,5 @@ description = "Debugging symbols for the Peios first-boot setup service"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobed-debuginfo/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.oobed-debuginfo/third-party"
+":licenses/oobed/**" = "usr/share/licenses/dev.peios.oobed-debuginfo/third-party"
 ":debug/oobed/usr/lib/debug/**" = "usr/lib/debug"

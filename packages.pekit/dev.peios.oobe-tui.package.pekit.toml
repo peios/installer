@@ -3,10 +3,13 @@ side_effects = ["man-db"]
 [package]
 name = "dev.peios.oobe-tui"
 description = "Terminal surface for Peios first-boot setup"
+# The crate closure oobe-tui links; build.main's collect-rust-licences
+# --check holds this to what those crates declare.
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense) AND Zlib"
 
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobe-tui/LICENSE"
-":licenses/**" = "usr/share/licenses/dev.peios.oobe-tui/third-party"
+":licenses/oobe-tui/**" = "usr/share/licenses/dev.peios.oobe-tui/third-party"
 ":usr/bin/oobe-tui" = "usr/bin/oobe-tui"
 ":usr/share/man/man1/oobe-tui.1.gz" = "usr/share/man/man1/oobe-tui.1.gz"
