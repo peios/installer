@@ -27,9 +27,13 @@ rm -rf "$CARGO_HOME"
 
 [build.vendor.dependencies.peipkg]
 "org.rust-lang.rust"          = ">= 1.98.1, < 2"
-"org.git.git"                 = "*"
+"com.git-scm.git"             = ">= 2.55.0"
 "org.mozilla.ca-certificates" = "*"
 "org.gnu.findutils"           = "*"
+"org.gnu.grep"                = "*"
+"dev.peios.peiosutils"        = "*"
+# Cargo's Git checkouts are read-only; POSIX chmod -R u+w clears them.
+"org.gnu.coreutils-build-compat" = "*"
 
 [build.vendor.dependencies.apt]
 cargo           = "*"
