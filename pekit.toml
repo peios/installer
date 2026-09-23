@@ -35,12 +35,6 @@ rm -rf "$CARGO_HOME"
 # Cargo's Git checkouts are read-only; POSIX chmod -R u+w clears them.
 "org.gnu.coreutils-build-compat" = "*"
 
-[build.vendor.dependencies.apt]
-cargo           = "*"
-git             = "*"
-ca-certificates = "*"
-findutils       = "*"
-
 [build.main]
 needs = ["vendor"]
 command = '''
@@ -178,20 +172,6 @@ test -f "$LICENSE_ROOT/msip-0.1.1/LICENSE"
 "org.sourceware.debugedit" = "*"
 "org.python.python3"       = "*"
 
-[build.main.dependencies.apt]
-dash = "*"
-coreutils = "*"
-diffutils = "*"
-findutils = "*"
-grep = "*"
-sed = "*"
-gzip = "*"
-cargo = "*"
-rustc = "*"
-binutils = "*"
-debugedit = "*"
-python3 = "*"
-
 [test]
 gate = true
 needs = ["main", "vendor"]
@@ -282,17 +262,3 @@ done
 "org.gnu.binutils"         = "*"
 "org.sourceware.debugedit" = "*"
 "org.python.python3"       = "*"
-
-[test.dependencies.apt]
-dash = "*"
-coreutils = "*"
-diffutils = "*"
-findutils = "*"
-grep = "*"
-sed = "*"
-gzip = "*"
-cargo = "*"
-rustc = "*"
-binutils = "*"
-debugedit = "*"
-python3 = "*"
