@@ -1,5 +1,4 @@
-# One source release, split along privilege and lifecycle boundaries. Revision
-# 18 succeeds the seventeen monolithic installer development packages.
+# One source release, split along privilege and lifecycle boundaries.
 
 format = "peipkg"
 

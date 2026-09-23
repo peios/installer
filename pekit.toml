@@ -26,7 +26,7 @@ rm -rf "$CARGO_HOME"
 '''
 
 [build.vendor.dependencies.peipkg]
-"org.rust-lang.rust"          = ">= 1.98.1, < 2"
+"org.rust-lang.rust"          = ">= 1.98.1"
 "com.git-scm.git"             = ">= 2.55.0"
 "org.mozilla.ca-certificates" = "*"
 "org.gnu.findutils"           = "*"
@@ -160,14 +160,16 @@ test -f "$LICENSE_ROOT/msip-0.1.1/LICENSE"
 
 [build.main.dependencies.peipkg]
 "org.git.kernel.dash"      = "*"
-"org.gnu.coreutils"        = "*"
+"dev.peios.peiosutils"     = "*"
+# The payload is staged with GNU `install -m`.
+"org.gnu.coreutils-build-compat" = "*"
 "org.gnu.diffutils"        = "*"
 "org.gnu.findutils"        = "*"
 "org.gnu.grep"             = "*"
 "org.gnu.sed"              = "*"
 "org.gnu.gzip"             = "*"
-"org.rust-lang.rust"       = ">= 1.98.1, < 2"
-"org.rust-lang.rust-std-x86-64-unknown-linux-musl" = ">= 1.98.1, < 2"
+"org.rust-lang.rust"       = ">= 1.98.1"
+"org.rust-lang.rust-std-x86-64-unknown-linux-musl" = ">= 1.98.1"
 "org.gnu.binutils"         = "*"
 "org.sourceware.debugedit" = "*"
 "org.python.python3"       = "*"
@@ -228,12 +230,21 @@ do
   readelf -h "$elf" | grep -Eq 'Type:[[:space:]]+DYN'
   readelf -lW "$elf" | grep -q 'GNU_RELRO'
   readelf -lW "$elf" | grep -Eq 'GNU_STACK[[:space:]].*RW[[:space:]]'
-  ! readelf -lW "$elf" | grep -Eq 'GNU_STACK[[:space:]].*RWE'
+  if readelf -lW "$elf" | grep -E 'GNU_STACK[[:space:]].*RWE' >/dev/null; then
+    echo "installer: $elf has an executable stack" >&2
+    exit 1
+  fi
   readelf -dW "$elf" | grep -q 'BIND_NOW'
   readelf -dW "$elf" | grep -Eq 'FLAGS_1.*PIE'
   readelf -dW "$elf" | grep -q 'RELR'
-  ! readelf -dW "$elf" | grep -Eq '(NEEDED|RPATH|RUNPATH|TEXTREL)'
-  ! readelf -SW "$elf" | grep -q '\.debug_info'
+  if readelf -dW "$elf" | grep -E '(NEEDED|RPATH|RUNPATH|TEXTREL)' >/dev/null; then
+    echo "installer: $elf is not a self-contained static PIE (NEEDED, RPATH, RUNPATH or TEXTREL)" >&2
+    exit 1
+  fi
+  if readelf -SW "$elf" | grep '\.debug_info' >/dev/null; then
+    echo "installer: $elf still contains unsplit debug information" >&2
+    exit 1
+  fi
   build_id=$(readelf -n "$elf" | sed -n 's/^[[:space:]]*Build ID: //p' | head -1)
   debug=$PEKIT_OUT/debug/$component/usr/lib/debug/.build-id/$(printf %s "$build_id" | cut -c1-2)/$(printf %s "$build_id" | cut -c3-).debug
   test -s "$debug"
@@ -244,21 +255,24 @@ do
   # transient build roots leak into the shipped ELF/debug pair.
   for forbidden in "$SRC" "$PEKIT_VENDOR_OUT" "$PEKIT_OUT_BASE"; do
     test -n "$forbidden" || continue
-    ! grep -aF "$forbidden" "$elf" "$debug" >/dev/null
+    if grep -aF "$forbidden" "$elf" "$debug" >/dev/null; then
+      echo "installer: build path $forbidden leaked into $elf or its debug file" >&2
+      exit 1
+    fi
   done
 done
 '''
 
 [test.dependencies.peipkg]
 "org.git.kernel.dash"      = "*"
-"org.gnu.coreutils"        = "*"
+"dev.peios.peiosutils"     = "*"
 "org.gnu.diffutils"        = "*"
 "org.gnu.findutils"        = "*"
 "org.gnu.grep"             = "*"
 "org.gnu.sed"              = "*"
 "org.gnu.gzip"             = "*"
-"org.rust-lang.rust"       = ">= 1.98.1, < 2"
-"org.rust-lang.rust-std-x86-64-unknown-linux-musl" = ">= 1.98.1, < 2"
+"org.rust-lang.rust"       = ">= 1.98.1"
+"org.rust-lang.rust-std-x86-64-unknown-linux-musl" = ">= 1.98.1"
 "org.gnu.binutils"         = "*"
 "org.sourceware.debugedit" = "*"
 "org.python.python3"       = "*"

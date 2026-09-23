@@ -3,8 +3,8 @@ name = "dev.peios.oobe-tui-debuginfo"
 description = "Debugging symbols for the Peios first-boot terminal surface"
 
 [dependencies]
-"dev.peios.oobe-tui" = "= {{version}}-1"
-"dev.peios.peios-installer-debugsource" = "= {{version}}-1"
+"dev.peios.oobe-tui" = "= {{release}}"
+"dev.peios.peios-installer-debugsource" = "= {{release}}"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobe-tui-debuginfo/LICENSE"
