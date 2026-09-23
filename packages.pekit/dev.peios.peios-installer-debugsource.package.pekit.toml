@@ -1,5 +1,6 @@
 [package]
 name = "dev.peios.peios-installer-debugsource"
+architecture = "noarch"
 description = "Exact debug sources for the Peios installer and first-boot family"
 
 [files]
