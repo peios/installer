@@ -135,6 +135,12 @@ Restarted into, the VM runs what was installed on the stick, and is an
 installer again only once the stick is empty (delete `target/disks/blank.img`
 while no VM has it) and `dev/boot.sh` has started it over.
 
+What is installed is the medium's own system, and the release medium has no
+first-boot setup in a browser yet. `dev/image.sh` builds one that does, with
+this checkout's programs and those of `../installer` and `../gxwi` injected
+into it (`dev/image.toml`), and `IMAGE=target/image dev/boot.sh` boots it.
+Installed from that and restarted into, the page goes on to setup's welcome.
+
 The conversation is `installerd`'s and outlives a browser, so a check that
 stops part way leaves it on whatever page it had reached. `dev/push.sh`
 starts it again from the first.
