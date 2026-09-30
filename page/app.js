@@ -7,6 +7,7 @@ import { createConfirmPage } from "./confirm.js";
 import { createDiskPage } from "./disk.js";
 import { createField } from "./field.js";
 import { createIntro } from "./intro.js";
+import { createProgressPage } from "./progress.js";
 
 const $ = (id) => document.getElementById(id);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -79,12 +80,15 @@ function listen() {
     };
 }
 
-// Asks the installer for something: to press an action, to choose a disk. It
-// is told which page this was looking at, so that what is pressed on a page
-// that has just gone is not taken for an answer to the next. Nothing comes
-// back but the state, which says what came of it.
+// Asks the installer for something: to press an action, to choose a disk, or,
+// once a conversation has ended, to start another. It is told which page
+// this was looking at, so that what is pressed on a page that has just gone
+// is not taken for an answer to the next; an ending is no page of
+// installerd's, and is asked from as none. Nothing comes back but the state,
+// which says what came of it.
 function ask(request) {
-    if (socket?.readyState !== WebSocket.OPEN || !view?.seq) return;
+    if (socket?.readyState !== WebSocket.OPEN || !view) return;
+    if (!view.seq && !request.again) return;
     socket.send(JSON.stringify({ ...request, seq: view.seq }));
 }
 
@@ -127,9 +131,14 @@ function drawTicker() {
 
 function drawStatus() {
     const link = view?.link;
+    // A job's end is the conversation's: there is nothing to be connected to.
+    const ended = view?.page?.kind === "progress" ? view.page.ended?.outcome : view?.page?.kind === "ended" ? view.page.outcome : null;
     const [text, how] =
         heard === "lost" ? ["Lost touch with this machine", "bad"]
         : !link ? ["Starting", "wait"]
+        : view.waiting === "again" ? ["Starting again", "wait"]
+        : ended === "complete" ? ["Finished", ""]
+        : ended ? ["Stopped", "bad"]
         : link.state === "connected" ? [`Connected to ${link.daemon}`, ""]
         : link.state === "lost" ? ["The installer is not answering", "bad"]
         : ["Reaching the installer", "wait"];
@@ -167,9 +176,11 @@ function fill(page) {
     const was = turn.dataset.kind;
     turn.dataset.kind = page.kind;
     if (was === "confirm" && page.kind !== "confirm") confirmPage.gone();
+    if (was === "progress" && page.kind !== "progress") progressPage.gone();
     if (page.kind === "mode") return fillMode(page, was === "mode");
     if (page.kind === "disk") return diskPage.draw(page, view?.waiting);
     if (page.kind === "confirm") return confirmPage.draw(page, view?.waiting);
+    if (page.kind === "progress") return progressPage.draw(page, view?.waiting);
     const parts =
         page.kind === "unbuilt" ? {
             title: page.title || "The next step",
@@ -244,6 +255,7 @@ const diskPage = createDiskPage({ turn, el, rise, ask, toast: (text) => toast(te
 const confirmPage = createConfirmPage({
     turn, stage: els.stage, el, rise, ask, toast: (text) => toast(text), say, field, flash: els.flash, reduced,
 });
+const progressPage = createProgressPage({ turn, stage: els.stage, el, rise, ask, say, retitle, field, reduced });
 
 function menuKeys(e) {
     const at = actions.findIndex((button) => button.classList.contains("hl"));
@@ -258,21 +270,27 @@ function menuKeys(e) {
     }
 }
 
+/** Names the tab for a page headed `heading`. */
+function retitle(heading) {
+    document.title = heading && heading !== "Peios Setup" ? `${heading} · Peios Setup` : "Peios Setup";
+}
+
 // A page arriving: its heading is said and names the tab, and the keyboard
 // starts at the first thing that can be answered.
 function arrived() {
     const heading = turn.querySelector("h1")?.textContent.trim() ?? "";
-    document.title = heading && heading !== "Peios Setup" ? `${heading} · Peios Setup` : "Peios Setup";
+    retitle(heading);
     if (heading) say(heading);
     if (shown?.kind === "mode") actions.find((button) => button.classList.contains("hl"))?.focus({ preventScroll: true });
     if (shown?.kind === "disk") diskPage.focus();
     if (shown?.kind === "confirm") confirmPage.focus();
+    if (shown?.kind === "progress") progressPage.focus();
 }
 
 // Where each page comes in the installation, which decides the side it
 // arrives from: a later page from the right, an earlier one from the left.
 // The pages that are not steps (starting, lost, an ending) count as later.
-const ORDER = { mode: 0, disk: 1, confirm: 2 };
+const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3 };
 const order = (page) => ORDER[page?.kind] ?? 9;
 
 // What is on the page now, and whether the intro has landed: until it has,

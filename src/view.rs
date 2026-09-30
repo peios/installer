@@ -9,7 +9,7 @@
 //! pages by their ids and their elements by their refs, and draws each as the
 //! page it is. It does not try to draw a conversation it has never seen.
 
-use msip::element::Element;
+use msip::element::{Element, types};
 use msip::msg::{End, Outcome, Turn};
 use serde::Serialize;
 use serde_json::Value;
@@ -32,7 +32,8 @@ pub struct View {
     /// nothing.
     pub seq: u64,
     /// The action pressed on this page that installerd has not answered
-    /// yet, for a page to show as under way.
+    /// yet, for a page to show as under way. After an ending it is
+    /// `again`, while the conversation asked for in its place is opened.
     pub waiting: Option<String>,
     /// The page installerd is asking for, once it has asked.
     pub page: Option<Page>,
@@ -91,10 +92,52 @@ pub enum Page {
         back: Option<Action>,
         begin: Option<Action>,
     },
+    /// installerd's `install.progress`, and the upgrade's and the repair's:
+    /// a job as it runs, and how it ended once it has.
+    Progress {
+        title: String,
+        /// Which job it is: `install`, `upgrade` or `repair`.
+        job: String,
+        /// What it is being done to, in installerd's words.
+        summary: String,
+        /// The disk it is being done to, for the page to draw. Nothing from
+        /// an installerd that says it only in words.
+        disk: Option<Disk>,
+        phases: Vec<Phase>,
+        /// The last of what the job has said of itself, a line each. The
+        /// whole of it is served as a file, since a job that goes wrong can
+        /// say a great deal and every line here is sent again with each
+        /// change.
+        lines: Vec<String>,
+        /// How many lines it has said in all.
+        said: usize,
+        /// How it ended, once it has: the job's end is the conversation's,
+        /// and the page stays to say so.
+        ended: Option<Ended>,
+    },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
-    /// The conversation is over.
+    /// The conversation is over, and not on a page that stays to say so.
     Ended { outcome: &'static str, message: String },
+}
+
+/// One phase of a job, and how far along it is.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Phase {
+    pub r#ref: String,
+    pub name: String,
+    pub value: f64,
+    /// The whole of it, or nothing where installerd cannot say how far
+    /// there is to go.
+    pub max: Option<f64>,
+}
+
+/// How a conversation ended: `complete`, `cancelled` or `failed`, and what
+/// installerd had to say of it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Ended {
+    pub outcome: &'static str,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -139,6 +182,12 @@ pub struct Disk {
 const DISKS: &str = "disk.target";
 /// The sentence on installerd's confirmation, which carries the disk.
 const SUMMARY: &str = "confirm.summary";
+/// The sentence on the page a job runs on, which carries it too.
+const DOING: &str = "progress.summary";
+/// What a job says of itself as it goes.
+const LOG: &str = "out";
+/// How many lines of that a page is sent.
+const TAIL: usize = 200;
 
 impl View {
     pub fn starting(release: Release) -> View {
@@ -169,10 +218,14 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         // An install goes on to the confirmation, which is drawn; an
         // upgrade and a repair to pages of their own, which are not.
         (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
-        // The installation itself, as it runs.
-        (Some("confirm"), "act.begin") => true,
         _ => false,
     }
+}
+
+/// Everything the job on `turn` has said of itself so far, a line each, or
+/// nothing where `turn` is not a job's page.
+pub fn said(turn: &Turn) -> &[Value] {
+    element(turn, LOG).and_then(|e| e.state.get("lines")).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default()
 }
 
 /// Whether `value` is a disk `turn` offers and lets be chosen.
@@ -240,17 +293,55 @@ impl Page {
                 back: action("nav.back"),
                 begin: action("act.begin"),
             },
+            // The three jobs' pages are one page: what differs between them
+            // is what installerd puts on it.
+            Some(id @ ("install.progress" | "upgrade.progress" | "repair.progress")) => {
+                let said = said(turn);
+                Page::Progress {
+                    title,
+                    job: id.trim_end_matches(".progress").to_string(),
+                    summary: text(turn, DOING),
+                    disk: element(turn, DOING).and_then(|e| e.state.get("detail")).and_then(Disk::said),
+                    phases: turn.elements.iter().filter(|e| e.r#type == types::PROGRESS).map(Phase::of).collect(),
+                    lines: said[said.len().saturating_sub(TAIL)..].iter().map(|line| line.as_str().unwrap_or_default().to_string()).collect(),
+                    said: said.len(),
+                    ended: None,
+                }
+            }
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
         }
     }
 
-    pub fn ended(end: &End) -> Page {
-        let outcome = match end.outcome {
-            Outcome::Complete => "complete",
-            Outcome::Cancelled => "cancelled",
-            Outcome::Failed => "failed",
+    /// What is shown once the conversation has ended with `end`, `shown`
+    /// being the page it ended on. A job's page stays, and says how the job
+    /// ended; any other gives way to the ending.
+    pub fn ended(shown: Option<Page>, end: &End) -> Page {
+        let ended = Ended {
+            outcome: match end.outcome {
+                Outcome::Complete => "complete",
+                Outcome::Cancelled => "cancelled",
+                Outcome::Failed => "failed",
+            },
+            message: end.message.clone().unwrap_or_default(),
         };
-        Page::Ended { outcome, message: end.message.clone().unwrap_or_default() }
+        match shown {
+            Some(Page::Progress { title, job, summary, disk, phases, lines, said, .. }) => {
+                Page::Progress { title, job, summary, disk, phases, lines, said, ended: Some(ended) }
+            }
+            _ => Page::Ended { outcome: ended.outcome, message: ended.message },
+        }
+    }
+}
+
+impl Phase {
+    fn of(element: &Element) -> Phase {
+        let number = |key: &str| element.state.get(key).and_then(Value::as_f64);
+        Phase {
+            r#ref: element.r#ref.clone(),
+            name: element.name.clone().unwrap_or_default(),
+            value: number("value").unwrap_or(0.0),
+            max: number("max"),
+        }
     }
 }
 
@@ -456,8 +547,8 @@ mod tests {
         let begin = begin.unwrap();
         assert_eq!(begin.name, "Erase disk and install");
         assert!(begin.primary && begin.destructive && begin.enabled);
-        // The installation itself is not drawn yet.
-        assert!(begin.unbuilt);
+        // It leads to the installation as it runs, which is drawn.
+        assert!(!begin.unbuilt);
         // Nothing of it is answered with but the action.
         assert!(values(&confirm(), Some("/dev/sda")).is_empty());
         assert_eq!(serde_json::to_value(Page::of(&confirm(), None)).unwrap()["kind"], "confirm");
@@ -514,11 +605,9 @@ mod tests {
 
     #[test]
     fn an_action_that_leads_to_a_page_not_drawn_is_not_sent_on() {
-        // The installation as it runs is not drawn yet.
-        assert!(unbuilt(&confirm(), "act.begin"));
-        assert!(!unbuilt(&confirm(), "nav.back"));
-        // Nor is what an upgrade or a repair goes on to from the disks, or
-        // what a disk page that does not say what it is for goes on to.
+        // What an upgrade or a repair goes on to from the disks is not drawn
+        // yet, nor what a disk page that does not say what it is for goes
+        // on to.
         let mut turn = disks();
         assert!(!unbuilt(&turn, "nav.next"));
         for purpose in ["upgrade", "repair"] {
@@ -530,14 +619,75 @@ mod tests {
         assert!(!unbuilt(&turn, "nav.back"));
         assert!(!unbuilt(&turn, "act.rescan"));
         assert!(!unbuilt(&mode(), "act.install"));
+        // The installation as it runs is drawn, so its button is sent on.
+        assert!(!unbuilt(&confirm(), "act.begin"));
+        assert!(!unbuilt(&confirm(), "nav.back"));
+    }
+
+    /// installerd's page for an install under way: the copy part done, and
+    /// three hundred lines said.
+    fn installing() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 4, "id": "install.progress", "name": "Installing", "class": ["progress"],
+            "elements": [
+                { "ref": "progress.summary", "type": "text",
+                  "text": "Installing Peios onto CT500MX500SSD1, 465.8 GiB (/dev/sda). Leave the machine on.",
+                  "detail": { "device": "/dev/sda", "model": "CT500MX500SSD1", "size": "465.8 GiB", "bus": "SATA",
+                              "bytes": 500107862016u64, "partitions": [], "becomes": [], "erases": [] } },
+                { "ref": "phase.partition", "type": "progress", "name": "Partitioning", "value": 100, "max": 100 },
+                { "ref": "phase.format", "type": "progress", "name": "Formatting", "value": 100, "max": 100 },
+                { "ref": "phase.copy", "type": "progress", "name": "Copying the system", "value": 36, "max": 100 },
+                { "ref": "phase.boot", "type": "progress", "name": "Setting up boot", "value": 0 },
+                { "ref": "out", "type": "log", "name": "Details",
+                  "lines": (1..=300).map(|n| format!("line {n}")).collect::<Vec<_>>() },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_job_under_way_is_drawn_from_what_installerd_sends() {
+        let Page::Progress { title, job, summary, disk, phases, lines, said, ended } = Page::of(&installing(), None) else {
+            panic!("not a job's page")
+        };
+        assert_eq!((title.as_str(), job.as_str()), ("Installing", "install"));
+        assert!(summary.starts_with("Installing Peios onto CT500MX500SSD1"));
+        assert_eq!(disk.unwrap().device, "/dev/sda");
+        assert_eq!(phases.iter().map(|p| p.r#ref.as_str()).collect::<Vec<_>>(), ["phase.partition", "phase.format", "phase.copy", "phase.boot"]);
+        assert_eq!(phases[2], Phase { r#ref: "phase.copy".into(), name: "Copying the system".into(), value: 36.0, max: Some(100.0) });
+        // One that does not say how far there is to go.
+        assert_eq!(phases[3].max, None);
+        // A page is sent the last of what the job said, and how much there
+        // was; the whole of it is kept to be served as a file.
+        assert_eq!(said, 300);
+        assert_eq!(lines.len(), 200);
+        assert_eq!((lines[0].as_str(), lines[199].as_str()), ("line 101", "line 300"));
+        assert_eq!(super::said(&installing()).len(), 300);
+        assert!(super::said(&mode()).is_empty());
+        assert_eq!(ended, None);
+
+        // The upgrade's and the repair's are the same page, of another job,
+        // and an installerd that says it only in words is drawn without the
+        // disk.
+        let mut turn = installing();
+        turn.id = Some("upgrade.progress".into());
+        turn.elements[0].state.remove("detail");
+        assert!(matches!(Page::of(&turn, None), Page::Progress { job, disk: None, .. } if job == "upgrade"));
+        turn.id = Some("repair.progress".into());
+        assert!(matches!(Page::of(&turn, None), Page::Progress { job, .. } if job == "repair"));
+
+        let sent = serde_json::to_value(Page::of(&installing(), None)).unwrap();
+        assert_eq!(sent["kind"], "progress");
+        assert_eq!(sent["phases"][2], json!({ "ref": "phase.copy", "name": "Copying the system", "value": 36.0, "max": 100.0 }));
+        assert_eq!(sent["ended"], Value::Null);
     }
 
     #[test]
     fn a_page_not_drawn_here_is_said_to_be_one() {
         let mut turn = mode();
-        turn.id = Some("install.progress".into());
-        turn.name = Some("Installing".into());
-        assert_eq!(Page::of(&turn, None), Page::Unbuilt { id: "install.progress".into(), title: "Installing".into() });
+        turn.id = Some("upgrade.confirm".into());
+        turn.name = Some("Ready to upgrade".into());
+        assert_eq!(Page::of(&turn, None), Page::Unbuilt { id: "upgrade.confirm".into(), title: "Ready to upgrade".into() });
         turn.id = None;
         assert!(matches!(Page::of(&turn, None), Page::Unbuilt { id, .. } if id.is_empty()));
     }
@@ -574,6 +724,23 @@ mod tests {
     #[test]
     fn an_ending_says_how_it_ended() {
         let end = End { seq: 9, outcome: Outcome::Failed, message: Some("cp failed (exit 1)".into()) };
-        assert_eq!(Page::ended(&end), Page::Ended { outcome: "failed", message: "cp failed (exit 1)".into() });
+        let ending = Page::Ended { outcome: "failed", message: "cp failed (exit 1)".into() };
+        assert_eq!(Page::ended(None, &end), ending);
+        assert_eq!(Page::ended(Some(Page::of(&mode(), None)), &end), ending);
+    }
+
+    #[test]
+    fn a_job_that_has_ended_stays_on_its_page_and_says_how() {
+        let end = End { seq: 9, outcome: Outcome::Failed, message: Some("copying /boot: cp failed (exit 1)".into()) };
+        let Page::Progress { title, phases, said, ended, .. } = Page::ended(Some(Page::of(&installing(), None)), &end) else {
+            panic!("the job's page gave way to the ending")
+        };
+        // Everything on it is as it was when the job stopped.
+        assert_eq!((title.as_str(), phases[2].value, said), ("Installing", 36.0, 300));
+        assert_eq!(ended, Some(Ended { outcome: "failed", message: "copying /boot: cp failed (exit 1)".into() }));
+        let done = End { seq: 9, outcome: Outcome::Complete, message: None };
+        let sent = serde_json::to_value(Page::ended(Some(Page::of(&installing(), None)), &done)).unwrap();
+        assert_eq!(sent["kind"], "progress");
+        assert_eq!(sent["ended"], json!({ "outcome": "complete", "message": "" }));
     }
 }

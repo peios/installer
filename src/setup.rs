@@ -14,12 +14,16 @@
 //! shared, so an answer moves everyone along, and an action that leads to a
 //! page not drawn here yet would move them to a page nobody can see. Those
 //! are held back until their page exists (`view::unbuilt`).
+//!
+//! A conversation ends when its job does, finished or failed. What it ended
+//! with stays on the page until someone at a browser asks to start again,
+//! and then another is opened in its place.
 
 use std::io::ErrorKind;
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use msip::element::types;
@@ -38,6 +42,14 @@ const KIND: &str = "install";
 const SURFACE: &str = concat!("installer-gxwi/", env!("CARGO_PKG_VERSION"));
 /// How long after installerd was lost it is tried again.
 const AGAIN: Duration = Duration::from_secs(2);
+/// What is under way (`View::waiting`) while a conversation asked for after
+/// an ending is opened.
+const STARTING_AGAIN: &str = "again";
+
+/// Everything the job under way has said of itself, a line each: what is
+/// served as a file, where a page is sent only the last of it. Empty when no
+/// job is under way or ended.
+pub type Said = Arc<Mutex<Vec<String>>>;
 
 /// What reaches the thread that holds the conversation.
 pub enum Heard {
@@ -60,30 +72,55 @@ pub struct Asked {
     /// Choose this disk, on the page that asks for one.
     #[serde(default)]
     pub choose: Option<String>,
+    /// Open another conversation, the last having ended.
+    #[serde(default)]
+    pub again: bool,
 }
 
 /// Holds the conversation for as long as the process runs, and keeps `view`
-/// as it stands. installerd not being there is said and tried again: it is
-/// started by the system, and may simply not be up yet.
+/// as it stands, and `said` with it. installerd not being there is said and
+/// tried again: it is started by the system, and may simply not be up yet.
 ///
 /// `inbox` is where everything arrives, and `tell` is the way into it, which
 /// each connection's listener is given a copy of.
-pub fn keep(socket: &Path, view: &watch::Sender<View>, tell: &mpsc::Sender<Heard>, inbox: &mpsc::Receiver<Heard>) {
+pub fn keep(socket: &Path, view: &watch::Sender<View>, said: &Said, tell: &mpsc::Sender<Heard>, inbox: &mpsc::Receiver<Heard>) {
     let mut connection = 0;
+    // Whether this is a conversation asked for after an ending. The ending
+    // then stays on the page until the new conversation's first page takes
+    // its place, so that nobody is shown a moment of nothing between them.
+    let mut again = false;
     loop {
         connection += 1;
         view.send_modify(|view| {
             view.link = Link::Connecting;
-            view.page = None;
             view.without_a_turn();
+            if again {
+                view.waiting = Some(STARTING_AGAIN.into());
+            } else {
+                view.page = None;
+            }
             view.trail.clear();
             view.did("$", "installer-gxwi");
             view.did("connect", socket.display().to_string());
         });
-        match converse(socket, view, tell, inbox, connection) {
+        again = false;
+        match converse(socket, view, said, tell, inbox, connection) {
             // The conversation ended as conversations do. What it ended with
-            // stays on the page.
-            Ok(()) => return,
+            // stays on the page until someone asks to start again.
+            Ok(()) => {
+                loop {
+                    match inbox.recv() {
+                        Ok(Heard::Asked(Asked { seq: 0, again: true, .. })) => break,
+                        // Anything else is asked of a page that has gone, or
+                        // is the last of a connection that is over.
+                        Ok(_) => {}
+                        // Nothing can ask any more: the process is going.
+                        Err(_) => return,
+                    }
+                }
+                again = true;
+                continue;
+            }
             Err(why) => {
                 eprintln!("installer-gxwi: {why}; trying again");
                 view.send_modify(|view| {
@@ -106,6 +143,7 @@ pub fn keep(socket: &Path, view: &watch::Sender<View>, tell: &mpsc::Sender<Heard
 fn converse(
     socket: &Path,
     view: &watch::Sender<View>,
+    said: &Said,
     tell: &mpsc::Sender<Heard>,
     inbox: &mpsc::Receiver<Heard>,
     connection: u64,
@@ -124,7 +162,7 @@ fn converse(
         .name("installerd".into())
         .spawn(move || listen(listener, connection, &tell))
         .map_err(|e| format!("listener thread: {e}"))?;
-    let outcome = talk(&mut stream, view, inbox, connection);
+    let outcome = talk(&mut stream, view, said, inbox, connection);
     // Whichever way it went, the listener is let go: it is reading, and this
     // is what ends its read.
     let _ = stream.shutdown(Shutdown::Both);
@@ -153,6 +191,7 @@ fn listen(mut stream: UnixStream, connection: u64, tell: &mpsc::Sender<Heard>) {
 fn talk(
     stream: &mut UnixStream,
     view: &watch::Sender<View>,
+    said: &Said,
     inbox: &mpsc::Receiver<Heard>,
     connection: u64,
 ) -> Result<(), String> {
@@ -199,6 +238,7 @@ fn talk(
                     // A rescan may have taken the chosen disk away.
                     chosen = chosen.filter(|disk| view::can_choose(turn, disk));
                 }
+                hear(said, turn, matches!(event, Event::NewTurn));
                 view.send_modify(|view| {
                     if matches!(event, Event::NewTurn) {
                         let class = if turn.class.is_empty() { String::new() } else { format!("  class={}", turn.class.join(",")) };
@@ -213,7 +253,7 @@ fn talk(
             Event::Ended(end) => {
                 view.send_modify(|view| {
                     view.without_a_turn();
-                    view.page = Some(Page::ended(&end));
+                    view.page = Some(Page::ended(view.page.take(), &end));
                 });
                 return Ok(());
             }
@@ -233,6 +273,19 @@ fn talk(
             Event::Listing(_) => {}
         }
     }
+}
+
+/// Keeps what the job on `turn` has said of itself. A page's log only grows,
+/// so only what is new is taken; another page starts it afresh, and one that
+/// is no job's leaves it empty.
+fn hear(said: &Said, turn: &msip::msg::Turn, another: bool) {
+    let lines = view::said(turn);
+    let mut said = said.lock().unwrap_or_else(|e| e.into_inner());
+    if another || lines.len() < said.len() {
+        said.clear();
+    }
+    let new = lines[said.len()..].iter().map(|line| line.as_str().unwrap_or_default().to_string());
+    said.extend(new);
 }
 
 /// Does what a browser asked for, if it still makes sense: the page it was
@@ -284,11 +337,38 @@ mod tests {
     #[test]
     fn what_a_browser_asks_for_is_read_whichever_it_is() {
         let press: Asked = serde_json::from_str(r#"{ "seq": 3, "press": "nav.back" }"#).unwrap();
-        assert_eq!(press, Asked { seq: 3, press: Some("nav.back".into()), choose: None });
+        assert_eq!(press, Asked { seq: 3, press: Some("nav.back".into()), choose: None, again: false });
         let choose: Asked = serde_json::from_str(r#"{ "seq": 3, "choose": "/dev/sda" }"#).unwrap();
-        assert_eq!(choose, Asked { seq: 3, press: None, choose: Some("/dev/sda".into()) });
+        assert_eq!(choose, Asked { seq: 3, press: None, choose: Some("/dev/sda".into()), again: false });
+        // Starting again is asked of no page: the conversation is over.
+        let again: Asked = serde_json::from_str(r#"{ "seq": 0, "again": true }"#).unwrap();
+        assert_eq!(again, Asked { seq: 0, press: None, choose: None, again: true });
         // It must say which page it was looking at.
         assert!(serde_json::from_str::<Asked>(r#"{ "press": "nav.back" }"#).is_err());
         assert!(serde_json::from_str::<Asked>("press nav.back").is_err());
+    }
+
+    #[test]
+    fn what_a_job_says_is_kept_whole_and_only_what_is_new_is_taken() {
+        let page = |id: &str, lines: &[&str]| -> msip::msg::Turn {
+            serde_json::from_value(serde_json::json!({
+                "seq": 4, "id": id, "elements": [{ "ref": "out", "type": "log", "lines": lines }],
+            }))
+            .unwrap()
+        };
+        let said = Said::default();
+        let kept = || said.lock().unwrap().clone();
+        hear(&said, &page("install.progress", &["one"]), true);
+        hear(&said, &page("install.progress", &["one", "two", "three"]), false);
+        assert_eq!(kept(), ["one", "two", "three"]);
+        // The same again adds nothing.
+        hear(&said, &page("install.progress", &["one", "two", "three"]), false);
+        assert_eq!(kept().len(), 3);
+        // Another job's page starts it afresh, and a page that is no job's
+        // leaves nothing.
+        hear(&said, &page("repair.progress", &["four"]), true);
+        assert_eq!(kept(), ["four"]);
+        hear(&said, &page("mode", &[]), true);
+        assert!(kept().is_empty());
     }
 }

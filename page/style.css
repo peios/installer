@@ -555,6 +555,175 @@ h1 {
 .committed .layout.confirm-layout .edge { opacity: 0; transition: opacity .5s; }
 .committed .layout.confirm-layout { box-shadow: 0 0 32px -6px var(--accent-glow); transition: box-shadow .6s; }
 
+/* ---- a job as it runs: one figure for the whole, the phases as a list, what
+   the job says beneath, and the disk being made beside them ---- */
+.turn[data-kind="progress"] {
+    display: grid;
+    grid-template-columns: minmax(0, 540px) minmax(300px, 420px);
+    gap: clamp(28px, 5vw, 72px);
+    align-items: center;
+    max-width: none;
+}
+/* a job on a system already there: there is no disk being made to draw */
+.turn[data-kind="progress"].alone { grid-template-columns: minmax(0, 600px); }
+.turn[data-kind="progress"] .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.turn[data-kind="progress"] h1 { font-size: clamp(2rem, 3.8vw, 2.8rem); outline: none; }
+.turn[data-kind="progress"] h1.swap { animation: swap .7s var(--ease-out); }
+.turn[data-kind="progress"] .lede { max-width: 52ch; margin-top: -6px; overflow-wrap: anywhere; }
+/* what installerd said of a job that stopped, as it said it */
+.said { margin: -6px 0 0; font: 400 12.5px/1.6 var(--font-mono); color: var(--text-muted); overflow-wrap: anywhere; }
+.said code { font: inherit; color: var(--danger); }
+
+.overall { display: flex; align-items: center; gap: 20px; }
+.pct {
+    position: relative;
+    display: flex; align-items: baseline;
+    min-width: 2.6ch;
+    font: 700 clamp(3.4rem, 7vw, 5rem)/.9 var(--font-display);
+    letter-spacing: -.04em;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+.pct .num, .pct .sign { transition: opacity .35s; }
+.pct .sign { font-size: .42em; margin-left: .08em; letter-spacing: 0; color: var(--text-muted); }
+/* finished, the figure gives way to a tick that draws itself */
+.done-check { position: absolute; left: 0; top: 50%; translate: 0 -50%; width: .9em; height: .9em; color: var(--ok); overflow: visible; }
+.done-check circle, .done-check path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 2; stroke-dashoffset: 1.05; }
+.finished .pct .num, .finished .pct .sign { opacity: 0; }
+.finished .pct { min-width: 0; width: .9em; height: .9em; }
+.finished .done-check circle { stroke-dashoffset: 0; transition: stroke-dashoffset .7s cubic-bezier(.65, 0, .35, 1) .15s; }
+.finished .done-check path { stroke-dashoffset: 0; transition: stroke-dashoffset .45s var(--ease-out) .7s; }
+.finished .done-check { filter: drop-shadow(0 0 .15em rgb(95 224 168 / 55%)); }
+.overall-now { display: grid; gap: 5px; min-width: 0; }
+.overall-now b { font: 600 1.15rem/1.2 var(--font-display); color: var(--text-primary); }
+.overall-now span { font: 400 12px/1.4 var(--font-mono); color: var(--text-muted); }
+/* stopped, the list says where, and one figure for the whole says nothing */
+.stopped .overall { display: none; }
+
+.phases { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.phase { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 6px 0; }
+.st { position: relative; width: 22px; height: 22px; }
+.st svg { position: absolute; inset: 0; width: 22px; height: 22px; overflow: visible; }
+.st .ring { stroke: var(--border-strong); transition: opacity .3s, stroke .3s; }
+.st .arc { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 14 60; transform-origin: 11px 11px; opacity: 0; }
+.st .okay, .st .stop { stroke: none; opacity: 0; transform: scale(.3); transform-origin: 11px 11px; transition: opacity .25s, transform .45s cubic-bezier(.3, 1.6, .5, 1); }
+.st .okay circle { fill: var(--ok); }
+.st .stop circle { fill: var(--danger); }
+.st .okay path { stroke: #062015; stroke-width: 2; }
+.st .stop path { stroke: #2a0906; stroke-width: 2; }
+.phase.active .arc { opacity: 1; animation: spin .9s linear infinite; }
+.phase.active .ring { stroke: rgb(98 210 255 / 25%); }
+.phase.done .ring, .phase.failed .ring { opacity: 0; }
+.phase.done .okay, .phase.failed .stop { opacity: 1; transform: none; }
+.pname { font: 500 15px/1.3 var(--font-text); color: var(--text-muted); transition: color .3s; }
+.phase.active .pname { color: var(--text-primary); font-weight: 600; }
+.phase.done .pname { color: var(--text-secondary); }
+.phase.failed .pname { color: var(--danger); font-weight: 600; }
+.pval { font: 500 12px/1 var(--font-mono); color: var(--accent-quiet); font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .3s; }
+.phase.active .pval, .phase.failed .pval, .phase.skipped .pval { opacity: 1; }
+.phase.failed .pval { color: var(--danger); }
+.phase.skipped .pval { color: var(--text-muted); font-family: var(--font-text); }
+/* the bar of the phase under way, or of the one the job stopped in */
+.ptrack { grid-column: 2 / -1; height: 0; margin-top: 0; border-radius: 3px; background: var(--surface-2); overflow: hidden; transition: height .35s, margin-top .35s; }
+.phase.active .ptrack, .phase.failed .ptrack { height: 4px; margin-top: 8px; }
+.ptrack i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #1f8fc4, var(--accent)); box-shadow: 0 0 10px var(--accent-glow); }
+.phase.failed .ptrack i { background: var(--danger); box-shadow: none; }
+
+.details { display: grid; gap: 8px; }
+.details-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 18px; }
+.details-head { margin: 0; font: 500 12px/1 var(--font-text); letter-spacing: .06em; color: var(--text-muted); }
+.details .link { padding: 5px 9px; font-size: 13px; text-decoration: none; }
+/* the last of what the job said, the earlier lines fading out above; once
+   the job is over it is a list to read, and scrolls */
+.log {
+    list-style: none; margin: 0;
+    height: 104px; padding: 10px 14px; box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid var(--border-default); border-radius: 12px;
+    background: rgb(6 8 12 / 55%);
+    font: 400 11.5px/1.6 var(--font-mono);
+    color: var(--text-muted);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 50%);
+    mask-image: linear-gradient(to bottom, transparent, #000 50%);
+}
+.log li { white-space: pre; overflow: hidden; text-overflow: ellipsis; animation: logline .35s var(--ease-out); }
+.log .pr { color: var(--accent-quiet); }
+.log .cmd { color: var(--text-secondary); }
+.log .say { color: var(--text-body); }
+@keyframes logline { from { opacity: 0; transform: translateY(6px); } }
+.finished .log, .stopped .log { overflow-y: auto; -webkit-mask-image: none; mask-image: none; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.finished .log li, .stopped .log li { white-space: pre-wrap; overflow-wrap: anywhere; }
+.stopped .log { height: 148px; }
+.log:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nav.ends { justify-content: flex-start; }
+.nav.ends:not([hidden]) { animation: swap .6s var(--ease-out) .5s both; }
+.nav.ends .btn[aria-disabled="true"] { opacity: .6; cursor: progress; }
+
+/* the disk being made. Each phase of an install moves its own part of the
+   picture, by how far along it is (0 to 1): --made lays the disk out, --fmt
+   formats it, --copy fills the root, --boot makes the EFI partition one the
+   machine starts from. */
+.build {
+    --made: 0; --fmt: 0; --copy: 0; --boot: 0;
+    display: grid; gap: 18px;
+    padding: 24px;
+    border: 1px solid var(--border-default); border-radius: 18px;
+    background: rgb(14 17 22 / 55%);
+    backdrop-filter: blur(14px);
+    transition: border-color .8s, box-shadow .8s;
+}
+.build-head { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 14px; align-items: center; }
+.build-head .glyph { width: 52px; height: 52px; border-radius: 14px; color: var(--accent); background: rgb(98 210 255 / 12%); }
+.build-head .glyph svg { width: 28px; height: 28px; }
+.layout.made { height: 52px; border-radius: 12px; }
+/* the disk erased and not yet laid out */
+.layout.made::before {
+    content: ""; position: absolute; inset: 0;
+    background: repeating-linear-gradient(135deg, rgb(255 255 255 / 9%) 0 6px, transparent 6px 12px);
+    opacity: calc(1 - var(--made));
+}
+.layout.made .ls { overflow: hidden; border-radius: 10px; background: none; animation: none; opacity: calc(.22 + .78 * var(--made)); }
+.layout.made .ls.r-esp { box-shadow: inset 0 0 0 1.5px rgb(157 140 255 / 75%); background: rgb(157 140 255 / calc(var(--fmt) * 16%)); }
+.layout.made .ls.r-root { box-shadow: inset 0 0 0 1.5px rgb(98 210 255 / 45%); background: rgb(98 210 255 / calc(var(--fmt) * 9%)); }
+.layout.made .fill { position: absolute; top: 0; bottom: 0; left: 0; }
+.layout.made .r-esp .fill { width: 100%; background: var(--esp); opacity: calc(var(--boot) * .9); }
+.layout.made .r-root .fill {
+    width: calc(var(--copy) * 100%);
+    background: linear-gradient(100deg, #1f8fc4, var(--accent) 60%, #b5ecff);
+    background-size: 200% 100%;
+    animation: sheen 6s ease-in-out infinite alternate;
+}
+/* the leading edge of the copy, which is where the stars go in */
+.layout.made .r-root .fill::after {
+    content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 3px;
+    background: #fff; box-shadow: 0 0 14px 4px var(--accent-glow);
+    opacity: 0; transition: opacity .4s;
+}
+.copying .layout.made .r-root .fill::after { opacity: 1; }
+.booting .layout.made .r-esp { animation: espglow 1.4s ease-in-out infinite; }
+@keyframes espglow { 50% { box-shadow: inset 0 0 0 1.5px #fff, 0 0 18px rgb(157 140 255 / 80%); } }
+/* holding everything the stars brought, until the job is over */
+.charged .layout.made { animation: charge 1.6s ease-in-out infinite alternate; }
+@keyframes charge {
+    from { box-shadow: 0 0 10px -2px var(--accent-glow); }
+    to { box-shadow: 0 0 34px 2px var(--accent-glow), 0 0 0 1px rgb(155 228 255 / 45%); }
+}
+.parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.part { display: grid; grid-template-columns: 10px minmax(0, 1fr) 20px; gap: 10px; align-items: center; opacity: calc(.3 + .7 * var(--made)); }
+.part b { display: block; font: 600 14px/1.3 var(--font-text); color: var(--text-primary); overflow-wrap: anywhere; }
+.part span { font: 400 11.5px/1.4 var(--font-mono); color: var(--text-muted); }
+.part .sw { width: 10px; height: 10px; border-radius: 3px; }
+.part .sw.r-esp { background: var(--esp); }
+.part .sw.r-root { background: var(--accent); }
+.part .ok { width: 20px; height: 20px; scale: 0; transition: scale .45s cubic-bezier(.3, 1.6, .5, 1); }
+.part .ok circle { fill: var(--ok); }
+.part .ok path { fill: none; stroke: #062015; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.part.done .ok { scale: 1; }
+.finished .build { border-color: rgb(95 224 168 / 40%); box-shadow: 0 0 70px -24px rgb(95 224 168 / 55%); }
+.stopped .build { border-color: rgb(255 158 146 / 35%); box-shadow: 0 0 70px -28px rgb(178 59 46 / 55%); }
+/* what was copied before it stopped is not a system */
+.stopped .layout.made .r-root .fill { background: repeating-linear-gradient(135deg, rgb(255 158 146 / 60%) 0 5px, rgb(255 158 146 / 22%) 5px 10px); animation: none; }
+
 /* the moment it is begun, over everything */
 .flash {
     position: fixed; inset: 0; z-index: 6; pointer-events: none;
@@ -565,11 +734,26 @@ h1 {
 @keyframes flash-screen { 0% { opacity: .5; } 100% { opacity: 0; } }
 
 @media (max-width: 900px) {
-    .turn[data-kind="disk"], .turn[data-kind="confirm"] { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
+    .turn[data-kind="disk"], .turn[data-kind="confirm"], .turn[data-kind="progress"] { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
     /* One column: the panel is something to read before going on, so it
        comes before Back and Next, not after them. */
-    .turn[data-kind="disk"] > .col, .turn[data-kind="confirm"] > .col { display: contents; }
+    .turn[data-kind="disk"] > .col, .turn[data-kind="confirm"] > .col, .turn[data-kind="progress"] > .col { display: contents; }
     .turn[data-kind="disk"] > .col > .nav, .turn[data-kind="confirm"] > .col > .nav { order: 1; }
+    /* A job's page: how it stands, then the disk, then the phases and the
+       rest. */
+    .turn[data-kind="progress"] > .build { order: 1; }
+    .turn[data-kind="progress"] > .col > .phases, .turn[data-kind="progress"] > .col > .details, .turn[data-kind="progress"] > .col > .nav { order: 2; }
+    .turn[data-kind="progress"] .lede, .turn[data-kind="progress"] .said { margin-top: 0; }
+}
+
+/* A short window: a job's page is kept to the height there is, so that the
+   way on from its ending is not under the bottom bar. */
+@media (max-height: 760px) and (min-width: 901px) {
+    .turn[data-kind="progress"] .col { gap: 16px; }
+    .phase { padding: 4px 0; }
+    .log { height: 86px; }
+    .finished .log { height: 68px; }
+    .stopped .log { height: 104px; }
 }
 
 /* ---- the bottom bar: what the installer is doing, then how it stands ---- */
@@ -658,7 +842,8 @@ h1 {
    and every choice keeps an edge the system colours draw */
 @media (forced-colors: active) {
     #field, .aurora, .vignette, .flash { display: none; }
-    .act, .toast, .disk, .plan, .erased, .layout, .btn { border: 1px solid CanvasText; }
+    .act, .toast, .disk, .plan, .erased, .build, .layout, .btn, .log, .ptrack { border: 1px solid CanvasText; }
+    .ptrack i, .st svg { forced-color-adjust: none; }
     .destroy { border: 2px solid ButtonText; }
     .destroy .fill { forced-color-adjust: none; }
     .act.hl, .disk[aria-checked="true"] { outline: 3px solid Highlight; outline-offset: 1px; }
@@ -681,7 +866,7 @@ h1 {
     /* a disk's model is how it is recognised: it wraps rather than being cut */
     .disk .model { white-space: normal; overflow-wrap: anywhere; }
     .disk .size { font-size: .92rem; }
-    .erased { padding: 18px; }
+    .erased, .build { padding: 18px; }
     /* the button that erases has the width to itself, under the way back */
     .turn[data-kind="confirm"] .hold-group { flex: 1 1 100%; justify-items: stretch; }
     .turn[data-kind="confirm"] .hold-hint { text-align: center; }

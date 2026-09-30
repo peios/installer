@@ -267,15 +267,12 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
 
     /** The page is setting off. A hold under way is let go and what it did
         to the stage is undone; a page that was begun leaves as it is, the
-        disk shown as it will be. */
+        disk shown as it will be and the stars left even for the page that
+        follows to take up. */
     function leave() {
         if (!parts) return;
-        if (committed) {
-            clearTimeout(commitTimer);
-            field.even(0);
-        } else {
-            reset();
-        }
+        if (committed) clearTimeout(commitTimer);
+        else reset();
         stage.style.setProperty("--heat", 0);
     }
 

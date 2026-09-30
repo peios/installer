@@ -9,11 +9,10 @@
 //
 // It goes to the confirmation the way a person does, and looks at what the
 // page says of the disk, that the button is held and not pressed, that
-// letting go undoes it, that something which cannot hold can press twice,
-// and that Back returns to the disks with the disk still chosen.
-//
-// The installation itself is not drawn yet, so a hold that completes is not
-// sent on: the page says so and nothing is begun.
+// letting go undoes it, that Back returns to the disks with the disk still
+// chosen, and that something which cannot hold can press twice, which begins
+// the installation (a pretended one). What a hold that completes leads to is
+// progress.mjs's to look at.
 //
 // installerd comes from ../installer (cargo +1.98.1 build -p installerd) and
 // installer-gxwi from this checkout (cargo +1.98.1 build).
@@ -169,18 +168,6 @@ try {
         out.let.after !== null && out.let.hint === "Press and hold" && out.let.disk.wiped === 0 && !out.let.committed && out.let.toast === null
         && (await elsewhere()).waiting === null);
 
-    // Held all the way. The installation itself is not drawn yet, so it is
-    // not begun: the page says so, and the hold falls back.
-    await pointer("mousePressed", at);
-    out.full = await eventually(seen, (s) => s.toast !== null, 4);
-    await pointer("mouseReleased", at);
-    expect("a hold that completes is not sent on while what it leads to is not drawn, and says so",
-        out.full.after !== null && out.full.toast === "The step after this one is not drawn yet." && !out.full.committed && !out.full.flashed);
-    expect("it took the whole of the hold to get there", out.full.after >= 1.2);
-    out.fell = await eventually(seen, (s) => s.k === 0, 3);
-    const after = await elsewhere();
-    expect("and nobody is moved on, and nothing is under way", out.fell.after !== null && after.page.kind === "confirm" && after.waiting === null);
-
     // A key held is a hold too, and a tap of it is not.
     await js(`document.querySelector("#turn .destroy").focus()`);
     await key(" ", "Space", 32);
@@ -193,19 +180,18 @@ try {
     out.keyed = await seen();
     await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
     expect("Enter held down on the button holds it", out.keyed.holding && out.keyed.k > 0.2);
-    await eventually(seen, (s) => s.k === 0, 3);
-    await sleep(3000); // the toast goes
+    out.unkeyed = await eventually(seen, (s) => s.k === 0, 3);
+    expect("and let up before it is full, begins nothing", out.unkeyed.after !== null && !out.unkeyed.committed && (await elsewhere()).waiting === null);
 
     // What cannot hold presses twice: a screen reader's press is a click no
-    // pointer and no key made.
+    // pointer and no key made. One press alone asks for another, and is
+    // forgotten if none comes.
     await click("#turn .destroy");
     out.asked = await eventually(seen, (s) => s.hint === "Press again to confirm" && s.said !== "", 3);
     expect("a press that cannot be held is asked for again, out loud",
-        out.asked.after !== null && out.asked.k === 0 && out.asked.toast === null && out.asked.said === "Erase disk and install: press again to confirm. This cannot be undone.");
-    await click("#turn .destroy");
-    out.twice = await eventually(seen, (s) => s.toast !== null, 3);
-    expect("and the second press is taken as meant", out.twice.after !== null && out.twice.toast === "The step after this one is not drawn yet.");
-    await eventually(seen, (s) => s.k === 0, 3);
+        out.asked.after !== null && out.asked.k === 0 && !out.asked.committed && out.asked.said === "Erase disk and install: press again to confirm. This cannot be undone.");
+    out.lapsed = await eventually(seen, (s) => s.hint === "Press and hold", 8);
+    expect("and one press alone comes to nothing", out.lapsed.after !== null && out.lapsed.after > 3 && !out.lapsed.committed && (await elsewhere()).page.kind === "confirm");
 
     // A narrow screen.
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -240,6 +226,24 @@ try {
     expect("nothing is fetched from anywhere else", out.elsewhere.length === 0);
     out.problems = [...chrome.problems];
     expect("the page reports no errors", out.problems.length === 0);
+
+    // Pressed twice by something that cannot hold, which is taken as meant:
+    // the installation (a pretended one) is begun, for everyone looking.
+    await toConfirm("/dev/sda");
+    await click("#turn .destroy");
+    await eventually(seen, (s) => s.hint === "Press again to confirm", 3);
+    await click("#turn .destroy");
+    out.twice = await eventually(seen, (s) => s.committed || s.kind === "progress", 3);
+    expect("a second press soon after the first is taken as meant, and begins it", out.twice.after !== null && (out.twice.kind === "progress" || out.twice.hint === "Starting…"));
+    out.begun = await eventually(seen, (s) => s.kind === "progress" && s.showing, 10);
+    expect("and the installation's page takes the confirmation's place, the page no longer warm",
+        out.begun.after !== null && out.begun.heading === "Installing" && out.begun.heat === 0 && (await elsewhere()).page.kind === "progress");
+    // It is seen through, and the conversation started again, for what
+    // follows here.
+    await eventually(seen, (s) => s.kind === "progress" && s.heading === "Installation complete", 60);
+    await sleep(1200);
+    await click("#turn .nav.ends .btn");
+    await eventually(seen, onFirstPage, 15);
 
     // A disk whose names are markup: they are names, and shown as written.
     installerd.kill();

@@ -20,6 +20,10 @@ draws it.
   an action or choose a disk, and the process answers `installerd`. Nothing
   comes back but the state, so two people looking see the same disk chosen
   and are moved on together.
+- **A job's end is the conversation's.** `installerd` ends the conversation
+  when an installation finishes or fails. What it ended with stays on the
+  page until someone asks to start again, and then the process opens another
+  conversation.
 - **It is the installer's and no other's.** It knows `installerd`'s pages by
   their ids and draws each as the page it is. It is not a general front end
   to MSIP; `install-tui` in the `installer` repository is the one that draws
@@ -27,20 +31,28 @@ draws it.
 
 ## Where it has got to
 
-The intro, and three pages: what to do with this machine, which disk, and,
-for an install, whether the disk is really to be erased. The disk page shows
-each disk, what is on it, and what an install would make of it or which
-Peios system it holds. The confirmation shows the disk chosen and what would
-be missed of it, and its button is held down rather than pressed.
+The intro, and an installation from its first page to its end: what to do
+with this machine, which disk, whether the disk is really to be erased, and
+the installation as it runs.
 
-The pages after these are built one at a time, and an action that leads to
-a page not drawn here says so instead of moving everyone on to it. Today
-those are the confirmation's button, which would begin the installation,
-and the disk page's Next for an upgrade or a repair.
+- **The disk page** shows each disk, what is on it, and what an install would
+  make of it or which Peios system it holds.
+- **The confirmation** shows the disk chosen and what would be missed of it.
+  Its button is held down rather than pressed, and holding it all the way
+  begins the installation.
+- **The installation** shows the phases `installerd` reports and one figure
+  for the whole, the disk being made, and what the job says of itself. It
+  ends finished or stopped, in `installerd`'s words, and what the job said
+  can be saved whole from `/log.txt`.
 
-The disk page and the confirmation draw what `installerd` has only lately
-learned to say (the `detail` of each row and of the confirmation's
-sentence), so they want an `installerd` from a current `../installer`.
+An upgrade's and a repair's pages are not drawn yet. An action that leads to
+a page not drawn here says so instead of moving everyone on to it: today,
+the disk page's Next for an upgrade or a repair. Restarting the machine once
+an installation has finished is not here either.
+
+The pages draw what `installerd` has only lately learned to say (the
+`detail` of each row of disks, of the confirmation's sentence and of the
+running job's), so they want an `installerd` from a current `../installer`.
 Against an older one they show what it says in words and leave the rest out.
 
 It is not packaged and not on any image yet.
@@ -58,9 +70,14 @@ dev/host.sh                                        # http://127.0.0.1:7790/
 node dev/browser/intro.mjs http://127.0.0.1:7790/  # the intro and the first page
 node dev/browser/disk.mjs                          # the disk page
 node dev/browser/confirm.mjs                       # the confirmation
+node dev/browser/progress.mjs                      # an installation, finishing and failing
 node dev/browser/states.mjs                        # what it shows when things go away
 cargo +1.98.1 test
 ```
+
+A pretended installation takes about a quarter of a minute.
+`FAIL_AT=copy dev/host.sh` makes each one fail part way through that phase,
+to look at an installation that goes wrong.
 
 In the GXWI dev VM, as the overlay it really is, with disks for `installerd`
 to find (`dev/disks.sh` makes them: a Windows disk, another Linux, a disk
@@ -72,6 +89,7 @@ dev/push.sh             # build this and installerd, and put both in the VM
 dev/overlay.sh on       # http://127.0.0.1:7780/ is now the installer, with no logon
 node dev/browser/intro.mjs
 node dev/browser/machine.mjs   # the disk page and the confirmation, of the VM's own disks
+node dev/browser/install.mjs   # a real installation, onto the empty stick: it erases it
 dev/overlay.sh off      # the logon page and the desktop again
 ```
 

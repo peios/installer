@@ -7,11 +7,14 @@
 //
 // The burst leaves them as a cloud round the middle of the screen. A page can
 // have that evened out across the whole of it, by as much as it says, and let
-// it fall back.
+// it fall back. It can have them drain into a place on the page, each star
+// setting off at its own moment so that the flow is steady from the first
+// second, and have what drained come back out at once. And it can have them
+// stop.
 //
 // The field knows nothing of what the installer is doing. It is told when to
-// gather, when to let go and how far to even out, and draws one frame when
-// asked.
+// gather, when to let go, how far to even out, where to drain to and when to
+// stop, and draws one frame when asked.
 
 const PALETTE = [["#62d2ff", .55], ["#c8f1ff", .25], ["#9d8cff", .12], ["#4fd1c5", .08]];
 
@@ -41,6 +44,30 @@ export function createField(canvas, mark, reduced) {
     let mx = 0, my = 0, smx = 0, smy = 0;
     // How far the field is evened out, 0 to 1, and how far it is heading.
     let spread = 0, spreadTo = 0;
+    // What the field is doing once it is a backdrop: drifting ("ambient"),
+    // draining into a place on the page ("stream"), or stopped ("stall").
+    let mode = "ambient";
+    // The stream: where it goes (a function, asked each frame, since the
+    // place moves with the page), how many stars are in it, how many it
+    // settles at, and whether it has stopped taking new ones.
+    let into = null, streaming = 0, streamCap = 0, closed = false;
+    // The share of the stars a steady stream is made of. The rest drain in
+    // once and wait unseen until they are let out again.
+    const STREAM_SHARE = .4;
+    // The clock `draw` was last given.
+    let now = 0;
+
+    // Where a drifting star is drawn: where it is, moved a little by the
+    // pointer, and as far toward its place in an even field as the field is
+    // evened out.
+    function drawnAt(p) {
+        let x = p.x + smx * p.z * 22, y = p.y + smy * p.z * 22;
+        if (spread > .001 && p.ex !== undefined) {
+            x += (p.ex - x) * spread;
+            y += (p.ey - y) * spread;
+        }
+        return [x, y];
+    }
 
     const driftX = (p, t) => p.sx + Math.sin(t * .0005 + p.ph) * 10 * p.z;
     const driftY = (p, t) => p.sy + Math.cos(t * .00043 + p.ph) * 10 * p.z;
@@ -105,6 +132,8 @@ export function createField(canvas, mark, reduced) {
         gatherAt = Infinity;
         captured = released = false;
         spread = spreadTo = 0;
+        mode = "ambient";
+        into = null;
     }
 
     /** The mark has moved (the window changed size): the stars aim at it where it now is. */
@@ -179,16 +208,130 @@ export function createField(canvas, mark, reduced) {
     }
 
     /** Evens the field out across the screen by `to`, from 0 (as it drifts)
-        to 1 (wholly even). It gets there over a few frames. */
+        to 1 (wholly even). It gets there over a few frames. Only a drifting
+        field is evened: one that is draining or stopped is left to that. */
     function even(to) {
-        if (reduced || !released) return;
+        if (reduced || !released || mode !== "ambient") return;
         // Setting out from rest, each star is given its place afresh; one
         // that is still falling back carries on toward the place it had.
         if (to > 0 && spreadTo === 0 && spread < .02) evenTargets();
         spreadTo = to;
     }
 
-    // The slow drift the field keeps once the burst has spent itself.
+    /** The stars drain into a place on the page. `where` is asked each frame
+        where that is: `left`, `width`, `y` (its middle) and `h` in page
+        pixels, and, while `edge` is set, the one point `ex` along it that
+        they all make for. Nothing, once the place has gone. */
+    function stream(where) {
+        if (reduced || !released || mode === "stream") return;
+        if (mode === "stall") wake();
+        for (const p of parts) {
+            // Each sets off from where it is drawn, all of them within six
+            // seconds: about the rate the steady stream then runs at.
+            [p.x, p.y] = drawnAt(p);
+            p.vx = p.vy = 0;
+            p.st = true;
+            p.wait = now + Math.random() * 6000;
+            p.tu = Math.random();
+            p.tv = Math.random();
+        }
+        streaming = parts.length;
+        streamCap = Math.round(parts.length * STREAM_SHARE);
+        closed = false;
+        spread = spreadTo = 0;
+        into = where;
+        mode = "stream";
+    }
+
+    /** No more stars set out: the place keeps the ones it has taken in. */
+    function hold() {
+        if (mode === "stream") closed = true;
+    }
+
+    // A star the stream has taken in sets out again, from far off.
+    function respawn(p, place, t) {
+        const angle = Math.random() * Math.PI * 2;
+        const out = Math.hypot(W, H) * (.55 + Math.random() * .35);
+        p.x = place.left + place.width / 2 + Math.cos(angle) * out;
+        p.y = place.y + Math.sin(angle) * out;
+        p.vx = p.vy = 0;
+        p.a = 0;
+        p.wait = t + Math.random() * 300;
+        p.tu = Math.random();
+        p.tv = Math.random();
+    }
+
+    /** What the stream carried comes back out of `from` (a rectangle, in
+        page pixels) at once, and the field drifts again behind it. Whether
+        there was a stream to let out. */
+    function finale(from) {
+        if (mode !== "stream") return false;
+        const cx = from.left + from.width / 2, cy = from.top + from.height / 2;
+        for (const p of parts) {
+            let angle;
+            if (p.st && now >= p.wait) {
+                // On its way in: thrown back the way it came.
+                angle = Math.atan2(p.y - cy, p.x - cx) + (Math.random() - .5) * .8;
+            } else if (Math.random() < .45) {
+                // Taken in: out of wherever in the place it went.
+                p.x = from.left + Math.random() * from.width;
+                p.y = from.top + Math.random() * from.height;
+                angle = Math.random() * Math.PI * 2;
+            } else {
+                // The rest fade back in where they can be seen.
+                p.x = Math.random() * W;
+                p.y = Math.random() * H;
+                p.vx = p.vy = p.a = 0;
+                p.st = false;
+                continue;
+            }
+            const speed = (2 + Math.random() * 9) * (.45 + p.z);
+            p.vx = Math.cos(angle) * speed;
+            p.vy = Math.sin(angle) * speed;
+            p.a = 1;
+            p.st = false;
+        }
+        into = null;
+        mode = "ambient";
+        return true;
+    }
+
+    /** Something went wrong. Stars the stream had taken in stay taken; the
+        rest coast to a stop where they are, and dim. */
+    function stall() {
+        if (reduced || !released || mode === "stall") return;
+        for (const p of parts) {
+            if (mode === "stream") {
+                p.hid = !p.st;
+            } else {
+                [p.x, p.y] = drawnAt(p);
+                p.hid = false;
+            }
+        }
+        spread = spreadTo = 0;
+        into = null;
+        mode = "stall";
+    }
+
+    /** Back to the ordinary drift, from a stream or a stop. Stars that were
+        out of sight fade back in where they can be seen. */
+    function wake() {
+        if (mode === "ambient") return;
+        for (const p of parts) {
+            if (mode === "stream" ? !p.st : p.hid) {
+                p.x = Math.random() * W;
+                p.y = Math.random() * H;
+                p.vx = p.vy = p.a = 0;
+            }
+            p.hid = p.st = false;
+        }
+        into = null;
+        mode = "ambient";
+    }
+
+    // The slow drift the field keeps once the burst has spent itself. A
+    // star's place in an even field drifts with it, so an evened field moves
+    // as the cloud did.
     function drift(p, t) {
         const dvx = Math.cos(p.ph + t * .00013) * .14 * (.3 + p.z);
         const dvy = Math.sin(p.ph * 1.3 + t * .00011) * .1 * (.3 + p.z) - .04 * p.z;
@@ -198,6 +341,12 @@ export function createField(canvas, mark, reduced) {
         p.y += p.vy;
         if (p.x < -30) p.x += W + 60; else if (p.x > W + 30) p.x -= W + 60;
         if (p.y < -30) p.y += H + 60; else if (p.y > H + 30) p.y -= H + 60;
+        if (p.ex !== undefined) {
+            p.ex += p.vx;
+            p.ey += p.vy;
+            if (p.ex < -30) p.ex += W + 60; else if (p.ex > W + 30) p.ex -= W + 60;
+            if (p.ey < -30) p.ey += H + 60; else if (p.ey > H + 30) p.ey -= H + 60;
+        }
     }
 
     // A four-point sparkle, brightest for a moment every few seconds.
@@ -215,11 +364,15 @@ export function createField(canvas, mark, reduced) {
 
     /** One frame, at `t` ms on the intro's clock. */
     function draw(t) {
+        now = t;
         smx += (mx - smx) * .04;
         smy += (my - smy) * .04;
         spread += (spreadTo - spread) * .12;
         ctx.clearRect(0, 0, W, H);
         ctx.globalCompositeOperation = "lighter";
+        // Where the stream goes this frame. With nowhere to go, it is over.
+        const place = mode === "stream" ? into() : null;
+        if (mode === "stream" && !place) wake();
 
         // The moment the gathering starts, each star sets off from wherever
         // its drift has taken it.
@@ -230,15 +383,68 @@ export function createField(canvas, mark, reduced) {
 
         for (const p of parts) {
             let x, y, a, s;
-            if (released) {
+            if (released && mode === "stall") {
+                // Whatever was moving coasts to a stop, keeping only the
+                // faintest drift, and the field dims.
+                if (p.hid) continue;
+                p.vx += (Math.cos(p.ph + t * .00013) * .03 * (.3 + p.z) - p.vx) * .04;
+                p.vy += (Math.sin(p.ph * 1.3 + t * .00011) * .02 * (.3 + p.z) - p.vy) * .04;
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x < -30) p.x += W + 60; else if (p.x > W + 30) p.x -= W + 60;
+                if (p.y < -30) p.y += H + 60; else if (p.y > H + 30) p.y -= H + 60;
+                p.a += ((.05 + .22 * p.z * p.z) - p.a) * .02;
+                x = p.x;
+                y = p.y;
+                a = p.a;
+                s = .7 + p.z * 1.3;
+            } else if (released && mode === "stream") {
+                if (!p.st) continue;
+                if (t < p.wait) {
+                    // Not set off yet: it drifts on from where it was.
+                    drift(p, t);
+                    p.a += ((.1 + .5 * p.z * p.z) - p.a) * .03;
+                    x = p.x;
+                    y = p.y;
+                    a = p.a;
+                    s = .7 + p.z * 1.5;
+                } else {
+                    // Pulled straight at its own spot in the place, or at
+                    // the one point they all make for while there is one.
+                    const tx = place.edge ? place.ex : place.left + p.tu * place.width;
+                    const ty = place.y + (p.tv - .5) * place.h * .6;
+                    const dx = tx - p.x, dy = ty - p.y;
+                    const d = Math.hypot(dx, dy) || 1;
+                    const pull = .38 * (.6 + p.z);
+                    p.vx = p.vx * .95 + dx / d * pull;
+                    p.vy = p.vy * .95 + dy / d * pull;
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    if (d < 12) {
+                        // Taken in. It sets out again from far off, unless
+                        // the stream is still bigger than it settles at, or
+                        // the place is only keeping what it has.
+                        if (streaming > streamCap || closed) { p.st = false; streaming--; continue; }
+                        respawn(p, place, t);
+                    }
+                    p.a = Math.min(.95, p.a + .03);
+                    x = p.x;
+                    y = p.y;
+                    a = p.a;
+                    s = .8 + p.z * 1.4;
+                    // A short tail, the way it came.
+                    ctx.globalAlpha = a * .45;
+                    ctx.strokeStyle = p.col;
+                    ctx.lineWidth = s * .8;
+                    ctx.beginPath();
+                    ctx.moveTo(x - p.vx * 3, y - p.vy * 3);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                }
+            } else if (released) {
                 if (!reduced) drift(p, t);
                 p.a += ((.1 + .5 * p.z * p.z) - p.a) * .03;
-                x = p.x + smx * p.z * 22;
-                y = p.y + smy * p.z * 22;
-                if (spread > .001 && p.ex !== undefined) {
-                    x += (p.ex - x) * spread;
-                    y += (p.ey - y) * spread;
-                }
+                [x, y] = drawnAt(p);
                 a = p.a;
                 s = .7 + p.z * 1.5;
             } else if (!captured) {
@@ -259,7 +465,7 @@ export function createField(canvas, mark, reduced) {
             ctx.globalAlpha = a;
             ctx.fillStyle = p.col;
             ctx.fillRect(x - s / 2, y - s / 2, s, s);
-            if (p.glint && released && !reduced) glint(p, x, y, t);
+            if (p.glint && released && !reduced && mode === "ambient") glint(p, x, y, t);
         }
         ctx.globalAlpha = 1;
     }
@@ -273,5 +479,5 @@ export function createField(canvas, mark, reduced) {
         retarget();
     });
 
-    return { seed, gather, release, even, draw };
+    return { seed, gather, release, even, stream, hold, finale, stall, wake, draw };
 }

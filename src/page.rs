@@ -17,10 +17,11 @@ use std::sync::mpsc;
 
 use tokio::sync::watch;
 
-use crate::setup::{Asked, Heard};
+use crate::setup::{Asked, Heard, Said};
 use crate::view::View;
 
 const HTML: &str = "text/html; charset=utf-8";
+const TEXT: &str = "text/plain; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const SCRIPT: &str = "text/javascript; charset=utf-8";
 const FONT: &str = "font/woff2";
@@ -30,15 +31,17 @@ const FONT: &str = "font/woff2";
 const POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; \
     img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-/// What serving a browser takes: the state to show it, and the way to the
-/// thread that holds the conversation, for what it asks.
+/// What serving a browser takes: the state to show it, what the job has
+/// said of itself, and the way to the thread that holds the conversation,
+/// for what it asks.
 #[derive(Clone)]
 struct Served {
     view: watch::Receiver<View>,
+    said: Said,
     tell: mpsc::Sender<Heard>,
 }
 
-pub fn routes(view: watch::Receiver<View>, tell: mpsc::Sender<Heard>) -> Router {
+pub fn routes(view: watch::Receiver<View>, said: Said, tell: mpsc::Sender<Heard>) -> Router {
     let part = |content_type, bytes: &'static [u8]| get(move || async move { file(content_type, bytes) });
     Router::new()
         .route("/", part(HTML, include_bytes!("../page/index.html")))
@@ -49,13 +52,32 @@ pub fn routes(view: watch::Receiver<View>, tell: mpsc::Sender<Heard>) -> Router 
         .route("/disk.js", part(SCRIPT, include_bytes!("../page/disk.js")))
         .route("/field.js", part(SCRIPT, include_bytes!("../page/field.js")))
         .route("/intro.js", part(SCRIPT, include_bytes!("../page/intro.js")))
+        .route("/progress.js", part(SCRIPT, include_bytes!("../page/progress.js")))
         .route("/fonts/manrope.woff2", part(FONT, include_bytes!("../page/fonts/manrope.woff2")))
         .route("/fonts/schibsted-grotesk.woff2", part(FONT, include_bytes!("../page/fonts/schibsted-grotesk.woff2")))
         // The state, live. `any`, because a websocket arrives as a GET over
         // HTTP/1.1 and as a CONNECT over HTTP/2, which is how GXWI sends it.
         .route("/live", any(live))
+        .route("/log.txt", get(log))
         .fallback(elsewhere)
-        .with_state(Served { view, tell })
+        .with_state(Served { view, said, tell })
+}
+
+/// Everything the job has said of itself, as a file to keep. A page shows
+/// the last of it; the whole is what is wanted when a job has gone wrong, by
+/// someone who is at another machine and has nowhere else to get it from.
+async fn log(State(served): State<Served>) -> Response {
+    let mut text = served.said.lock().unwrap_or_else(|e| e.into_inner()).join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    let mut response = text.into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(TEXT));
+    headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=\"peios-setup.log\""));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 /// Everyone who reaches the machine is sent here, wherever they were going:
@@ -84,10 +106,10 @@ async fn live(State(served): State<Served>, upgrade: WebSocketUpgrade) -> Respon
 /// until the browser goes. What the browser asks for is passed to the thread
 /// that holds the conversation, which decides what comes of it; a browser
 /// learns the outcome as everyone does, from the state.
-async fn show(mut socket: WebSocket, Served { mut view, tell }: Served) {
-    // Whether the state can still change. Once the conversation is over
-    // nobody is left to change it, and what it ended with is what a browser
-    // goes on being shown, for as long as it stays.
+async fn show(mut socket: WebSocket, Served { mut view, tell, .. }: Served) {
+    // Whether the state can still change. It cannot once the thread that
+    // holds the conversation has gone, and what it left is then what a
+    // browser goes on being shown, for as long as it stays.
     let mut live = true;
     loop {
         let state = serde_json::to_string(&*view.borrow_and_update()).unwrap_or_default();
@@ -105,8 +127,7 @@ async fn show(mut socket: WebSocket, Served { mut view, tell }: Served) {
                     Some(Ok(Message::Text(text))) => {
                         // Something that is not a request is this page's
                         // mistake or somebody's mischief; either way it is
-                        // nothing to act on. Nor is one made once the
-                        // conversation is over and nobody is taking them.
+                        // nothing to act on.
                         if let Ok(asked) = serde_json::from_str::<Asked>(&text) {
                             let _ = tell.send(Heard::Asked(asked));
                         }

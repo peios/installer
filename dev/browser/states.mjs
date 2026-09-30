@@ -10,7 +10,8 @@
 //     back, and then to one that is not drawn yet, and back;
 //   - installerd goes, and comes back;
 //   - the installer itself goes, and comes back;
-//   - another front end sees an install through, and the conversation ends.
+//   - another front end sees an install through, and the conversation ends;
+//   - the installer goes while that ending is up, and comes back.
 //
 // installerd and msip-drive come from ../installer (cargo +1.98.1 build -p
 // installerd -p msip-drive) and installer-gxwi from this checkout (cargo
@@ -121,21 +122,32 @@ try {
     out.problems = chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p));
     expect("the page reports no errors but the connections it lost", out.problems.length === 0);
 
-    // Last, because nothing follows it: another front end sees an install
-    // through (a pretended one), and the conversation ends. What it ended
-    // with stays on the page, with nothing lost.
+    // Another front end sees an install through (a pretended one), and the
+    // conversation ends. What it ended with stays on the page, with nothing
+    // lost, until someone asks to start again.
     press("act.install");
     await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing);
     press("nav.next", "--set", "disk.target=/dev/sdc");
     await eventually(seen, (s) => s.heading === "Ready to install" && s.showing);
-    press("act.begin");
-    out.ended = await eventually(seen, (s) => s.heading === "Done" && s.showing, 40);
-    expect("an installation seen through elsewhere ends here too, in installerd's words",
-        out.ended.after !== null && out.ended.lede === "Installation complete. Reboot to start Peios.");
+    // It stays to the end of the job, which is how it leaves.
+    const driving = spawn(join(installer, "msip-drive"), ["--socket", socket, "--press", "act.begin"], { stdio: "ignore" });
+    out.running = await eventually(seen, (s) => s.heading === "Installing" && s.showing, 10);
+    expect("an installation begun elsewhere is shown here as it runs", out.running.after !== null && out.running.title === "Installing · Peios Setup");
+    out.ended = await eventually(seen, (s) => s.heading === "Installation complete" && s.showing, 40);
+    expect("and ends here too, in installerd's words", out.ended.after !== null && out.ended.lede === "Reboot to start Peios." && out.ended.status === "Finished");
     await sleep(4000);
     out.stayed = await seen();
-    expect("and what it ended with stays on the page", out.stayed.heading === "Done" && out.stayed.showing && out.stayed.statusIs !== "bad"
+    expect("and what it ended with stays on the page", out.stayed.heading === "Installation complete" && out.stayed.showing && out.stayed.statusIs !== "bad"
         && chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p)).length === 0);
+    driving.kill();
+
+    // The installer goes while the ending is up, and comes back: there is no
+    // conversation for it to join, so it opens one, at the first page.
+    installerGxwi.kill();
+    await eventually(seen, (s) => s.heading === "Lost touch with this machine" && s.showing);
+    installerGxwi = startInstaller();
+    out.reopened = await eventually(seen, onFirstPage, 15);
+    expect("an installer restarted after an ending starts from the first page", out.reopened.after !== null);
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));

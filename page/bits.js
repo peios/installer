@@ -45,6 +45,8 @@ export const glyph = (bus) => picture(GLYPHS[bus] ?? GLYPHS[""]);
 export const ALERT = icon("0 0 16 16", 1.5, '<path d="M8 1.75 15 14.25H1z"/><path d="M8 6.5v3.25M8 12h.01"/>');
 export const BACK = icon("0 0 18 18", 1.6, '<path d="M14.5 9h-11M8 4.5 3.5 9 8 13.5"/>');
 export const ONWARD = icon("0 0 18 18", 1.6, '<path d="M3.5 9h11M10 4.5 14.5 9 10 13.5"/>');
+export const AGAIN = icon("0 0 18 18", 1.6, '<path d="M3 9a6 6 0 1 0 1.8-4.3M3 3v3.5h3.5"/>');
+export const SAVE = icon("0 0 16 16", 1.6, '<path d="M8 2v8M4.75 7 8 10.25 11.25 7M2.5 12v1.5h11V12"/>');
 
 // Where an offset lands on a bar, in percent. Partitions get a floor of room
 // so the small ones can be seen (an EFI system partition is a two-thousandth
@@ -70,6 +72,28 @@ function barMap(total, spans, floor) {
     };
 }
 
+// Puts `node` where the partition `p` lies on a bar mapped by `at`.
+function placed(node, at, p) {
+    const left = at(p.start);
+    node.style.setProperty("--l", left.toFixed(3));
+    node.style.setProperty("--w", (at(p.start + p.bytes) - left).toFixed(3));
+    return node;
+}
+
+/**
+ * A disk as an install is making it, from installerd's `detail` of it: only
+ * what it becomes, each part with something inside it for the page to fill
+ * as the part is filled. What was on the disk is not drawn: by now it is
+ * going or gone.
+ */
+export function madeBar(el, detail) {
+    const becomes = detail.becomes ?? [];
+    const at = barMap(detail.bytes, becomes.map((b) => [b.start, b.bytes]), .05);
+    const bar = el("div", "layout made", becomes.map((b) => placed(el("i", `ls r-${b.role}`, [el("i", "fill")]), at, b)));
+    bar.setAttribute("role", "img");
+    return bar;
+}
+
 /**
  * A disk end to end, from installerd's `detail` of it: what is on it, and
  * over that, where an install is what it is for, what the install makes of
@@ -82,13 +106,7 @@ function barMap(total, spans, floor) {
 export function diskBar(el, detail, as = () => "was") {
     const partitions = detail.partitions ?? [], becomes = detail.becomes ?? [];
     const at = barMap(detail.bytes, [...partitions, ...becomes].map((p) => [p.start, p.bytes]), .05);
-    const piece = (p, className) => {
-        const node = el("i", `ls ${className}`);
-        const left = at(p.start);
-        node.style.setProperty("--l", left.toFixed(3));
-        node.style.setProperty("--w", (at(p.start + p.bytes) - left).toFixed(3));
-        return node;
-    };
+    const piece = (p, className) => placed(el("i", `ls ${className}`), at, p);
     const bar = el("div", "layout", [
         el("div", "old", partitions.map((p) => piece(p, becomes.length ? "doomed" : as(p)))),
     ]);

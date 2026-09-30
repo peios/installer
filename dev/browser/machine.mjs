@@ -118,15 +118,18 @@ try {
         expect("and draws the disk as installerd has just read it",
             out.confirm.confirm.under?.startsWith(`${windows.value} · `) && out.confirm.confirm.going === 4
             && out.confirm.confirm.legend[0] === "EFI system partition: 512 MiB · FAT32" && out.confirm.confirm.hint === "Press and hold");
-        // Held all the way: the installation itself is not drawn yet, so it
-        // is not begun, and the disk is left as it is.
+        // Held part of the way and let go, which begins nothing: this is the
+        // Windows disk, and it is left as it is. install.mjs is the check
+        // that holds it all the way, on a disk that is there to be erased.
         await sleep(900);
         const at = await js(`(() => { const r = document.querySelector("#turn .destroy").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
         await send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
-        out.held = await eventually(seen, (s) => s.toast !== null, 5);
+        await sleep(500);
         await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
-        expect("a hold that completes begins nothing while what it leads to is not drawn",
-            out.held.toast === "The step after this one is not drawn yet." && out.held.heading === "Ready to install");
+        out.held = await eventually(seen, (s) => s.confirm.hint === "Press and hold", 5);
+        await sleep(1500);
+        out.let = await seen();
+        expect("a hold let go of part way begins nothing", out.held.after !== null && out.let.heading === "Ready to install" && out.let.confirm.hint === "Press and hold");
         await click("#turn .btn.quiet");
         out.returned = await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing && s.disks.some((d) => d.checked), 60);
         expect("Back returns to the disks with the disk still chosen", out.returned.disks?.find((d) => d.checked)?.value === windows.value);

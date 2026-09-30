@@ -54,10 +54,12 @@ async fn main() {
     // Everything the conversation is to hear of, from installerd and from
     // browsers alike, in the order it came.
     let (tell, inbox) = std::sync::mpsc::channel();
-    let app = page::routes(view, tell.clone());
+    // What the job under way has said of itself, whole.
+    let said = setup::Said::default();
+    let app = page::routes(view, said.clone(), tell.clone());
     std::thread::Builder::new()
         .name("setup".into())
-        .spawn(move || setup::keep(&socket, &show, &tell, &inbox))
+        .spawn(move || setup::keep(&socket, &show, &said, &tell, &inbox))
         .unwrap_or_else(|e| die(&format!("setup thread: {e}")));
 
     if let Some(address) = listen {
