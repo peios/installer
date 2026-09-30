@@ -1,7 +1,7 @@
 //! installerd driven end to end over its socket by a scripted
-//! surface: mode → disk (with a rescan) → confirm → progress → END,
-//! plus a second surface attaching mid-install and a surface that
-//! cannot render being refused at bind time.
+//! surface: mode → disk (with a rescan) → confirm → progress → done →
+//! restart → END, plus a second surface attaching mid-install and a
+//! surface that cannot render being refused at bind time.
 
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::Arc;
@@ -194,18 +194,32 @@ fn full_install_flow_with_late_joiner() {
     assert!(matches!(late.recv(), Event::NewTurn));
     assert_eq!(late.turn_id(), "install.progress");
 
-    // Both ride the broadcast to END.
-    let mut a_done = false;
-    let mut late_done = false;
-    while !(a_done && late_done) {
-        if !a_done && let Event::Ended(end) = a.recv() {
-            assert_eq!(end.outcome, msip::msg::Outcome::Complete);
-            a_done = true;
+    // Both ride the broadcast to the page the finished job goes on to.
+    let finished = |s: &mut Surface| loop {
+        match s.recv() {
+            Event::NewTurn => break s.turn_id(),
+            Event::Updated => {}
+            other => panic!("expected the finished page, got {other:?}"),
         }
-        if !late_done && let Event::Ended(end) = late.recv() {
-            assert_eq!(end.outcome, msip::msg::Outcome::Complete);
-            late_done = true;
-        }
+    };
+    assert_eq!(finished(&mut a), "install.done");
+    assert_eq!(finished(&mut late), "install.done");
+    let page = a.session.page().unwrap();
+    assert_eq!(
+        page.element("done.summary").unwrap().state["text"],
+        "Installation complete. Reboot to start Peios."
+    );
+    assert!(page.element("act.reboot").unwrap().enabled);
+
+    // Asked to restart, installerd does (the dry run pretends), and the
+    // conversation ends saying so, to both.
+    a.answer("act.reboot", vec![]);
+    for s in [&mut a, &mut late] {
+        let Event::Ended(end) = s.recv() else {
+            panic!("expected END")
+        };
+        assert_eq!(end.outcome, msip::msg::Outcome::Complete);
+        assert_eq!(end.message.as_deref(), Some("Restarting the machine."));
     }
     // The log accumulated through folding: the late joiner's copy has
     // the early lines it never saw broadcast.
@@ -373,16 +387,28 @@ fn upgrade_flow_reaches_a_live_upgrade_button_and_finishes() {
     assert!(matches!(s.recv(), Event::NewTurn));
     assert_eq!(s.turn_id(), "upgrade.progress");
     loop {
-        if let Event::Ended(end) = s.recv() {
-            assert_eq!(end.outcome, msip::msg::Outcome::Complete);
-            assert!(
-                end.message
-                    .unwrap_or_default()
-                    .starts_with("Upgrade complete.")
-            );
-            break;
+        match s.recv() {
+            Event::NewTurn => break,
+            Event::Updated => {}
+            other => panic!("expected the finished page, got {other:?}"),
         }
     }
+    assert_eq!(s.turn_id(), "upgrade.done");
+    assert!(
+        s.session
+            .page()
+            .unwrap()
+            .element("done.summary")
+            .unwrap()
+            .state["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Upgrade complete.")
+    );
+    // Not restarting goes back to the first page, in the same conversation.
+    s.answer("nav.start", vec![]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.turn_id(), "mode");
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -446,6 +472,103 @@ fn a_dry_run_told_to_fail_ends_the_conversation_failed() {
     );
     assert_eq!(last, [json!(100), json!(100), json!(52), json!(0)]);
 
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The dry run, on a machine whose service manager will not restart it.
+struct Unrestartable(DryRun);
+
+impl installerd::executor::Executor for Unrestartable {
+    fn probe_disks(&self) -> Vec<Disk> {
+        self.0.probe_disks()
+    }
+    fn phases(
+        &self,
+        kind: installerd::executor::JobKind,
+    ) -> &'static [installerd::executor::Phase] {
+        self.0.phases(kind)
+    }
+    fn medium_release(&self) -> Result<installerd::executor::Release, String> {
+        self.0.medium_release()
+    }
+    fn installed_release(&self, target: &str) -> Result<installerd::executor::Release, String> {
+        self.0.installed_release(target)
+    }
+    fn run(
+        &self,
+        kind: installerd::executor::JobKind,
+        target: &str,
+        progress: &dyn installerd::executor::Progress,
+    ) -> Result<Option<String>, String> {
+        self.0.run(kind, target, progress)
+    }
+    fn restart(&self) -> Result<(), String> {
+        Err("peinit did not take the request to restart the machine: access denied".into())
+    }
+}
+
+/// A restart that is refused is said on the finished page, which stays,
+/// and the conversation goes on.
+#[test]
+fn a_refused_restart_is_said_on_the_page_that_asked_for_it() {
+    let dir = std::env::temp_dir().join(format!("msip-test-norestart-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let socket = dir.join("installerd.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let executor: Arc<dyn installerd::executor::Executor> = Arc::new(Unrestartable(DryRun {
+        step_ms: 1,
+        inventory: Some(Inventory {
+            disks: vec![Disk {
+                device: "/dev/vdb".into(),
+                size: 8 * 1024 * 1024 * 1024,
+                ..Disk::default()
+            }],
+            ..Inventory::default()
+        }),
+        fail_at: None,
+    }));
+    let server = Server::new("install", "installerd/test", move || {
+        Box::new(Install::new(Arc::clone(&executor)))
+    });
+    thread::spawn(move || serve(listener, server));
+
+    let mut s = Surface::connect(&socket, types::ALL);
+    write_msg(
+        &mut s.stream,
+        MsgType::Start,
+        &Start {
+            kind: "install".into(),
+        },
+    )
+    .unwrap();
+    let Event::Bound(_) = s.recv() else { panic!() };
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.answer("act.install", vec![]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.answer("nav.next", vec![("disk.target", json!("/dev/vdb"))]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.answer("act.begin", vec![]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    while !matches!(s.recv(), Event::NewTurn) {}
+    assert_eq!(s.turn_id(), "install.done");
+
+    s.answer("act.reboot", vec![]);
+    assert!(matches!(s.recv(), Event::Updated));
+    assert_eq!(s.turn_id(), "install.done");
+    assert_eq!(
+        s.session
+            .page()
+            .unwrap()
+            .element("act.reboot")
+            .unwrap()
+            .error
+            .as_deref(),
+        Some("peinit did not take the request to restart the machine: access denied")
+    );
+    // The page still takes answers.
+    s.answer("nav.start", vec![]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.turn_id(), "mode");
     std::fs::remove_dir_all(&dir).ok();
 }
 

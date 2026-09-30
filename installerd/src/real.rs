@@ -940,6 +940,25 @@ impl Executor for Real {
         self.unmount_all(p);
         result
     }
+
+    /// Asks peinit for a reboot, as `reboot` does. peinit answers once it
+    /// has taken the request and before it stops anything, so there is
+    /// time to say so; its control descriptor grants SYSTEM the right.
+    fn restart(&self) -> Result<(), String> {
+        let out = Command::new("svctl")
+            .args(["shutdown", "reboot"])
+            .output()
+            .map_err(|e| format!("could not run svctl: {e}"))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let said = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        Err(if said.is_empty() {
+            "peinit did not take the request to restart the machine.".into()
+        } else {
+            format!("peinit did not take the request to restart the machine: {said}")
+        })
+    }
 }
 
 /// `dev.peios.peios-<VARIANT_ID>` from an os-release, refusing anything that is
