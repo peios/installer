@@ -8,8 +8,10 @@
 //
 // With --reboot, an installation that finishes is restarted into: Reboot
 // now is pressed, and the page is followed down and back until it says what
-// answered, which on the dev VM should be the Peios just installed. The VM is
-// then running that, and needs dev/boot.sh again to be an installer.
+// answered, which on the dev VM should be the Peios just installed: its
+// first-boot setup, from a medium dev/image.sh made, and otherwise Peios
+// with setup on its own screen. The VM is then running that, and needs
+// dev/boot.sh again to be an installer.
 //
 // THIS ERASES A DISK. It chooses the removable disk on the USB bus, which in
 // the dev VM is target/disks/blank.img and holds nothing anyone wants, and
@@ -45,6 +47,8 @@ const restartSeen = () => js(`(() => {
         mark: ["formed", "drawn", "sleeping", "popped", "word-in", "gone"].filter((c) => lockup.classList.contains(c)),
         ticker: [...document.querySelectorAll("#ticker li")].map((li) => li.textContent),
         status: document.getElementById("status-text").textContent,
+        conversation: document.documentElement.dataset.conversation ?? "install",
+        welcome: turn.querySelector("h1")?.getAttribute("aria-label") ?? null,
     };
 })()`);
 
@@ -175,16 +179,23 @@ try {
         out.going = await eventually(restartSeen, (r) => r.rebooting && r.ticker[0] === "reboot asked of installerd", 30);
         expect("pressed, installerd takes it and the page goes down with the machine", out.going.after !== null);
         out.away = await eventually(restartSeen, (r) => r.mark.includes("sleeping"), 20);
-        out.back = await eventually(restartSeen, (r) => ["running", "again", "lost"].includes(r.kind) && r.showing, 300);
+        out.back = await eventually(restartSeen, (r) => (["running", "again", "lost", "welcome"].includes(r.kind)) && r.showing, 300);
         await sleep(1600);
         out.back = { ...await restartSeen(), after: out.back.after };
         await picture("install-3-restarted.png");
-        expect("the machine comes back as Peios, and the page says so",
-            out.back.after !== null && out.back.kind === "running" && out.back.heading === "Peios is running"
-            && out.back.ledes[0]?.startsWith("The machine restarted from ") && out.back.ledes[0].endsWith(`(${stick}).`));
-        const answering = await fetch(site);
-        out.answering = { status: answering.status, installer: (await fetch(`${site}hello`)).headers.get("content-type") };
-        expect("and what answers at the address is not the installer", !out.answering.installer?.startsWith("application/json"));
+        const hello = await fetch(`${site}hello`);
+        out.answering = { status: hello.status, said: hello.headers.get("content-type")?.startsWith("application/json") ? await hello.json() : null };
+        if (out.back.conversation === "oobe") {
+            // A medium that carries first-boot setup in a browser (dev/image.sh).
+            expect("the machine comes back as Peios, and the page goes on to its first-boot setup",
+                out.back.after !== null && out.back.kind === "welcome" && out.back.welcome === "Welcome to Peios" && /^Connected to oobed\//.test(out.back.status));
+            expect("and what answers at the address is setup", typeof out.answering.said?.setup === "string");
+        } else {
+            expect("the machine comes back as Peios, and the page says so",
+                out.back.after !== null && out.back.kind === "running" && out.back.heading === "Peios is running"
+                && out.back.ledes[0]?.startsWith("The machine restarted from ") && out.back.ledes[0].endsWith(`(${stick}).`));
+            expect("and what answers at the address is not the installer", !out.answering.said?.installer);
+        }
     } else {
         await click('#turn .nav.ends [data-way="again"]');
         out.left = await eventually(seen, onFirstPage, 30);

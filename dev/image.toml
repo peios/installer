@@ -1,0 +1,43 @@
+# A peiso layer for trying the installer and first-boot setup end to end in
+# the dev VM, before either is packaged: the Experimental medium with this
+# checkout's programs, and those of ../installer and ../gxwi, put where their
+# packages will put them. dev/image.sh builds them and layers this over
+# ../dist/release's spec; dev/boot.sh boots what it makes when IMAGE names it.
+#
+# The medium's own system is what the installer copies onto the disk, so the
+# system installed from this medium has them too: an oobed that offers setup
+# in a browser, the oobe-gxwi it offers, and a gxwid with overlays. None of
+# them is signed or known to peipkg (an injected file has no package). Never
+# layer this over a release.
+#
+# Paths are relative to this file, and the programs are the release builds
+# dev/image.sh makes.
+
+# First-boot setup, and the program that draws it in a browser, where oobed
+# looks for it.
+[[file]]
+src  = "../../installer/target/x86_64-unknown-linux-musl/release/oobed"
+dest = "usr/sbin/oobed"
+
+[[file]]
+src  = "../target/release/oobe-gxwi"
+dest = "usr/bin/oobe-gxwi"
+
+# The installer and installerd, for the medium to be an installer without a
+# push, though dev/push.sh still takes their place.
+[[file]]
+src  = "../../installer/target/x86_64-unknown-linux-musl/release/installerd"
+dest = "usr/sbin/installerd"
+
+[[file]]
+src  = "../target/release/installer-gxwi"
+dest = "usr/bin/installer-gxwi"
+
+# GXWI with overlays, which the release does not have yet.
+[[file]]
+src  = "../../gxwi/target/release/gxwid"
+dest = "usr/bin/gxwid"
+
+[[file]]
+src  = "../../gxwi/target/x86_64-unknown-linux-musl/release/gxwi-server"
+dest = "usr/bin/gxwi-server"

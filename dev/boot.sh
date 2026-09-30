@@ -22,6 +22,12 @@
 #     dev/push.sh             # build, and put it in the VM
 #     dev/overlay.sh on       # http://127.0.0.1:7780/ is now the installer
 #     node dev/browser/machine.mjs
+#
+# IMAGE names a medium to boot instead of ../dist/release's newest:
+# dev/image.sh makes target/image, which carries this installer and
+# first-boot setup in a browser, for the machine installed from it to have.
+#
+#     IMAGE=target/image dev/boot.sh
 set -eu
 cd "$(dirname "$0")/.."
 dev/disks.sh
@@ -38,4 +44,6 @@ fi
 if [ -e "$d/peios.qcow2" ]; then
     extra="$extra$(drive peios peios.qcow2 qcow2) -device virtio-blk-pci,drive=peios"
 fi
-VM_EXTRA="$extra" DRIVE_ARGS="--uefi --reboot" exec ../gxwi/dev/boot.sh
+args="--uefi --reboot"
+[ -z "${IMAGE:-}" ] || args="$args --build $(realpath "$IMAGE")"
+VM_EXTRA="$extra" DRIVE_ARGS="$args" exec ../gxwi/dev/boot.sh
