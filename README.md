@@ -27,15 +27,21 @@ draws it.
 
 ## Where it has got to
 
-The intro, and two pages: what to do with this machine, and which disk. The
-disk page shows each disk, what is on it, and what an install would make of
-it or which Peios system it holds. Its Next goes nowhere yet: the pages
-after it are built one at a time, and an action that leads to a page not
-drawn here says so instead of moving everyone on to it.
+The intro, and three pages: what to do with this machine, which disk, and,
+for an install, whether the disk is really to be erased. The disk page shows
+each disk, what is on it, and what an install would make of it or which
+Peios system it holds. The confirmation shows the disk chosen and what would
+be missed of it, and its button is held down rather than pressed.
 
-The disk page draws what `installerd` has only lately learned to say (each
-row's `detail`), so it wants an `installerd` from a current `../installer`.
-Against an older one it shows the rows and leaves the rest out.
+The pages after these are built one at a time, and an action that leads to
+a page not drawn here says so instead of moving everyone on to it. Today
+those are the confirmation's button, which would begin the installation,
+and the disk page's Next for an upgrade or a repair.
+
+The disk page and the confirmation draw what `installerd` has only lately
+learned to say (the `detail` of each row and of the confirmation's
+sentence), so they want an `installerd` from a current `../installer`.
+Against an older one they show what it says in words and leave the rest out.
 
 It is not packaged and not on any image yet.
 
@@ -51,6 +57,7 @@ install, and pretends to be the machine `dev/desktop.json` describes:
 dev/host.sh                                        # http://127.0.0.1:7790/
 node dev/browser/intro.mjs http://127.0.0.1:7790/  # the intro and the first page
 node dev/browser/disk.mjs                          # the disk page
+node dev/browser/confirm.mjs                       # the confirmation
 node dev/browser/states.mjs                        # what it shows when things go away
 cargo +1.98.1 test
 ```
@@ -64,7 +71,7 @@ dev/boot.sh             # in another terminal; it stays up
 dev/push.sh             # build this and installerd, and put both in the VM
 dev/overlay.sh on       # http://127.0.0.1:7780/ is now the installer, with no logon
 node dev/browser/intro.mjs
-node dev/browser/machine.mjs   # the disk page, of the VM's own disks
+node dev/browser/machine.mjs   # the disk page and the confirmation, of the VM's own disks
 dev/overlay.sh off      # the logon page and the desktop again
 ```
 

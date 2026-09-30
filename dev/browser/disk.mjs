@@ -166,11 +166,14 @@ try {
     out.skipped = await eventually(seen, chosen("/dev/sdc"));
     expect("and passes over the boot medium", out.skipped.after !== null && out.skipped.focused === "/dev/sdc");
 
-    // Next leads to a page that is not drawn yet, so it says so and stays.
+    // Enter on the chosen disk goes on with it, to the confirmation
+    // (confirm.mjs looks at that page), and Back from there returns here.
     await key("Enter", "Enter", 13);
-    out.held = await eventually(seen, (s) => s.toast !== null, 3);
-    expect("Enter on the chosen disk goes on, and the step not drawn yet is said to be", out.held.toast === "The step after this one is not drawn yet." && out.held.heading === "Choose a disk");
-    expect("and nobody else is moved on", (await elsewhere()).page.kind === "disk");
+    out.on = await eventually(seen, (s) => s.heading === "Ready to install" && s.showing);
+    expect("Enter on the chosen disk goes on with it, for everyone looking", out.on.after !== null && (await elsewhere()).page.kind === "confirm");
+    await click("#turn .btn.quiet");
+    out.returned = await eventually(seen, (s) => onDisks("Choose a disk")(s) && s.disks.some((d) => d.checked));
+    expect("and Back from there returns to the disks, the disk still chosen", out.returned.after !== null && out.returned.disks[4].checked && out.returned.focused === "/dev/sdc");
 
     // Rescan: installerd looks again, and the page shows it looking.
     await click("#turn .aux .link");
@@ -207,6 +210,11 @@ try {
     expect("and its partitions, with what is in use",
         JSON.stringify(out.upgradable.plan.legend) === JSON.stringify(["EFI system partition: 71 MiB of 512 MiB · FAT32", "Peios root: 18.4 GiB of 465.3 GiB · ext4"])
         && out.upgradable.plan.erase === null && out.upgradable.plan.becomes.length === 0);
+    // What an upgrade goes on to is not drawn yet, so Next says so and stays.
+    await click("#turn .btn.go-on");
+    out.held = await eventually(seen, (s) => s.toast !== null, 3);
+    expect("Next toward a step not drawn yet says so, and stays", out.held.toast === "The step after this one is not drawn yet." && out.held.heading === "Upgrade: choose a disk");
+    expect("and nobody else is moved on", (await elsewhere()).page.kind === "disk");
     await click(disk("/dev/nvme0n1"));
     out.notPeios = await eventually(seen, chosen("/dev/nvme0n1"));
     expect("a disk with no Peios on it says so",

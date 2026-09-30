@@ -3,6 +3,7 @@
 // The installer holds the state: which page this is and what is on it. It
 // sends the whole of it whenever it changes, and this draws it. How a page
 // arrives and leaves, the intro included, is decided here and nowhere else.
+import { createConfirmPage } from "./confirm.js";
 import { createDiskPage } from "./disk.js";
 import { createField } from "./field.js";
 import { createIntro } from "./intro.js";
@@ -23,6 +24,7 @@ const els = {
     statusText: $("status-text"),
     toast: $("toast"),
     say: $("say"),
+    flash: $("flash"),
 };
 const { turn } = els;
 
@@ -164,8 +166,10 @@ const ENDED = { complete: "Done", cancelled: "Stopped", failed: "It did not fini
 function fill(page) {
     const was = turn.dataset.kind;
     turn.dataset.kind = page.kind;
+    if (was === "confirm" && page.kind !== "confirm") confirmPage.gone();
     if (page.kind === "mode") return fillMode(page, was === "mode");
     if (page.kind === "disk") return diskPage.draw(page, view?.waiting);
+    if (page.kind === "confirm") return confirmPage.draw(page, view?.waiting);
     const parts =
         page.kind === "unbuilt" ? {
             title: page.title || "The next step",
@@ -234,7 +238,12 @@ function fillMode(page, already) {
     mark();
 }
 
+// The stars behind everything, which the intro gathers and one page evens out.
+const field = createField($("field"), els.introLockup.querySelector(".mark"), reduced);
 const diskPage = createDiskPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
+const confirmPage = createConfirmPage({
+    turn, stage: els.stage, el, rise, ask, toast: (text) => toast(text), say, field, flash: els.flash, reduced,
+});
 
 function menuKeys(e) {
     const at = actions.findIndex((button) => button.classList.contains("hl"));
@@ -257,18 +266,19 @@ function arrived() {
     if (heading) say(heading);
     if (shown?.kind === "mode") actions.find((button) => button.classList.contains("hl"))?.focus({ preventScroll: true });
     if (shown?.kind === "disk") diskPage.focus();
+    if (shown?.kind === "confirm") confirmPage.focus();
 }
 
 // Where each page comes in the installation, which decides the side it
 // arrives from: a later page from the right, an earlier one from the left.
 // The pages that are not steps (starting, lost, an ending) count as later.
-const ORDER = { mode: 0, disk: 1 };
+const ORDER = { mode: 0, disk: 1, confirm: 2 };
 const order = (page) => ORDER[page?.kind] ?? 9;
 
 // What is on the page now, and whether the intro has landed: until it has,
 // nothing here can be seen, so a page is drawn without ceremony.
 let shown = null, shownAs = "";
-let landed = false, moving = false;
+let landed = false, moving = false, lingering = 0;
 
 // What is drawn, as one string: the page, and what on it is under way.
 const drawnAs = (page) => JSON.stringify([page, view?.waiting ?? null]);
@@ -283,7 +293,15 @@ function drawPage() {
         [shown, shownAs] = [wanted, as];
         return;
     }
-    // Another page: this one leaves, the next arrives.
+    // Another page: this one leaves, the next arrives. A page that has just
+    // been begun asks for a moment first, for that to be seen.
+    if (shown?.kind === "confirm") {
+        const wait = confirmPage.linger();
+        clearTimeout(lingering);
+        if (wait > 0) return void (lingering = setTimeout(drawPage, wait));
+        // Whatever it was in the middle of stops as it sets off.
+        confirmPage.leave();
+    }
     moving = true;
     els.page.style.setProperty("--dir", order(wanted) < order(shown) ? -1 : 1);
     turn.classList.remove("in", "first");
@@ -310,7 +328,6 @@ function draw() {
 }
 
 // ---- the intro ----
-const field = createField($("field"), els.introLockup.querySelector(".mark"), reduced);
 const intro = createIntro({
     els, field, reduced,
     onLines: (n) => { linesAllowed = n; drawTicker(); },

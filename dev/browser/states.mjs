@@ -6,10 +6,11 @@
 // describes) and its own installer-gxwi, so it needs no VM and nothing else
 // running, and then takes each away and puts it back while a browser watches:
 //
-//   - another front end moves the conversation on, to a page drawn here and
-//     then to one that is not yet, and back;
+//   - another front end moves the conversation on, to a page drawn here,
+//     back, and then to one that is not drawn yet, and back;
 //   - installerd goes, and comes back;
-//   - the installer itself goes, and comes back.
+//   - the installer itself goes, and comes back;
+//   - another front end sees an install through, and the conversation ends.
 //
 // installerd and msip-drive come from ../installer (cargo +1.98.1 build -p
 // installerd -p msip-drive) and installer-gxwi from this checkout (cargo
@@ -79,14 +80,20 @@ try {
     expect("answered elsewhere, the next page arrives here too", out.taken.after !== null && out.taken.disks === 5);
     expect("and names the tab", out.taken.title === "Choose a disk · Peios Setup");
 
-    // And then to a page that is not drawn here yet.
+    press("nav.back");
+    await eventually(seen, onFirstPage);
+
+    // And then to a page that is not drawn here yet: what an upgrade goes
+    // on to from its disks.
+    press("act.upgrade");
+    await eventually(seen, (s) => s.heading === "Upgrade: choose a disk" && s.showing);
     press("nav.next", "--set", "disk.target=/dev/sdc");
-    out.unbuilt = await eventually(seen, (s) => s.heading === "Ready to install" && s.showing);
+    out.unbuilt = await eventually(seen, (s) => s.heading === "Ready to upgrade" && s.showing);
     await picture("states-1-unbuilt.png");
     expect("a page not drawn here yet is named and said to be one",
-        out.unbuilt.after !== null && out.unbuilt.lede?.includes("not drawn") && out.unbuilt.why === "confirm" && out.unbuilt.actions === 0);
+        out.unbuilt.after !== null && out.unbuilt.lede?.includes("not drawn") && out.unbuilt.why === "upgrade.confirm" && out.unbuilt.actions === 0);
     press("nav.back");
-    out.back = await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing && s.disks === 5);
+    out.back = await eventually(seen, (s) => s.heading === "Upgrade: choose a disk" && s.showing && s.disks === 5);
     expect("going back elsewhere brings the disks back here", out.back.after !== null);
     press("nav.back");
     out.home = await eventually(seen, onFirstPage);
@@ -113,6 +120,22 @@ try {
 
     out.problems = chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p));
     expect("the page reports no errors but the connections it lost", out.problems.length === 0);
+
+    // Last, because nothing follows it: another front end sees an install
+    // through (a pretended one), and the conversation ends. What it ended
+    // with stays on the page, with nothing lost.
+    press("act.install");
+    await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing);
+    press("nav.next", "--set", "disk.target=/dev/sdc");
+    await eventually(seen, (s) => s.heading === "Ready to install" && s.showing);
+    press("act.begin");
+    out.ended = await eventually(seen, (s) => s.heading === "Done" && s.showing, 40);
+    expect("an installation seen through elsewhere ends here too, in installerd's words",
+        out.ended.after !== null && out.ended.lede === "Installation complete. Reboot to start Peios.");
+    await sleep(4000);
+    out.stayed = await seen();
+    expect("and what it ended with stays on the page", out.stayed.heading === "Done" && out.stayed.showing && out.stayed.statusIs !== "bad"
+        && chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p)).length === 0);
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));

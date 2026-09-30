@@ -44,6 +44,8 @@ pub fn routes(view: watch::Receiver<View>, tell: mpsc::Sender<Heard>) -> Router 
         .route("/", part(HTML, include_bytes!("../page/index.html")))
         .route("/style.css", part(CSS, include_bytes!("../page/style.css")))
         .route("/app.js", part(SCRIPT, include_bytes!("../page/app.js")))
+        .route("/bits.js", part(SCRIPT, include_bytes!("../page/bits.js")))
+        .route("/confirm.js", part(SCRIPT, include_bytes!("../page/confirm.js")))
         .route("/disk.js", part(SCRIPT, include_bytes!("../page/disk.js")))
         .route("/field.js", part(SCRIPT, include_bytes!("../page/field.js")))
         .route("/intro.js", part(SCRIPT, include_bytes!("../page/intro.js")))
@@ -83,6 +85,10 @@ async fn live(State(served): State<Served>, upgrade: WebSocketUpgrade) -> Respon
 /// that holds the conversation, which decides what comes of it; a browser
 /// learns the outcome as everyone does, from the state.
 async fn show(mut socket: WebSocket, Served { mut view, tell }: Served) {
+    // Whether the state can still change. Once the conversation is over
+    // nobody is left to change it, and what it ended with is what a browser
+    // goes on being shown, for as long as it stays.
+    let mut live = true;
     loop {
         let state = serde_json::to_string(&*view.borrow_and_update()).unwrap_or_default();
         if socket.send(Message::Text(state.into())).await.is_err() {
@@ -90,9 +96,9 @@ async fn show(mut socket: WebSocket, Served { mut view, tell }: Served) {
         }
         loop {
             tokio::select! {
-                changed = view.changed() => match changed {
+                changed = view.changed(), if live => match changed {
                     Ok(()) => break,
-                    Err(_) => return,
+                    Err(_) => live = false,
                 },
                 heard = socket.recv() => match heard {
                     Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return,

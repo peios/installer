@@ -5,8 +5,13 @@
 // backdrop: a slow drift that answers the pointer a little, a few of them
 // catching the light now and then.
 //
+// The burst leaves them as a cloud round the middle of the screen. A page can
+// have that evened out across the whole of it, by as much as it says, and let
+// it fall back.
+//
 // The field knows nothing of what the installer is doing. It is told when to
-// gather and when to let go, and draws one frame when asked.
+// gather, when to let go and how far to even out, and draws one frame when
+// asked.
 
 const PALETTE = [["#62d2ff", .55], ["#c8f1ff", .25], ["#9d8cff", .12], ["#4fd1c5", .08]];
 
@@ -34,6 +39,8 @@ export function createField(canvas, mark, reduced) {
     let markX = 0, markY = 0;
     // The pointer, from -1 to 1 across the viewport, and the same smoothed.
     let mx = 0, my = 0, smx = 0, smy = 0;
+    // How far the field is evened out, 0 to 1, and how far it is heading.
+    let spread = 0, spreadTo = 0;
 
     const driftX = (p, t) => p.sx + Math.sin(t * .0005 + p.ph) * 10 * p.z;
     const driftY = (p, t) => p.sy + Math.cos(t * .00043 + p.ph) * 10 * p.z;
@@ -97,6 +104,7 @@ export function createField(canvas, mark, reduced) {
         }
         gatherAt = Infinity;
         captured = released = false;
+        spread = spreadTo = 0;
     }
 
     /** The mark has moved (the window changed size): the stars aim at it where it now is. */
@@ -134,6 +142,52 @@ export function createField(canvas, mark, reduced) {
         }
     }
 
+    // Where each star goes for the field to be even. Every star keeps its
+    // direction from the middle and its order outward among its neighbours,
+    // so the cloud smooths out rather than stars trading places: directions
+    // are shared out so that each part of the screen gets its share of stars,
+    // and distances go by rank, square-rooted, so each direction fills evenly
+    // from the middle to the edge.
+    function evenTargets() {
+        const cx = W / 2, cy = H / 2, hw = W / 2 - 10, hh = H / 2 - 10;
+        // How far the edge of the screen is, in a direction.
+        const edge = (angle) => Math.min(hw / Math.max(1e-6, Math.abs(Math.cos(angle))), hh / Math.max(1e-6, Math.abs(Math.sin(angle))));
+        // The share of the screen's area that lies before each direction.
+        const STEPS = 720;
+        const before = new Float64Array(STEPS + 1);
+        for (let i = 0; i < STEPS; i++) before[i + 1] = before[i] + edge(-Math.PI + (i + .5) * 2 * Math.PI / STEPS) ** 2;
+        for (let i = 0; i <= STEPS; i++) before[i] /= before[STEPS];
+        const angleAt = (share) => {
+            let lo = 0, hi = STEPS;
+            while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (before[mid] < share) lo = mid; else hi = mid; }
+            return -Math.PI + (lo + (share - before[lo]) / ((before[hi] - before[lo]) || 1)) * 2 * Math.PI / STEPS;
+        };
+        const gap = Math.sqrt(W * H / parts.length);
+        const stars = parts
+            .map((p) => ({ p, angle: Math.atan2(p.y - cy, p.x - cx), out: Math.hypot(p.x - cx, p.y - cy) }))
+            .sort((a, b) => a.angle - b.angle);
+        stars.forEach((star, i) => (star.to = angleAt((i + .5) / stars.length)));
+        const NEIGHBOURS = 28;
+        for (let from = 0; from < stars.length; from += NEIGHBOURS) {
+            const group = stars.slice(from, from + NEIGHBOURS).sort((a, b) => a.out - b.out);
+            group.forEach(({ p, to }, rank) => {
+                const out = edge(to) * Math.sqrt((rank + Math.random()) / group.length);
+                p.ex = cx + Math.cos(to) * out + (Math.random() - .5) * gap * .5;
+                p.ey = cy + Math.sin(to) * out + (Math.random() - .5) * gap * .5;
+            });
+        }
+    }
+
+    /** Evens the field out across the screen by `to`, from 0 (as it drifts)
+        to 1 (wholly even). It gets there over a few frames. */
+    function even(to) {
+        if (reduced || !released) return;
+        // Setting out from rest, each star is given its place afresh; one
+        // that is still falling back carries on toward the place it had.
+        if (to > 0 && spreadTo === 0 && spread < .02) evenTargets();
+        spreadTo = to;
+    }
+
     // The slow drift the field keeps once the burst has spent itself.
     function drift(p, t) {
         const dvx = Math.cos(p.ph + t * .00013) * .14 * (.3 + p.z);
@@ -163,6 +217,7 @@ export function createField(canvas, mark, reduced) {
     function draw(t) {
         smx += (mx - smx) * .04;
         smy += (my - smy) * .04;
+        spread += (spreadTo - spread) * .12;
         ctx.clearRect(0, 0, W, H);
         ctx.globalCompositeOperation = "lighter";
 
@@ -180,6 +235,10 @@ export function createField(canvas, mark, reduced) {
                 p.a += ((.1 + .5 * p.z * p.z) - p.a) * .03;
                 x = p.x + smx * p.z * 22;
                 y = p.y + smy * p.z * 22;
+                if (spread > .001 && p.ex !== undefined) {
+                    x += (p.ex - x) * spread;
+                    y += (p.ey - y) * spread;
+                }
                 a = p.a;
                 s = .7 + p.z * 1.5;
             } else if (!captured) {
@@ -214,5 +273,5 @@ export function createField(canvas, mark, reduced) {
         retarget();
     });
 
-    return { seed, gather, release, draw };
+    return { seed, gather, release, even, draw };
 }

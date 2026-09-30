@@ -192,7 +192,9 @@ fn talk(
                 let Some(page) = session.page() else { continue };
                 let turn = &page.turn;
                 if matches!(event, Event::NewTurn) {
-                    chosen = None;
+                    // Nothing, but on a page come back to, which arrives
+                    // with the disk that was chosen on it.
+                    chosen = view::assumed(turn);
                 } else {
                     // A rescan may have taken the chosen disk away.
                     chosen = chosen.filter(|disk| view::can_choose(turn, disk));

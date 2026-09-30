@@ -52,7 +52,6 @@ pub enum Link {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
-#[expect(clippy::large_enum_variant, reason = "there is one page at a time, and nothing is saved by boxing it")]
 pub enum Page {
     /// installerd's `mode`: what to do with this machine.
     Mode { title: String, intro: String, actions: Vec<Action> },
@@ -79,6 +78,19 @@ pub enum Page {
         back: Option<Action>,
         next: Option<Action>,
     },
+    /// installerd's `confirm`: whether the disk chosen is really to be
+    /// erased and installed onto.
+    Confirm {
+        title: String,
+        /// The whole of it in words: which disk, that all of it goes, and
+        /// what a person would miss of what is on it.
+        summary: String,
+        /// The disk, as installerd read it for this page, for the page to
+        /// draw. Nothing from an installerd that says it only in words.
+        disk: Option<Disk>,
+        back: Option<Action>,
+        begin: Option<Action>,
+    },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
     /// The conversation is over.
@@ -94,6 +106,9 @@ pub struct Action {
     pub enabled: bool,
     /// Why it cannot be chosen, where it cannot.
     pub help: Option<String>,
+    /// Pressing it destroys something (PGSS §3.B), so a page makes it hard
+    /// to press by accident.
+    pub destructive: bool,
     /// It leads to a page that is not drawn here yet, so pressing it says
     /// so instead of answering.
     pub unbuilt: bool,
@@ -122,6 +137,8 @@ pub struct Disk {
 
 /// The table on installerd's disk page.
 const DISKS: &str = "disk.target";
+/// The sentence on installerd's confirmation, which carries the disk.
+const SUMMARY: &str = "confirm.summary";
 
 impl View {
     pub fn starting(release: Release) -> View {
@@ -142,13 +159,39 @@ impl View {
 /// Whether pressing `action` on `turn` leads to a page that is not drawn
 /// here yet. Such an action is not sent on: the conversation is installerd's
 /// and shared, and an answer would move everyone to a page this cannot show.
+///
+/// Which pages those are is known here by what the action is on. For the
+/// disk page that takes what the disk is being chosen for, since the one
+/// action leads to three pages; an installerd that does not say is taken to
+/// lead somewhere not drawn. All of this goes as the pages are drawn.
 pub fn unbuilt(turn: &Turn, action: &str) -> bool {
-    matches!((turn.id.as_deref(), action), (Some("disk.choose"), "nav.next"))
+    match (turn.id.as_deref(), action) {
+        // An install goes on to the confirmation, which is drawn; an
+        // upgrade and a repair to pages of their own, which are not.
+        (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
+        // The installation itself, as it runs.
+        (Some("confirm"), "act.begin") => true,
+        _ => false,
+    }
 }
 
 /// Whether `value` is a disk `turn` offers and lets be chosen.
 pub fn can_choose(turn: &Turn, value: &str) -> bool {
     rows(turn).iter().any(|row| row.get("value").and_then(Value::as_str) == Some(value) && enabled(row))
+}
+
+/// The disk `turn` arrives with already chosen: the table's `default`,
+/// which is what a field starts from, and how a page come back to says
+/// what was chosen on it.
+pub fn assumed(turn: &Turn) -> Option<String> {
+    let disk = element(turn, DISKS)?.default.as_ref()?.as_str()?;
+    can_choose(turn, disk).then(|| disk.to_string())
+}
+
+/// What the disk on `turn` is being chosen for -- `install`, `upgrade` or
+/// `repair` -- or nothing where installerd does not say.
+fn purpose(turn: &Turn) -> &'static str {
+    ["install", "upgrade", "repair"].into_iter().find(|purpose| turn.class.iter().any(|class| class == purpose)).unwrap_or_default()
 }
 
 /// What is answered for `turn` beside the action pressed: the disk chosen,
@@ -178,11 +221,7 @@ impl Page {
                 Page::Disk {
                     title,
                     intro: text(turn, "disk.intro"),
-                    purpose: ["install", "upgrade", "repair"]
-                        .into_iter()
-                        .find(|purpose| turn.class.iter().any(|class| class == purpose))
-                        .unwrap_or_default()
-                        .to_string(),
+                    purpose: purpose(turn).to_string(),
                     disks: rows(turn).iter().map(Disk::of).collect(),
                     empty: table.and_then(|t| t.state.get("empty")).and_then(Value::as_str).unwrap_or_default().to_string(),
                     trouble: table.and_then(|t| t.help.clone()),
@@ -194,6 +233,13 @@ impl Page {
                     next: action("nav.next"),
                 }
             }
+            Some("confirm") => Page::Confirm {
+                title,
+                summary: text(turn, SUMMARY),
+                disk: element(turn, SUMMARY).and_then(|e| e.state.get("detail")).and_then(Disk::said),
+                back: action("nav.back"),
+                begin: action("act.begin"),
+            },
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
         }
     }
@@ -216,6 +262,7 @@ impl Action {
             primary: element.state.get("primary").and_then(Value::as_bool).unwrap_or(false),
             enabled: element.enabled,
             help: element.help.clone(),
+            destructive: element.state.get("destructive").and_then(Value::as_bool).unwrap_or(false),
             unbuilt: unbuilt(turn, &element.r#ref),
         }
     }
@@ -235,6 +282,24 @@ impl Disk {
             enabled: enabled(row),
             detail: row.get("detail").cloned().unwrap_or(Value::Null),
         }
+    }
+
+    /// The disk the confirmation is about, from what installerd says of it
+    /// with the sentence: what a row of the disk page says, and the same
+    /// `detail`. Nothing unless it at least says which disk.
+    fn said(detail: &Value) -> Option<Disk> {
+        let said = |key: &str| detail.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
+        let device = said("device");
+        (!device.is_empty()).then(|| Disk {
+            value: device.clone(),
+            device,
+            model: said("model"),
+            size: said("size"),
+            bus: said("bus"),
+            note: String::new(),
+            enabled: true,
+            detail: detail.clone(),
+        })
     }
 }
 
@@ -355,9 +420,71 @@ mod tests {
         assert_eq!(custom.help.as_deref(), Some("Whole-disk only for now."));
         assert!(!back.unwrap().unbuilt);
         let next = next.unwrap();
-        assert!(next.primary && next.enabled);
-        // The page after this one is not drawn yet.
-        assert!(next.unbuilt);
+        assert!(next.primary && next.enabled && !next.destructive);
+        // An install goes on to the confirmation, which is drawn.
+        assert!(!next.unbuilt);
+    }
+
+    /// installerd's confirmation of an install, with the disk it is about.
+    fn confirm() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 3, "id": "confirm", "name": "Ready to install", "class": ["confirm"],
+            "elements": [
+                { "ref": "confirm.summary", "type": "text",
+                  "text": "Peios will be installed onto CT500MX500SSD1, 465.8 GiB (/dev/sda). The whole disk will be erased.",
+                  "detail": { "device": "/dev/sda", "model": "CT500MX500SSD1", "size": "465.8 GiB", "bus": "SATA",
+                              "bytes": 500107862016u64, "partitions": [], "erases": [] } },
+                { "ref": "nav.back", "type": "action", "name": "Back", "validate": false },
+                { "ref": "act.begin", "type": "action", "name": "Erase disk and install", "primary": true, "destructive": true },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_confirmation_is_drawn_from_what_installerd_sends() {
+        let Page::Confirm { title, summary, disk, back, begin } = Page::of(&confirm(), None) else { panic!("not the confirmation") };
+        assert_eq!(title, "Ready to install");
+        assert!(summary.starts_with("Peios will be installed onto CT500MX500SSD1"));
+        let disk = disk.unwrap();
+        assert_eq!(
+            (disk.value.as_str(), disk.device.as_str(), disk.model.as_str(), disk.size.as_str(), disk.bus.as_str()),
+            ("/dev/sda", "/dev/sda", "CT500MX500SSD1", "465.8 GiB", "SATA")
+        );
+        assert_eq!(disk.detail["bytes"], 500107862016u64);
+        assert_eq!(back.unwrap().r#ref, "nav.back");
+        let begin = begin.unwrap();
+        assert_eq!(begin.name, "Erase disk and install");
+        assert!(begin.primary && begin.destructive && begin.enabled);
+        // The installation itself is not drawn yet.
+        assert!(begin.unbuilt);
+        // Nothing of it is answered with but the action.
+        assert!(values(&confirm(), Some("/dev/sda")).is_empty());
+        assert_eq!(serde_json::to_value(Page::of(&confirm(), None)).unwrap()["kind"], "confirm");
+    }
+
+    #[test]
+    fn a_confirmation_that_says_it_only_in_words_is_drawn_without_the_disk() {
+        let mut turn = confirm();
+        turn.elements[0].state.remove("detail");
+        assert!(matches!(Page::of(&turn, None), Page::Confirm { disk: None, summary, .. } if !summary.is_empty()));
+        // Nor is a disk made of facts that do not say which disk.
+        turn.elements[0].state.insert("detail".into(), json!({ "bytes": 1 }));
+        assert!(matches!(Page::of(&turn, None), Page::Confirm { disk: None, .. }));
+    }
+
+    #[test]
+    fn a_page_come_back_to_arrives_with_its_disk_chosen() {
+        let mut turn = disks();
+        assert_eq!(assumed(&turn), None);
+        turn.elements[1].default = Some(json!("/dev/sda"));
+        assert_eq!(assumed(&turn).as_deref(), Some("/dev/sda"));
+        // Only a disk that is there to be chosen.
+        turn.elements[1].default = Some(json!("/dev/sdb"));
+        assert_eq!(assumed(&turn), None);
+        turn.elements[1].default = Some(json!("/dev/nvme0n1"));
+        assert_eq!(assumed(&turn), None);
+        assert_eq!(assumed(&mode()), None);
     }
 
     #[test]
@@ -387,18 +514,30 @@ mod tests {
 
     #[test]
     fn an_action_that_leads_to_a_page_not_drawn_is_not_sent_on() {
-        assert!(unbuilt(&disks(), "nav.next"));
-        assert!(!unbuilt(&disks(), "nav.back"));
-        assert!(!unbuilt(&disks(), "act.rescan"));
+        // The installation as it runs is not drawn yet.
+        assert!(unbuilt(&confirm(), "act.begin"));
+        assert!(!unbuilt(&confirm(), "nav.back"));
+        // Nor is what an upgrade or a repair goes on to from the disks, or
+        // what a disk page that does not say what it is for goes on to.
+        let mut turn = disks();
+        assert!(!unbuilt(&turn, "nav.next"));
+        for purpose in ["upgrade", "repair"] {
+            turn.class = vec![purpose.into()];
+            assert!(unbuilt(&turn, "nav.next"));
+        }
+        turn.class.clear();
+        assert!(unbuilt(&turn, "nav.next"));
+        assert!(!unbuilt(&turn, "nav.back"));
+        assert!(!unbuilt(&turn, "act.rescan"));
         assert!(!unbuilt(&mode(), "act.install"));
     }
 
     #[test]
     fn a_page_not_drawn_here_is_said_to_be_one() {
         let mut turn = mode();
-        turn.id = Some("confirm".into());
-        turn.name = Some("Ready to install".into());
-        assert_eq!(Page::of(&turn, None), Page::Unbuilt { id: "confirm".into(), title: "Ready to install".into() });
+        turn.id = Some("install.progress".into());
+        turn.name = Some("Installing".into());
+        assert_eq!(Page::of(&turn, None), Page::Unbuilt { id: "install.progress".into(), title: "Installing".into() });
         turn.id = None;
         assert!(matches!(Page::of(&turn, None), Page::Unbuilt { id, .. } if id.is_empty()));
     }
@@ -419,7 +558,8 @@ mod tests {
         assert_eq!(sent["waiting"], "act.install");
         assert_eq!(sent["page"]["kind"], "mode");
         assert_eq!(sent["page"]["actions"][0], json!({
-            "ref": "act.install", "name": "Install Peios", "primary": true, "enabled": true, "help": null, "unbuilt": false,
+            "ref": "act.install", "name": "Install Peios", "primary": true, "enabled": true, "help": null,
+            "destructive": false, "unbuilt": false,
         }));
         assert_eq!(sent["trail"], json!([["connect", "/run/installerd.sock"]]));
         assert_eq!(sent["release"], json!({ "version": "2026.8", "variant": "Experimental" }));
@@ -428,7 +568,7 @@ mod tests {
         assert_eq!(sent["kind"], "disk");
         assert_eq!(sent["chosen"], "/dev/sda");
         assert_eq!(sent["disks"][0]["detail"]["bytes"], 500107862016u64);
-        assert_eq!(sent["next"]["unbuilt"], true);
+        assert_eq!(sent["next"]["unbuilt"], false);
     }
 
     #[test]

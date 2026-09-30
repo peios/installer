@@ -11,76 +11,16 @@
 // What a disk says of itself (its model, the labels of its filesystems) is
 // whatever whoever made the disk wrote there. All of it is put on the page as
 // text, never as markup.
+import {
+    ALERT, BACK, NOT_DRAWN, ONWARD, becomesLegend, diskBar, glyph, icon, legend, listText, partitionsText, picture, plural, sizeText,
+} from "./bits.js";
 
-const KIB = 2 ** 10, MIB = 2 ** 20, GIB = 2 ** 30, TIB = 2 ** 40;
-/** installerd's own wording of a size, so that a size reads the same in a
-    row, which it words, and in the panel, which this does. */
-export const sizeText = (bytes) =>
-    bytes >= TIB ? `${(bytes / TIB).toFixed(1)} TiB`
-    : bytes >= GIB ? `${(bytes / GIB).toFixed(1)} GiB`
-    : bytes >= MIB ? `${Math.floor(bytes / MIB)} MiB`
-    : `${Math.floor(bytes / KIB)} KiB`;
-
-const listText = (xs) => xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
-const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
 /** `/dev/sda2` as a person says it. */
 const short = (device) => device.replace(/^\/dev\//, "");
 
-/** A picture from this file's own markup. Only ever given the constants
-    below: nothing that came from the installer goes through here. */
-function picture(markup) {
-    const template = document.createElement("template");
-    template.innerHTML = markup;
-    return template.content.firstElementChild;
-}
-const icon = (viewBox, width, body) =>
-    `<svg viewBox="${viewBox}" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
-const big = (body) => icon("0 0 24 24", 1.5, body);
-// A disk, by how it is attached, as installerd names the bus.
-const GLYPHS = {
-    "NVMe": big('<rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M5.5 16v2M8.5 16v2M11.5 16v2M14.5 16v2"/><rect x="6" y="10.5" width="5" height="3" rx=".5"/><circle cx="17.5" cy="12" r="1"/>'),
-    "SATA": big('<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><circle cx="12" cy="11" r="4.5"/><circle cx="12" cy="11" r=".9"/><path d="M7 17.5h2.5"/>'),
-    "USB": big('<rect x="7" y="9" width="10" height="12.5" rx="2"/><path d="M9 9V3.5h6V9"/><path d="M10.5 6h.01M13.5 6h.01"/>'),
-    "SD/MMC": big('<path d="M7 3.5h8l4 4v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M9.5 6.5V9M12 6.5V9M14.5 6.5V9"/>'),
-    "": big('<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M7 15h3"/>'),
-};
 const TICK = icon("0 0 12 12", 2, '<path d="M2.5 6.2 5 8.5l4.5-5"/>');
-const ALERT = icon("0 0 16 16", 1.5, '<path d="M8 1.75 15 14.25H1z"/><path d="M8 6.5v3.25M8 12h.01"/>');
 const RESCAN = icon("0 0 16 16", 1.6, '<path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.5 2.5v3h-3"/>');
 const CUSTOM = icon("0 0 16 16", 1.6, '<rect x="2" y="3.5" width="12" height="9" rx="2"/><path d="M6.5 3.5v9"/>');
-const BACK = icon("0 0 18 18", 1.6, '<path d="M14.5 9h-11M8 4.5 3.5 9 8 13.5"/>');
-const ONWARD = icon("0 0 18 18", 1.6, '<path d="M3.5 9h11M10 4.5 14.5 9 10 13.5"/>');
-
-// Where an offset lands on a bar, in percent. Partitions get a floor of room
-// so the small ones can be seen (an EFI system partition is a two-thousandth
-// of a terabyte disk); the gaps between them get only their true share; the
-// rest is shared out in proportion. `spans` are [start, length] pairs.
-function barMap(total, spans, floor) {
-    const xs = [...new Set([0, total, ...spans.flatMap(([at, length]) => [at, at + length])])]
-        .filter((x) => x >= 0 && x <= total)
-        .sort((a, b) => a - b);
-    const covered = (x) => spans.some(([at, length]) => x > at && x < at + length);
-    const widths = [];
-    for (let i = 1; i < xs.length; i++) {
-        const length = xs[i] - xs[i - 1];
-        widths.push(covered((xs[i] + xs[i - 1]) / 2) ? Math.max(length / total, floor) : length / total);
-    }
-    const sum = widths.reduce((a, b) => a + b, 0) || 1;
-    const stops = [0];
-    for (const width of widths) stops.push(stops[stops.length - 1] + width / sum * 100);
-    return (x) => {
-        let i = 0;
-        while (i < xs.length - 2 && x > xs[i + 1]) i++;
-        return stops[i] + (x - xs[i]) / (xs[i + 1] - xs[i] || 1) * (stops[i + 1] - stops[i]);
-    };
-}
-
-// What a person would miss if the disk were erased: a system, by name, then
-// anything with files on it. What a machine starts from or repairs itself
-// with is not missed in its own right.
-const missed = (partitions) => partitions
-    .filter((p) => p.fs && p.used && p.type !== "esp" && p.type !== "winre")
-    .map((p) => p.holds || `“${p.title}” (${sizeText(p.used)} in use)`);
 
 /**
  * The disk page. `turn` is where a page is drawn; `el` and `rise` make its
@@ -123,7 +63,7 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
                 if (!page.chosen) return say("Choose a disk first.");
                 // The page this leads to is not drawn yet, and an answer
                 // would take everyone looking to it.
-                if (page.next.unbuilt) return toast("The step after this one is not drawn yet.");
+                if (page.next.unbuilt) return toast(NOT_DRAWN);
                 ask({ press: page.next.ref });
             }),
             label: el("p", "plan-label"),
@@ -147,7 +87,7 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
         const system = partitions.find((p) => p.holds && p.type !== "esp")?.holds;
         const has = disk.enabled ? system ?? (partitions.length ? plural(partitions.length, "partition") : "") : "";
         const node = el("button", "disk", [
-            el("span", "glyph", [picture(GLYPHS[disk.bus] ?? GLYPHS[""])]),
+            el("span", "glyph", [glyph(disk.bus)]),
             el("span", "who", [
                 el("span", "model", disk.model),
                 el("span", "where", [
@@ -240,26 +180,12 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
     // ---- the panel beside the disks ----
     function layout(detail, disk) {
         const partitions = detail.partitions ?? [], becomes = detail.becomes ?? [];
-        const at = barMap(detail.bytes, [...partitions, ...becomes].map((p) => [p.start, p.bytes]), .05);
-        const piece = (p, className) => {
-            const node = el("i", `ls ${className}`);
-            const left = at(p.start);
-            node.style.setProperty("--l", left.toFixed(3));
-            node.style.setProperty("--w", (at(p.start + p.bytes) - left).toFixed(3));
-            return node;
-        };
-        const bar = el("div", "layout", [
-            el("div", "old", partitions.map((p) => piece(p, becomes.length ? "doomed" : role(p, detail)))),
-        ]);
-        if (becomes.length) {
-            // What it becomes is drawn over what it is, and wiped into view.
-            bar.append(el("div", "new", becomes.map((b) => piece(b, `r-${b.role}`))), el("div", "edge"));
-            wipeTimer = setTimeout(() => bar.classList.add("wiped"), reduced ? 0 : 260);
-        }
-        bar.setAttribute("role", "img");
+        const bar = diskBar(el, detail, (p) => role(p, detail));
+        // What it becomes is drawn over what it is, and wiped into view.
+        if (becomes.length) wipeTimer = setTimeout(() => bar.classList.add("wiped"), reduced ? 0 : 260);
         bar.setAttribute("aria-label", becomes.length
-            ? `${disk.device} as it will be: ${listText(becomes.map((b) => `${b.title}, ${sizeText(b.bytes)}`))}`
-            : `${disk.device} as it is: ${partitions.length ? listText(partitions.map((p) => `${p.title}, ${sizeText(p.bytes)}`)) : "no partitions"}`);
+            ? `${disk.device} as it will be: ${partitionsText(becomes)}`
+            : `${disk.device} as it is: ${partitionsText(partitions)}`);
         return bar;
     }
     // A partition of a disk that is being kept: the Peios system on it and
@@ -267,16 +193,13 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
     const role = (p, detail) =>
         !detail.system ? "was" : p.device === detail.system.on ? "r-root" : p.type === "esp" ? "r-esp" : "was";
 
-    const legend = (items) => el("ul", "legend", items.map(([className, title, what]) =>
-        el("li", "", [el("i", className), el("b", "", title), el("span", "", what)])));
-
     function becoming(disk, detail) {
         const out = [];
-        if (detail?.becomes) {
-            out.push(layout(detail, disk), legend(detail.becomes.map((b) => [`r-${b.role}`, b.title, `${sizeText(b.bytes)} · ${b.fs}`])));
-        }
+        if (detail?.becomes) out.push(layout(detail, disk), becomesLegend(el, detail.becomes));
         const partitions = detail?.partitions ?? [];
-        const lost = missed(partitions);
+        // What a person would miss of it is installerd's to say, and it says
+        // the same on the page that asks whether they are sure.
+        const lost = detail?.erases ?? [];
         const including = lost.length ? `, including ${listText(lost)}`
             : partitions.length ? `, including its ${plural(partitions.length, "partition")}` : "";
         out.push(el("p", "erase", [picture(ALERT), el("span", "", `Everything on ${disk.device} will be erased${including}.`)]));
@@ -294,7 +217,7 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
             // The system's own two are called what they are to it; the rest
             // by what they call themselves.
             const called = { "r-root": "Peios root", "r-esp": "EFI system partition" };
-            out.push(legend(partitions.map((p) => [
+            out.push(legend(el, partitions.map((p) => [
                 role(p, detail), called[role(p, detail)] ?? p.title,
                 `${p.used != null ? `${sizeText(p.used)} of ` : ""}${sizeText(p.bytes)}${p.fs ? ` · ${p.fs}` : ""}`,
             ])));

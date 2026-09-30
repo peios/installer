@@ -1,5 +1,6 @@
-// The disk page on a real machine: the dev VM, with the disks dev/boot.sh
-// gives it, and the installerd dev/push.sh put there.
+// The disk page, and the confirmation after it, on a real machine: the dev
+// VM, with the disks dev/boot.sh gives it, and the installerd dev/push.sh
+// put there.
 //
 //     node dev/browser/machine.mjs [URL]
 //
@@ -31,6 +32,15 @@ const seen = () => js(`({
     scanning: document.querySelector("#turn .disks")?.classList.contains("scanning") ?? false,
     trouble: document.querySelector("#turn .trouble:not([hidden])")?.textContent ?? null,
     status: document.getElementById("status-text").textContent,
+    confirm: {
+        summary: document.querySelector("#confirm-summary")?.textContent ?? null,
+        under: document.querySelector("#turn .erased .plan-title span")?.textContent ?? null,
+        drawn: document.querySelector("#turn .erased .layout")?.getAttribute("aria-label") ?? null,
+        going: document.querySelectorAll("#turn .erased .layout .old .ls.doomed").length,
+        legend: [...document.querySelectorAll("#turn .erased .legend li")].map((li) => li.querySelector("b").textContent + ": " + li.querySelector("span").textContent),
+        hint: document.querySelector("#turn .hold-hint")?.textContent ?? null,
+    },
+    toast: document.getElementById("toast").classList.contains("on") ? document.getElementById("toast").textContent : null,
     plan: {
         title: document.querySelector("#turn .plan-title b")?.textContent ?? null,
         drawn: document.querySelector("#turn .layout")?.getAttribute("aria-label") ?? null,
@@ -93,6 +103,34 @@ try {
     if (peios) expect("the disk Peios is on says so", /^\/dev\/vd. · virtio · Peios( \d.*)?$/.test(peios.where));
     const released = out.install.disks.filter((d) => / · Peios \d/.test(d.where));
     out.released = released.map((d) => d.where);
+
+    // Next, with the Windows disk chosen: the confirmation. installerd reads
+    // the disk again for it, so what it says is what is there now.
+    if (windows) {
+        await click(`#turn .disk[data-value="${windows.value}"]`);
+        await eventually(seen, chosen(windows.value));
+        await click("#turn .btn.go-on");
+        out.confirm = await eventually(seen, (s) => s.heading === "Ready to install" && s.showing, 60);
+        await picture("machine-4-confirm.png");
+        expect("Next goes on to the confirmation, which says which disk and what goes with it",
+            out.confirm.after !== null
+            && out.confirm.confirm.summary?.includes(`(${windows.value}). The whole disk will be erased: partitioned, formatted, and overwritten, including Windows. This cannot be undone.`));
+        expect("and draws the disk as installerd has just read it",
+            out.confirm.confirm.under?.startsWith(`${windows.value} · `) && out.confirm.confirm.going === 4
+            && out.confirm.confirm.legend[0] === "EFI system partition: 512 MiB · FAT32" && out.confirm.confirm.hint === "Press and hold");
+        // Held all the way: the installation itself is not drawn yet, so it
+        // is not begun, and the disk is left as it is.
+        await sleep(900);
+        const at = await js(`(() => { const r = document.querySelector("#turn .destroy").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        await send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
+        out.held = await eventually(seen, (s) => s.toast !== null, 5);
+        await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
+        expect("a hold that completes begins nothing while what it leads to is not drawn",
+            out.held.toast === "The step after this one is not drawn yet." && out.held.heading === "Ready to install");
+        await click("#turn .btn.quiet");
+        out.returned = await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing && s.disks.some((d) => d.checked), 60);
+        expect("Back returns to the disks with the disk still chosen", out.returned.disks?.find((d) => d.checked)?.value === windows.value);
+    }
 
     // Rescan: the same again, while the page shows it looking.
     await click("#turn .aux .link");

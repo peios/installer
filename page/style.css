@@ -36,6 +36,7 @@
     --ok: #5fe0a8;
     --wait: #f0b86e;
     --danger: #ff9e92;
+    --danger-quiet: rgb(178 59 46 / 18%);
     --esp: #9d8cff;
 
     --font-display: "Schibsted Grotesk", system-ui, sans-serif;
@@ -74,6 +75,10 @@ body {
 .aurora .violet { left: 92%; top: 42%;  background: radial-gradient(closest-side, var(--glow-violet), transparent); animation: drift-b 44s ease-in-out infinite alternate; }
 .aurora .teal   { left: 62%; top: 105%; background: radial-gradient(closest-side, var(--glow-teal), transparent); animation: drift-c 50s ease-in-out infinite alternate; }
 .aurora-on .aurora i { opacity: .8; }
+/* heat: the page that erases a disk warms the bottom of the screen, more as
+   its button is held (--heat, 0 to 1, which that page sets) */
+.aurora .ember { left: 50%; top: 115%; background: radial-gradient(closest-side, rgb(190 58 40 / 80%), transparent); }
+.aurora-on .aurora .ember { opacity: var(--heat, 0); transition: opacity .35s ease; }
 @keyframes drift-a { to { transform: translate(8vmax, 6vmax) scale(1.12); } }
 @keyframes drift-b { to { transform: translate(-10vmax, -4vmax) scale(.9); } }
 @keyframes drift-c { to { transform: translate(-6vmax, -8vmax) scale(1.15); } }
@@ -473,12 +478,98 @@ h1 {
 .rel-line i { position: absolute; top: 50%; left: 0; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px 2px var(--accent-glow); translate: -50% -50%; animation: travel 2.2s var(--ease-swift) infinite; }
 @keyframes travel { 0% { left: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
 
+/* ---- the confirmation: the heading is marked, what destroys is drawn as
+   such, and it is held rather than pressed. --k is how far the hold has
+   got, 0 to 1, and everything that follows the hold follows that. ---- */
+.turn[data-kind="confirm"] {
+    --k: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 560px) minmax(280px, 400px);
+    gap: clamp(28px, 5vw, 72px);
+    align-items: center;
+    max-width: none;
+}
+/* an installerd that says it only in words: there is no disk to draw */
+.turn[data-kind="confirm"].alone { grid-template-columns: minmax(0, 640px); }
+.turn[data-kind="confirm"] .col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.turn[data-kind="confirm"] h1 { font-size: clamp(2rem, 4.4vw, 3.2rem); display: flex; align-items: center; gap: .32em; }
+.turn[data-kind="confirm"] .lede { max-width: 50ch; overflow-wrap: anywhere; }
+/* too narrow for both, the button that erases goes under the way back */
+.turn[data-kind="confirm"] .nav { align-items: flex-start; flex-wrap: wrap; }
+.danger-badge {
+    display: grid; place-items: center; flex: none;
+    width: .92em; height: .92em; border-radius: .26em;
+    background: var(--danger-quiet);
+    color: var(--danger);
+}
+.danger-badge svg { width: .52em; height: .52em; }
+.hold-group { display: grid; gap: 7px; justify-items: end; }
+.destroy {
+    position: relative; overflow: hidden;
+    height: 48px; padding: 0 22px;
+    border-radius: 12px;
+    border: 1px solid rgb(255 158 146 / 55%);
+    background: var(--danger-quiet);
+    color: #ffc2ba;
+    font: 600 15px/1 var(--font-display);
+    white-space: nowrap;
+    cursor: pointer;
+    /* a finger held on it is a hold, not a scroll, a selection or a menu */
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    transition: box-shadow .3s, color .2s;
+}
+.destroy:hover { box-shadow: 0 0 0 4px rgb(255 107 87 / 14%); }
+.destroy:focus-visible { outline: 2px solid var(--danger); outline-offset: 3px; }
+.destroy[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.destroy .fill {
+    position: absolute; inset: 0;
+    transform-origin: left; transform: scaleX(var(--k));
+    background: linear-gradient(90deg, #b23b2e, #ff6b57);
+}
+.destroy .label { position: relative; display: inline-flex; align-items: center; gap: 9px; }
+.destroy .label svg { width: 17px; height: 17px; }
+.holding .destroy { color: #fff; box-shadow: 0 0 0 4px rgb(255 107 87 / 16%), 0 0 calc(var(--k) * 48px) rgb(255 107 87 / 55%); }
+.committed .destroy { color: #fff; box-shadow: 0 0 0 6px rgb(255 107 87 / 22%), 0 0 56px rgb(255 107 87 / 60%); }
+.hold-hint { margin: 0; min-height: 1.4em; font: 400 12px/1.4 var(--font-mono); color: var(--text-muted); text-align: right; }
+
+/* the disk it is about */
+.erased {
+    display: grid; gap: 18px;
+    padding: 24px;
+    border: 1px solid rgb(255 158 146 / 22%); border-radius: 18px;
+    background: rgb(14 17 22 / 55%);
+    backdrop-filter: blur(14px);
+    transition: border-color .6s;
+}
+.committed .erased { border-color: rgb(98 210 255 / 45%); }
+.erased-head { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 14px; align-items: center; }
+.erased-head .glyph { width: 52px; height: 52px; border-radius: 14px; color: var(--danger); background: var(--danger-quiet); transition: color .6s, background-color .6s; }
+.erased-head .glyph svg { width: 28px; height: 28px; }
+.committed .erased-head .glyph { color: var(--accent); background: rgb(98 210 255 / 12%); }
+/* what is on it, going; and over that, as far as the hold has got, what it
+   becomes */
+.layout.confirm-layout .ls.doomed { animation: crawl 1.4s linear infinite; }
+@keyframes crawl { to { background-position: 17px 0; } }
+.layout.confirm-layout .new { clip-path: inset(0 calc((1 - var(--k)) * 100%) 0 0); }
+.layout.confirm-layout .edge { transform: translateX(calc(var(--k) * 100%)); opacity: min(1, calc(var(--k) * 30)); }
+.committed .layout.confirm-layout .edge { opacity: 0; transition: opacity .5s; }
+.committed .layout.confirm-layout { box-shadow: 0 0 32px -6px var(--accent-glow); transition: box-shadow .6s; }
+
+/* the moment it is begun, over everything */
+.flash {
+    position: fixed; inset: 0; z-index: 6; pointer-events: none;
+    background: radial-gradient(circle at 50% 60%, #fff, rgb(155 228 255 / 60%) 40%, transparent 75%);
+    opacity: 0;
+}
+.flash.go { animation: flash-screen .9s ease-out; }
+@keyframes flash-screen { 0% { opacity: .5; } 100% { opacity: 0; } }
+
 @media (max-width: 900px) {
-    .turn[data-kind="disk"] { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
+    .turn[data-kind="disk"], .turn[data-kind="confirm"] { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
     /* One column: the panel is something to read before going on, so it
        comes before Back and Next, not after them. */
-    .turn[data-kind="disk"] > .col { display: contents; }
-    .turn[data-kind="disk"] > .col > .nav { order: 1; }
+    .turn[data-kind="disk"] > .col, .turn[data-kind="confirm"] > .col { display: contents; }
+    .turn[data-kind="disk"] > .col > .nav, .turn[data-kind="confirm"] > .col > .nav { order: 1; }
 }
 
 /* ---- the bottom bar: what the installer is doing, then how it stands ---- */
@@ -566,8 +657,10 @@ h1 {
 /* forced colours (Windows High Contrast and the like): the backdrop goes,
    and every choice keeps an edge the system colours draw */
 @media (forced-colors: active) {
-    #field, .aurora, .vignette { display: none; }
-    .act, .toast, .disk, .plan, .layout, .btn { border: 1px solid CanvasText; }
+    #field, .aurora, .vignette, .flash { display: none; }
+    .act, .toast, .disk, .plan, .erased, .layout, .btn { border: 1px solid CanvasText; }
+    .destroy { border: 2px solid ButtonText; }
+    .destroy .fill { forced-color-adjust: none; }
     .act.hl, .disk[aria-checked="true"] { outline: 3px solid Highlight; outline-offset: 1px; }
     .ls { forced-color-adjust: none; }
 }
@@ -588,6 +681,10 @@ h1 {
     /* a disk's model is how it is recognised: it wraps rather than being cut */
     .disk .model { white-space: normal; overflow-wrap: anywhere; }
     .disk .size { font-size: .92rem; }
+    .erased { padding: 18px; }
+    /* the button that erases has the width to itself, under the way back */
+    .turn[data-kind="confirm"] .hold-group { flex: 1 1 100%; justify-items: stretch; }
+    .turn[data-kind="confirm"] .hold-hint { text-align: center; }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-delay: 0s !important; }
