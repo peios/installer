@@ -20,7 +20,17 @@ so that user-interface code does not own account or registry privilege.
 The network page says what
 .B net status
 prints of the machine's network, an interface to a line, and checks again when
-asked; it changes nothing, and nothing on it has to be answered.
+asked; nothing on it has to be answered.  A wired interface can be given an
+address by hand, with a gateway and name servers.  That is kept until the end
+of setup and applied last, after the account and the machine's name, as a
+profile
+.I Profiles\edefault\emanual-NAME
+and a rule
+.I Rules\eInterface\ewired\emanual-NAME
+under
+.I Machine\eSystem\eNetwork
+naming the interface by its stable id; until then the machine keeps the
+address it has.
 .PP
 Where the browser program is installed, setup can also be done in a browser,
 as the GXWI overlay: before it accepts connections,

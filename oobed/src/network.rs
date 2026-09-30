@@ -23,13 +23,27 @@
 //! of setup reads lpsd through `lps`: oobed runs the commands an operator
 //! would, and needs no library of each daemon's to do it.
 
+use std::net::IpAddr;
+
 use serde_json::{Map, Value, json};
+
+/// The image's baseline rule, which joins every wired interface to the
+/// profile `default` (`Rules\Interface\wired`).
+const WIRED: &str = "wired";
+/// Where netd reads its rules and profiles from, and watches.
+const NETWORK_KEY: &str = "Machine\\System\\Network";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Interface {
     pub name: String,
+    /// netd's stable id for it, from its bus path and hardware address: the
+    /// same card in the same slot keeps it across boots, whatever the kernel
+    /// names it.
+    pub id: String,
     /// `JOIN`, `IGNORE` or `DOWN`, or nothing where no rule spoke.
     pub verdict: Option<String>,
+    /// The rule that spoke for it, as a path under `Rules\Interface`.
+    pub rule: Option<String>,
     pub up: bool,
     pub carrier: bool,
     /// How far along it is, for one the machine is using.
@@ -69,16 +83,34 @@ impl Interface {
         }
     }
 
-    fn words(&self) -> String {
-        let how = match self.state() {
+    /// Whether setup can give it an address by hand. The image's baseline
+    /// joins every wired interface by its rule `wired`, and a manual address
+    /// is an exception under that rule, so it is judged only among the wired
+    /// interfaces and needs nothing else to hold. An interface some other
+    /// rule speaks for, or none, is left to whoever wrote that rule.
+    pub fn addressable(&self) -> bool {
+        self.verdict.as_deref() == Some("JOIN")
+            && !self.id.is_empty()
+            && self
+                .rule
+                .as_deref()
+                .is_some_and(|rule| rule == WIRED || rule.starts_with(&format!("{WIRED}/")))
+    }
+
+    /// Where it has got to, in words.
+    pub fn how(&self) -> &'static str {
+        match self.state() {
             "unused" => "not used",
             "off" => "turned off",
             "unplugged" => "not connected",
             "connecting" => "connecting",
             "local" => "connected, with no way beyond its own network",
             _ => "connected",
-        };
-        let mut line = format!("{}: {how}", self.name);
+        }
+    }
+
+    fn words(&self) -> String {
+        let mut line = format!("{}: {}", self.name, self.how());
         if matches!(self.state(), "local" | "connected") {
             // The first of each: the whole of them is in detail, and a
             // line that lists six addresses stops being read.
@@ -150,6 +182,10 @@ impl Network {
                     network.interfaces.extend(current.take());
                     current = Some(Interface {
                         name: label.to_string(),
+                        id: said
+                            .trim_start_matches('[')
+                            .trim_end_matches(']')
+                            .to_string(),
                         ..Default::default()
                     });
                 }
@@ -167,6 +203,9 @@ impl Network {
                     if !verdict.is_empty() {
                         i.verdict = Some(verdict.to_string());
                     }
+                    i.rule = said
+                        .rsplit_once(" by ")
+                        .map(|(_, rule)| rule.trim().to_string());
                 }
                 "state" => {
                     let mut words = said.split(',').map(str::trim);
@@ -235,9 +274,299 @@ impl Network {
     }
 }
 
+/// An address given to one interface by hand, instead of the one the
+/// network offers. Setup keeps it until the end and applies it last, after
+/// the account and the machine's name: an interface re-addressed takes with
+/// it whatever was reaching the machine through it, a browser included.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Manual {
+    /// The interface, by the name it has now.
+    pub interface: String,
+    /// And by netd's stable id, which is what the rule names.
+    pub id: String,
+    /// CIDR, as `192.168.1.20/24`.
+    pub address: String,
+    pub gateway: Option<String>,
+    pub dns: Vec<String>,
+}
+
+/// What the manual page asks, by ref, and what was answered to each.
+pub struct Answered<'a> {
+    pub interface: &'a str,
+    pub address: &'a str,
+    pub gateway: &'a str,
+    pub dns: &'a str,
+}
+
+/// An address and the length of its network, from `192.168.1.20/24`.
+fn cidr(text: &str) -> Option<(IpAddr, u8)> {
+    let (address, length) = text.split_once('/')?;
+    let address: IpAddr = address.parse().ok()?;
+    let length: u8 = length.parse().ok()?;
+    let most = if address.is_ipv4() { 32 } else { 128 };
+    (1..=most).contains(&length).then_some((address, length))
+}
+
+/// Whether `a` and `b` are on the one network `length` bits long. IPv4
+/// only; for IPv6 a gateway is as often link-local as not, and is not
+/// second-guessed.
+fn same_network(a: IpAddr, b: IpAddr, length: u8) -> bool {
+    match (a, b) {
+        (IpAddr::V4(a), IpAddr::V4(b)) => {
+            let mask = u32::MAX.checked_shl(32 - u32::from(length)).unwrap_or(0);
+            u32::from(a) & mask == u32::from(b) & mask
+        }
+        _ => true,
+    }
+}
+
+/// The network `address` is on, as `192.168.1.0/24`, for saying so.
+fn network_of(address: IpAddr, length: u8) -> String {
+    match address {
+        IpAddr::V4(a) => {
+            let mask = u32::MAX.checked_shl(32 - u32::from(length)).unwrap_or(0);
+            format!("{}/{length}", std::net::Ipv4Addr::from(u32::from(a) & mask))
+        }
+        IpAddr::V6(_) => format!("{address}/{length}"),
+    }
+}
+
+/// An address a machine can be given: not nothing, not loopback, not a
+/// group's.
+fn usable(address: IpAddr) -> bool {
+    !(address.is_unspecified() || address.is_loopback() || address.is_multicast())
+}
+
+impl Manual {
+    /// What the manual page's answer comes to, or what is wrong with each
+    /// field of it, by ref. `network` is the machine's, for the interface.
+    pub fn check(
+        answered: Answered<'_>,
+        network: &Network,
+    ) -> Result<Manual, Vec<(String, String)>> {
+        let mut wrong = Vec::new();
+        let mut say = |r#ref: &str, why: String| wrong.push((r#ref.to_string(), why));
+        let interface = network
+            .interfaces
+            .iter()
+            .find(|i| i.name == answered.interface);
+        match interface {
+            None if answered.interface.is_empty() => {
+                say("manual.interface", "Choose an interface.".into())
+            }
+            None => say(
+                "manual.interface",
+                "That interface is not on this machine any more.".into(),
+            ),
+            Some(i) if !i.addressable() => say(
+                "manual.interface",
+                "Only a wired interface can be given an address here.".into(),
+            ),
+            Some(_) => {}
+        }
+        let address = cidr(answered.address.trim());
+        match address {
+            None => say(
+                "manual.address",
+                "An address and the length of its network, as 192.168.1.20/24.".into(),
+            ),
+            Some((a, _)) if !usable(a) => say(
+                "manual.address",
+                "That is not an address a machine can have.".into(),
+            ),
+            Some((IpAddr::V4(a), length)) if length < 31 => {
+                let bits =
+                    u32::from(a) & !(u32::MAX.checked_shl(32 - u32::from(length)).unwrap_or(0));
+                let host = !(u32::MAX.checked_shl(32 - u32::from(length)).unwrap_or(0));
+                if bits == 0 || bits == host {
+                    say(
+                        "manual.address",
+                        format!(
+                            "That is the address of {} as a whole, not one for a machine on it.",
+                            network_of(IpAddr::V4(a), length)
+                        ),
+                    );
+                }
+            }
+            Some(_) => {}
+        }
+        let gateway = answered.gateway.trim();
+        let gateway = if gateway.is_empty() {
+            None
+        } else {
+            match (gateway.parse::<IpAddr>(), address) {
+                (Err(_), _) => {
+                    say("manual.gateway", "An address, as 192.168.1.1.".into());
+                    None
+                }
+                (Ok(g), _) if !usable(g) => {
+                    say(
+                        "manual.gateway",
+                        "That is not an address a gateway can have.".into(),
+                    );
+                    None
+                }
+                (Ok(g), Some((a, _))) if g.is_ipv4() != a.is_ipv4() => {
+                    let family = if a.is_ipv4() { "IPv4" } else { "IPv6" };
+                    say(
+                        "manual.gateway",
+                        format!("The gateway must be {family}, as the address is."),
+                    );
+                    None
+                }
+                (Ok(g), Some((a, _))) if g == a => {
+                    say(
+                        "manual.gateway",
+                        "That is the address this machine is being given.".into(),
+                    );
+                    None
+                }
+                (Ok(g), Some((a, length))) if !same_network(a, g, length) => {
+                    say(
+                        "manual.gateway",
+                        format!(
+                            "The gateway must be on the address's own network, {}.",
+                            network_of(a, length)
+                        ),
+                    );
+                    None
+                }
+                (Ok(g), _) => Some(g.to_string()),
+            }
+        };
+        let mut dns = Vec::new();
+        for server in answered
+            .dns
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .filter(|s| !s.is_empty())
+        {
+            match server.parse::<IpAddr>() {
+                Ok(s) if usable(s) || s.is_loopback() => dns.push(s.to_string()),
+                _ => {
+                    say(
+                        "manual.dns",
+                        format!("“{server}” is not an address. Separate two with a space."),
+                    );
+                    break;
+                }
+            }
+        }
+        match (interface, address) {
+            (Some(i), Some((a, length))) if wrong.is_empty() => Ok(Manual {
+                interface: i.name.clone(),
+                id: i.id.clone(),
+                address: format!("{a}/{length}"),
+                gateway,
+                dns,
+            }),
+            _ => Err(wrong),
+        }
+    }
+
+    /// The same, in a sentence, saying when it happens.
+    pub fn words(&self) -> String {
+        let mut words = format!(
+            "At the end of setup, {} is given {}",
+            self.interface, self.address
+        );
+        if let Some(gateway) = &self.gateway {
+            words.push_str(&format!(", through {gateway}"));
+        }
+        match self.dns.as_slice() {
+            [] => words.push_str(", with no name servers"),
+            [one] => words.push_str(&format!(", asking {one} for names")),
+            many => {
+                let (last, rest) = many.split_last().unwrap_or((&many[0], &[]));
+                words.push_str(&format!(
+                    ", asking {} and {last} for names",
+                    rest.join(", ")
+                ))
+            }
+        }
+        words.push_str(". Until then it keeps the address it has.");
+        words
+    }
+
+    /// The same as `detail` on those words, for a surface that draws it.
+    pub fn detail(&self) -> Value {
+        let mut d = Map::new();
+        d.insert("interface".into(), json!(self.interface));
+        d.insert("address".into(), json!(self.address));
+        if let Some(gateway) = &self.gateway {
+            d.insert("gateway".into(), json!(gateway));
+        }
+        d.insert("dns".into(), json!(self.dns));
+        Value::Object(d)
+    }
+
+    /// What is named for this interface under `Profiles` and `Rules`: a
+    /// key name, from the interface's, that a registry key can have.
+    fn key(&self) -> String {
+        let name: String = self
+            .interface
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        format!("manual-{name}")
+    }
+
+    /// The registry writes that make netd use it, in order, each as the key,
+    /// the value's name and `reg set`'s data. The profile comes first and
+    /// the rule that names it last, so that a rule never names a profile
+    /// only half written.
+    ///
+    /// The profile is a subkey of the baseline `default`, so it says only
+    /// what differs: the address and the way out are its own, and nothing
+    /// the network offers of either is taken. The rule is an exception under
+    /// the baseline `wired`, naming the interface by its stable id; being
+    /// more specific, it speaks for that interface and DHCP stops on it.
+    /// netd watches the subtree, so it applies within a moment.
+    pub fn registry(&self) -> Vec<(String, &'static str, String)> {
+        let key = self.key();
+        let profile = format!("{NETWORK_KEY}\\Profiles\\default\\{key}");
+        let rule = format!("{NETWORK_KEY}\\Rules\\Interface\\{WIRED}\\{key}");
+        let mut writes = vec![
+            (profile.clone(), "Address.Offered", "dword:0".to_string()),
+            (profile.clone(), "Address.LinkLocal", "dword:0".to_string()),
+            (
+                profile.clone(),
+                "Address.Static",
+                format!("multi:{}", self.address),
+            ),
+            (profile.clone(), "Route.Offered", "dword:0".to_string()),
+        ];
+        if let Some(gateway) = &self.gateway {
+            writes.push((profile.clone(), "Route.Gateway", format!("multi:{gateway}")));
+        }
+        // With nothing taken from the network there are no name servers but
+        // those given here.
+        writes.push((profile.clone(), "Dns.Offered", "dword:0".to_string()));
+        if !self.dns.is_empty() {
+            writes.push((
+                profile.clone(),
+                "Dns.Servers",
+                format!("multi:{}", self.dns.join(",")),
+            ));
+        }
+        writes.push((
+            rule.clone(),
+            "Interface.Id.Equal",
+            format!("sz:{}", self.id),
+        ));
+        writes.push((rule, "Actions", format!("multi:JOIN(default/{key})")));
+        writes
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::Network;
+    use super::{Answered, Manual, Network};
     use serde_json::json;
 
     /// What `net status` printed on the dev VM once installed, with a
@@ -348,5 +677,176 @@ eth1  [0b1c9a4e-5e1d-5a7e-9c55-2f1f0f6b8a10]
             Network::parse("readiness  absent\n").words(),
             "This machine has no network hardware that Peios can use."
         );
+    }
+
+    fn answered<'a>(
+        interface: &'a str,
+        address: &'a str,
+        gateway: &'a str,
+        dns: &'a str,
+    ) -> Answered<'a> {
+        Answered {
+            interface,
+            address,
+            gateway,
+            dns,
+        }
+    }
+
+    #[test]
+    fn an_interface_is_known_by_its_id_and_the_rule_that_joined_it() {
+        let network = Network::parse(STATUS);
+        let eth0 = &network.interfaces[0];
+        assert_eq!(eth0.id, "96f5d807-229f-52f7-818d-a863d64664e9");
+        assert_eq!(eth0.rule.as_deref(), Some("wired"));
+        assert!(eth0.addressable());
+        let other = |verdict: &str| {
+            Network::parse(&format!("eth9  [x]\n  verdict    {verdict}\n"))
+                .interfaces
+                .remove(0)
+                .addressable()
+        };
+        assert!(
+            other("JOIN(default/db1) by wired/db1"),
+            "an exception under wired is wired"
+        );
+        assert!(
+            !other("JOIN(lab) by lab"),
+            "another rule's interface is that rule's"
+        );
+        assert!(!other("IGNORE by backstop"));
+        assert!(!other("(none) by backstop"));
+    }
+
+    #[test]
+    fn a_manual_address_is_checked_field_by_field() {
+        let network = Network::parse(STATUS);
+        let manual = Manual::check(
+            answered(
+                "eth0",
+                " 192.168.1.20/24 ",
+                "192.168.1.1",
+                "1.1.1.1, 9.9.9.9",
+            ),
+            &network,
+        )
+        .unwrap();
+        assert_eq!(
+            manual,
+            Manual {
+                interface: "eth0".into(),
+                id: "96f5d807-229f-52f7-818d-a863d64664e9".into(),
+                address: "192.168.1.20/24".into(),
+                gateway: Some("192.168.1.1".into()),
+                dns: vec!["1.1.1.1".into(), "9.9.9.9".into()],
+            }
+        );
+        assert_eq!(
+            manual.words(),
+            "At the end of setup, eth0 is given 192.168.1.20/24, through 192.168.1.1, asking 1.1.1.1 and 9.9.9.9 \
+             for names. Until then it keeps the address it has."
+        );
+        // Neither a gateway nor name servers is needed.
+        let bare = Manual::check(answered("eth0", "fd00::20/64", "", ""), &network).unwrap();
+        assert_eq!((bare.gateway, bare.dns.len()), (None, 0));
+
+        let wrong = |a: Answered<'_>| Manual::check(a, &network).unwrap_err();
+        assert_eq!(
+            wrong(answered("", "192.168.1.20", "10.0.0.1", "one.one")),
+            [
+                ("manual.interface".into(), "Choose an interface.".into()),
+                (
+                    "manual.address".into(),
+                    "An address and the length of its network, as 192.168.1.20/24.".into()
+                ),
+                (
+                    "manual.dns".into(),
+                    "“one.one” is not an address. Separate two with a space.".into()
+                ),
+            ]
+        );
+        // Unplugged is no matter: it is addressed for when it is plugged in.
+        assert!(Manual::check(answered("eth1", "192.168.1.20/24", "", ""), &network).is_ok());
+        let lab = Network::parse("lab0  [x]\n  verdict    JOIN(lab) by lab\n");
+        assert_eq!(
+            Manual::check(answered("lab0", "192.168.1.20/24", "", ""), &lab).unwrap_err(),
+            [(
+                "manual.interface".into(),
+                "Only a wired interface can be given an address here.".into()
+            )]
+        );
+        assert_eq!(
+            wrong(answered("eth0", "192.168.1.0/24", "", "")),
+            [(
+                "manual.address".into(),
+                "That is the address of 192.168.1.0/24 as a whole, not one for a machine on it."
+                    .into()
+            )]
+        );
+        assert_eq!(
+            wrong(answered("eth0", "127.0.0.2/8", "", ""))[0].1,
+            "That is not an address a machine can have."
+        );
+        assert_eq!(
+            wrong(answered("eth0", "192.168.1.20/24", "192.168.2.1", "")),
+            [(
+                "manual.gateway".into(),
+                "The gateway must be on the address's own network, 192.168.1.0/24.".into()
+            )]
+        );
+        assert_eq!(
+            wrong(answered("eth0", "192.168.1.20/24", "fe80::1", ""))[0].1,
+            "The gateway must be IPv4, as the address is."
+        );
+        assert_eq!(
+            wrong(answered("eth0", "192.168.1.20/24", "192.168.1.20", ""))[0].1,
+            "That is the address this machine is being given."
+        );
+        assert_eq!(
+            wrong(answered("eth0", "192.168.1.20/33", "", ""))[0].0,
+            "manual.address"
+        );
+        assert_eq!(
+            wrong(answered("eth9", "192.168.1.20/24", "", ""))[0].1,
+            "That interface is not on this machine any more."
+        );
+    }
+
+    #[test]
+    fn a_manual_address_is_a_profile_under_default_and_a_rule_under_wired() {
+        let manual = Manual {
+            interface: "eth0".into(),
+            id: "96f5".into(),
+            address: "10.0.2.15/24".into(),
+            gateway: Some("10.0.2.2".into()),
+            dns: vec!["10.0.2.3".into(), "1.1.1.1".into()],
+        };
+        let profile = "Machine\\System\\Network\\Profiles\\default\\manual-eth0";
+        let rule = "Machine\\System\\Network\\Rules\\Interface\\wired\\manual-eth0";
+        let writes: Vec<_> = manual
+            .registry()
+            .into_iter()
+            .map(|(k, n, d)| format!("{k} {n} {d}"))
+            .collect();
+        assert_eq!(
+            writes,
+            [
+                format!("{profile} Address.Offered dword:0"),
+                format!("{profile} Address.LinkLocal dword:0"),
+                format!("{profile} Address.Static multi:10.0.2.15/24"),
+                format!("{profile} Route.Offered dword:0"),
+                format!("{profile} Route.Gateway multi:10.0.2.2"),
+                format!("{profile} Dns.Offered dword:0"),
+                format!("{profile} Dns.Servers multi:10.0.2.3,1.1.1.1"),
+                format!("{rule} Interface.Id.Equal sz:96f5"),
+                format!("{rule} Actions multi:JOIN(default/manual-eth0)"),
+            ]
+        );
+        // A name a key cannot carry is made one it can.
+        let odd = Manual {
+            interface: "en\\p 1".into(),
+            ..manual
+        };
+        assert!(odd.registry()[0].0.ends_with("\\manual-en-p-1"));
     }
 }

@@ -8,16 +8,19 @@ use msip::msg::Outcome;
 use msip_serve::{Flow, Step};
 
 use crate::flow::{self, Advance, Page};
+use crate::network::Manual;
 use crate::setup::Setup;
 
-/// No `select` and no `log`... except the applying page has a log, and
-/// the locale page has (disabled) selects. A surface must render every
-/// type this flow can put on a page, whether or not the element is
-/// enabled — a disabled element still has to be drawn.
+/// Every type this flow can put on a page: the applying page has a log,
+/// the locale page has (disabled) selects, and the manual page a table of
+/// interfaces. A surface must render every type the flow can send,
+/// whether or not the element is enabled — a disabled element still has
+/// to be drawn.
 const NEEDED: &[&str] = &[
     types::TEXT,
     types::STRING,
     types::SELECT,
+    types::TABLE,
     types::PROGRESS,
     types::LOG,
     types::ACTION,
@@ -26,6 +29,8 @@ const NEEDED: &[&str] = &[
 pub struct Oobe {
     setup: Arc<dyn Setup>,
     page: Page,
+    /// The manual address kept for the end, if one is.
+    plan: Option<Manual>,
 }
 
 impl Oobe {
@@ -33,6 +38,7 @@ impl Oobe {
         Oobe {
             setup,
             page: Page::Locale,
+            plan: None,
         }
     }
 }
@@ -47,12 +53,17 @@ impl Flow for Oobe {
     }
 
     fn advance(&mut self, answer: &ValidAnswer) -> Step {
-        match flow::advance(&self.page, answer, self.setup.as_ref()) {
+        match flow::advance(&self.page, answer, self.setup.as_ref(), self.plan.as_ref()) {
             Some(Advance::Page(next, spec)) => {
                 self.page = next;
                 Step::Page(spec)
             }
             Some(Advance::Patch(patch)) => Step::Patch(vec![patch]),
+            Some(Advance::Plan(plan, spec)) => {
+                self.plan = plan;
+                self.page = Page::Network;
+                Step::Page(spec)
+            }
             Some(Advance::Reject(errors)) => Step::Reject(errors),
             Some(Advance::Apply {
                 account,
@@ -61,8 +72,9 @@ impl Flow for Oobe {
             }) => {
                 self.page = Page::Applying;
                 let setup = Arc::clone(&self.setup);
+                let plan = self.plan.clone();
                 Step::Work {
-                    page: flow::applying_page(),
+                    page: flow::applying_page(plan.as_ref()),
                     job: Box::new(move |p| {
                         // Idempotent by construction: a setup that
                         // crashed after creating the account must be
@@ -78,6 +90,13 @@ impl Flow for Oobe {
                         p.phase("phase.account", 100);
                         setup.set_hostname(&hostname, p)?;
                         p.phase("phase.hostname", 100);
+                        // Last: whatever was reaching the machine through
+                        // this interface loses it here, and everything
+                        // else is done by the time it does.
+                        if let Some(plan) = &plan {
+                            setup.set_address(plan, p)?;
+                            p.phase("phase.network", 100);
+                        }
                         Ok(())
                     }),
                 }

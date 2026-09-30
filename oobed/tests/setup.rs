@@ -15,6 +15,7 @@ use msip::msg::{Answer, Hello, Outcome, Start};
 use msip::surface::{Event, Session};
 use msip_serve::{Progress, Server, serve};
 use oobed::flow_impl::Oobe;
+use oobed::network::Manual;
 use oobed::setup::Setup;
 
 /// Records what setup was asked to do, and can pretend the account is
@@ -58,6 +59,13 @@ impl Setup for Recorder {
     }
     fn set_hostname(&self, name: &str, _p: &dyn Progress) -> Result<(), String> {
         self.done.lock().unwrap().push(format!("hostname {name}"));
+        Ok(())
+    }
+    fn set_address(&self, manual: &Manual, _p: &dyn Progress) -> Result<(), String> {
+        self.done
+            .lock()
+            .unwrap()
+            .push(format!("address {} {}", manual.interface, manual.address));
         Ok(())
     }
     fn retire(&self) {
@@ -432,6 +440,164 @@ fn checking_the_network_again_changes_the_page_in_place() {
         "Could not ask netd about the network."
     );
     assert!(!status(&s).state.contains_key("detail"));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A manual address is kept from the network page to the end, said on the
+/// network page meanwhile, and applied last, after everything else.
+#[test]
+fn a_manual_address_is_kept_until_the_end_and_applied_last() {
+    let dir = scratch("manual");
+    let setup = Arc::new(Recorder::default());
+    *setup.net.lock().unwrap() = Some(
+        "readiness  routed\n\neth0  [96f5]\n  verdict    JOIN(default) by wired\n  \
+         state      up, carrier\n  readiness  routed\n  address    10.0.2.15/24\n\n\
+         wlan0  [7d3e]\n  verdict    (none) by backstop\n  state      down, no-carrier\n"
+            .into(),
+    );
+    let mut s = Surface::open(&dir, Arc::clone(&setup));
+    s.press("nav.next", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    let element = |s: &Surface, r: &str| s.session.page().unwrap().element(r).cloned();
+
+    // Offered, and it leads to a page of its own.
+    assert!(element(&s, "network.static").unwrap().enabled);
+    s.press("network.static", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.id(), "oobe.network.manual");
+    let table = element(&s, "manual.interface").unwrap();
+    assert_eq!(
+        table.default,
+        Some(json!("eth0")),
+        "the only one there is to choose"
+    );
+    assert_eq!(table.state["rows"][1]["value"], "wlan0");
+    assert_eq!(table.state["rows"][1]["enabled"], false);
+    assert!(
+        element(&s, "manual.intro").unwrap().state["text"]
+            .as_str()
+            .unwrap()
+            .contains("applied at the end of setup")
+    );
+
+    // What is wrong is said on the field it is wrong in, and the page stays.
+    s.press(
+        "manual.save",
+        &[
+            ("manual.interface", "eth0"),
+            ("manual.address", "10.0.2.20"),
+            ("manual.gateway", "10.0.3.2"),
+        ],
+    );
+    assert!(matches!(s.recv(), Event::Updated));
+    assert_eq!(s.id(), "oobe.network.manual");
+    assert!(element(&s, "manual.address").unwrap().error.is_some());
+    s.press(
+        "manual.save",
+        &[
+            ("manual.interface", "eth0"),
+            ("manual.address", "10.0.2.20/24"),
+            ("manual.gateway", "10.0.2.2"),
+            ("manual.dns", "10.0.2.3"),
+        ],
+    );
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.id(), "oobe.network");
+    let planned = element(&s, "network.planned").unwrap();
+    assert_eq!(
+        planned.state["text"],
+        "At the end of setup, eth0 is given 10.0.2.20/24, through 10.0.2.2, asking 10.0.2.3 for names. \
+         Until then it keeps the address it has."
+    );
+    assert_eq!(planned.state["detail"]["address"], "10.0.2.20/24");
+    assert!(element(&s, "network.unplan").is_some());
+
+    // Changing it starts from what was kept.
+    s.press("network.static", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(
+        element(&s, "manual.address").unwrap().default,
+        Some(json!("10.0.2.20/24"))
+    );
+    s.press("nav.back", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert!(element(&s, "network.planned").is_some(), "Back keeps it");
+
+    s.press("nav.next", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press(
+        "nav.next",
+        &[
+            ("account.name", "jack"),
+            ("account.password", "pw"),
+            ("account.confirm", "pw"),
+        ],
+    );
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press("nav.finish", &[("hostname", "workshop")]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.id(), "oobe.applying");
+    let phase = element(&s, "phase.network").unwrap();
+    assert_eq!(phase.name.as_deref(), Some("Addressing eth0"));
+    assert_eq!(phase.state["detail"]["address"], "10.0.2.20/24");
+    assert_eq!(s.drain_to_end(), Outcome::Complete);
+    assert_eq!(
+        wait_for_steps(&setup, 4),
+        [
+            "create jack:pw",
+            "hostname workshop",
+            "address eth0 10.0.2.20/24",
+            RETIRED
+        ]
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A manual address given up is not applied, and with none there is no
+/// phase for one.
+#[test]
+fn a_manual_address_given_up_is_not_applied() {
+    let dir = scratch("unplan");
+    let setup = Arc::new(Recorder::default());
+    *setup.net.lock().unwrap() = Some(
+        "eth0  [96f5]\n  verdict    JOIN(default) by wired\n  state      up, carrier\n".into(),
+    );
+    let mut s = Surface::open(&dir, Arc::clone(&setup));
+    s.press("nav.next", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press("network.static", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press(
+        "manual.save",
+        &[
+            ("manual.interface", "eth0"),
+            ("manual.address", "192.168.1.20/24"),
+        ],
+    );
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press("network.unplan", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    let page = s.session.page().unwrap();
+    assert!(page.element("network.planned").is_none() && page.element("network.unplan").is_none());
+    s.press("nav.next", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press(
+        "nav.next",
+        &[
+            ("account.name", "jack"),
+            ("account.password", "pw"),
+            ("account.confirm", "pw"),
+        ],
+    );
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press("nav.finish", &[("hostname", "workshop")]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert!(s.session.page().unwrap().element("phase.network").is_none());
+    assert_eq!(s.drain_to_end(), Outcome::Complete);
+    assert_eq!(
+        wait_for_steps(&setup, 3),
+        ["create jack:pw", "hostname workshop", RETIRED]
+    );
     std::fs::remove_dir_all(&dir).ok();
 }
 
