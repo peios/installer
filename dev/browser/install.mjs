@@ -122,7 +122,10 @@ try {
         return s;
     }, (s) => (s.finished || s.stopped) && s.again !== null, 1800);
     out.tookSeconds = Math.round((Date.now() - began) / 1000);
+    // The bars glide to where the job left them, and a phase is not shown
+    // done until its bar has got there: the page is read once it is still.
     await sleep(1600);
+    out.end = { ...await seen(), after: out.end.after };
     await picture("install-2-ended.png");
     expect("the job comes to an end, and the page stays to say how", out.end.after !== null && out.end.kind === "progress");
     out.outcome = out.end.finished ? "complete" : out.end.stopped ? "failed" : "neither";
