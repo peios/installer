@@ -47,8 +47,9 @@ const RETIRE_KEYS: &[&str] = &[
 ];
 
 pub trait Setup: Send + Sync + 'static {
-    /// One line for the network page: what the machine can currently do.
-    fn network_status(&self) -> String;
+    /// What `net status` prints, for the network page, or nothing where
+    /// netd could not be asked.
+    fn net_status(&self) -> Option<String>;
     /// A name to offer, which the person may keep with one keypress.
     fn suggested_hostname(&self) -> String;
     /// Whether a principal of this name already exists.
@@ -301,18 +302,11 @@ impl Real {
 }
 
 impl Setup for Real {
-    fn network_status(&self) -> String {
-        match Command::new("net").arg("status").output() {
-            Ok(out) if out.status.success() => {
-                let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if text.is_empty() {
-                    "No network information available.".into()
-                } else {
-                    text
-                }
-            }
-            _ => "Could not ask netd about the network.".into(),
-        }
+    fn net_status(&self) -> Option<String> {
+        let out = Command::new("net").arg("status").output().ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
     }
 
     fn suggested_hostname(&self) -> String {
@@ -422,11 +416,17 @@ impl Setup for Real {
 }
 
 /// Touches nothing; reports what it would have done.
-pub struct DryRun;
+#[derive(Default)]
+pub struct DryRun {
+    /// A file holding what `net status` is to be taken to print, read
+    /// afresh each time it is asked, so that changing it and checking again
+    /// is a cable plugged in. Without one, netd cannot be asked.
+    pub net_status: Option<PathBuf>,
+}
 
 impl Setup for DryRun {
-    fn network_status(&self) -> String {
-        "Dry run: no network was consulted.".into()
+    fn net_status(&self) -> Option<String> {
+        std::fs::read_to_string(self.net_status.as_deref()?).ok()
     }
     fn suggested_hostname(&self) -> String {
         "peios-0000".into()

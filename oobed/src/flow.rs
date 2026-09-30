@@ -6,8 +6,9 @@
 
 use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::{Element, types};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
+use crate::network::Network;
 use crate::setup::Setup;
 
 /// Where the conversation is, and what it has gathered getting there.
@@ -34,6 +35,8 @@ pub enum Page {
 
 pub enum Advance {
     Page(Page, TurnSpec),
+    /// Change the open page in place.
+    Patch(Map<String, Value>),
     Reject(Vec<(String, String)>),
     Apply {
         account: String,
@@ -113,16 +116,36 @@ pub fn locale_page() -> TurnSpec {
     }
 }
 
-pub fn network_page(status: &str) -> TurnSpec {
+/// What the network page says of the machine's network: its words, and
+/// the same as `detail` ([`crate::network`]) where netd could be asked.
+fn network_said(setup: &dyn Setup) -> (String, Option<Value>) {
+    match setup.net_status() {
+        Some(printed) => {
+            let network = Network::parse(&printed);
+            (network.words(), Some(network.detail()))
+        }
+        None => ("Could not ask netd about the network.".into(), None),
+    }
+}
+
+pub fn network_page(setup: &dyn Setup) -> TurnSpec {
+    let (words, detail) = network_said(setup);
+    let mut status = text("network.status", &words);
+    if let Some(detail) = detail {
+        status.state.insert("detail".into(), detail);
+    }
+    let mut again = action("network.refresh", "Check again");
+    again.state.insert("validate".into(), json!(false));
     TurnSpec {
         id: Some("oobe.network".into()),
         name: Some("Network".into()),
         elements: vec![
-            text("network.status", status),
+            status,
             text(
                 "network.note",
                 "Setup does not need a network, and nothing here has to be answered.",
             ),
+            again,
             disabled(
                 action("network.wifi", "Connect to Wi-Fi…"),
                 "No wireless stack is packaged yet.",
@@ -136,6 +159,18 @@ pub fn network_page(status: &str) -> TurnSpec {
         ],
         ..Default::default()
     }
+}
+
+/// What checking the network again changes on the open network page.
+pub fn network_patch(setup: &dyn Setup) -> Map<String, Value> {
+    let (words, detail) = network_said(setup);
+    let mut patch = Map::new();
+    patch.insert("ref".into(), json!("network.status"));
+    patch.insert("text".into(), json!(words));
+    // Null takes the field away (§3.10): netd that answered before and
+    // does not now has said nothing of the interfaces it listed.
+    patch.insert("detail".into(), detail.unwrap_or(Value::Null));
+    patch
 }
 
 pub fn account_page(prefill: &str) -> TurnSpec {
@@ -214,10 +249,8 @@ fn value(answer: &ValidAnswer, r#ref: &str) -> String {
 pub fn advance(page: &Page, answer: &ValidAnswer, setup: &dyn Setup) -> Option<Advance> {
     let act = answer.action.as_deref().unwrap_or("");
     match (page, act) {
-        (Page::Locale, "nav.next") => Some(Advance::Page(
-            Page::Network,
-            network_page(&setup.network_status()),
-        )),
+        (Page::Locale, "nav.next") => Some(Advance::Page(Page::Network, network_page(setup))),
+        (Page::Network, "network.refresh") => Some(Advance::Patch(network_patch(setup))),
         (Page::Network, "nav.back") => Some(Advance::Page(Page::Locale, locale_page())),
         (Page::Network, "nav.next") => Some(Advance::Page(
             Page::Account {
@@ -225,10 +258,9 @@ pub fn advance(page: &Page, answer: &ValidAnswer, setup: &dyn Setup) -> Option<A
             },
             account_page("peios"),
         )),
-        (Page::Account { .. }, "nav.back") => Some(Advance::Page(
-            Page::Network,
-            network_page(&setup.network_status()),
-        )),
+        (Page::Account { .. }, "nav.back") => {
+            Some(Advance::Page(Page::Network, network_page(setup)))
+        }
         (Page::Account { .. }, "nav.next") => {
             let account = value(answer, "account.name");
             let password = value(answer, "account.password");

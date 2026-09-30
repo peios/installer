@@ -11,16 +11,18 @@ use oobed::setup::{DryRun, Real, Setup, socket_sddl};
 /// The program that draws setup in a browser, as GXWI's overlay.
 const BROWSER: &str = "/bin/oobe-gxwi";
 
-const USAGE: &str = "Usage: oobed [--socket PATH] [--browser PATH | --no-browser] [--dry-run]\n\
+const USAGE: &str = "Usage: oobed [--socket PATH] [--browser PATH | --no-browser]\n\
+             [--dry-run [--net-status FILE]]\n\
 \n\
 Peios first-boot setup service.\n\
 \n\
 Options:\n\
-  --socket PATH    MSIP socket (default: /run/oobed.sock)\n\
-  --browser PATH   the program GXWI runs to draw setup in a browser\n\
-                   (default: /bin/oobe-gxwi, where it is installed)\n\
-  --no-browser     setup on the console only\n\
-  --dry-run        exercise setup without changing the machine\n\
+  --socket PATH       MSIP socket (default: /run/oobed.sock)\n\
+  --browser PATH      the program GXWI runs to draw setup in a browser\n\
+                      (default: /bin/oobe-gxwi, where it is installed)\n\
+  --no-browser        setup on the console only\n\
+  --dry-run           exercise setup without changing the machine\n\
+  --net-status FILE   with --dry-run, what `net status` is taken to print\n\
   -h, --help       show this help\n\
   -V, --version    show the version";
 
@@ -35,6 +37,7 @@ fn main() {
     let mut socket = "/run/oobed.sock".to_string();
     let mut dry_run = false;
     let mut browser = Some(PathBuf::from(BROWSER));
+    let mut net_status = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -42,6 +45,7 @@ fn main() {
             "--browser" => browser = Some(required(&mut args, "--browser").into()),
             "--no-browser" => browser = None,
             "--dry-run" => dry_run = true,
+            "--net-status" => net_status = Some(required(&mut args, "--net-status").into()),
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return;
@@ -56,6 +60,10 @@ fn main() {
             }
         }
     }
+    if net_status.is_some() && !dry_run {
+        eprintln!("oobed: --net-status is for a dry run\n{USAGE}");
+        std::process::exit(2);
+    }
 
     // A dry run touches nothing, and letting browsers in means making an
     // account and setting GXWI's overlay: it does neither, and a browser is
@@ -63,7 +71,7 @@ fn main() {
     let real = (!dry_run).then(|| Arc::new(Real::new(browser)));
     let setup: Arc<dyn Setup> = match &real {
         Some(real) => Arc::clone(real) as Arc<dyn Setup>,
-        None => Arc::new(DryRun),
+        None => Arc::new(DryRun { net_status }),
     };
     let _ = std::fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket).expect("bind socket");
