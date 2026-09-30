@@ -37,6 +37,9 @@ pub enum Advance {
     /// Look at the machine again and refresh the open disk page in
     /// place, for the purpose it was opened for.
     Rescan(Mode),
+    /// The answer is well formed and cannot be gone on with: say why on
+    /// these elements of the open page, which stays open.
+    Reject(Vec<(String, String)>),
     /// Start a job; the server issues the progress page and runs it.
     Begin { kind: JobKind, target: String },
 }
@@ -111,7 +114,11 @@ pub fn survey(executor: &dyn Executor, mode: Mode) -> Survey {
     }
 }
 
-pub fn disk_page(survey: &Survey, mode: Mode) -> TurnSpec {
+/// The disk page. `chosen` is the disk already chosen on it, when the
+/// page is come back to from the one after: it is the table's `default`,
+/// which a surface starts a field from, so the page opens with it chosen.
+/// A disk that is no longer there to choose is not carried back.
+pub fn disk_page(survey: &Survey, mode: Mode, chosen: Option<&str>) -> TurnSpec {
     let intro = match mode {
         Mode::Install => "Choose the disk to install onto. Everything on it will be erased.",
         Mode::Upgrade => "Choose the disk holding the system to upgrade.",
@@ -133,6 +140,9 @@ pub fn disk_page(survey: &Survey, mode: Mode) -> TurnSpec {
     target.name = Some("Target disk".into());
     target.required = true;
     target.help = contents::unclaimed_sentence(&survey.controllers);
+    target.default = chosen
+        .filter(|device| can_choose(&survey.disks, device))
+        .map(|device| json!(device));
     target.state.insert("columns".into(), disk_columns());
     target.state.insert("rows".into(), disk_rows(survey, mode));
     target.state.insert(
@@ -155,6 +165,12 @@ pub fn disk_page(survey: &Survey, mode: Mode) -> TurnSpec {
         ],
         class: vec![purpose.into()],
     }
+}
+
+/// Whether `device` is one of `disks` and may be chosen: every disk but
+/// the medium this is running from, which is listed and greyed.
+pub fn can_choose(disks: &[Disk], device: &str) -> bool {
+    disks.iter().any(|d| d.device == device && !d.medium)
 }
 
 /// What a rescan changes on the open disk page: the rows, and what it
@@ -230,6 +246,9 @@ pub fn disk_rows(survey: &Survey, mode: Mode) -> Value {
 ///   (`esp`, `root`), `title`, `start`, `bytes` and `fs`. Only when
 ///   the page is choosing a disk to install onto, and only on a disk
 ///   that can be chosen.
+/// - `erases` -- with `becomes`: what a person would miss of what the
+///   install erases, each by name ([`erases`]). Empty when the disk
+///   holds nothing of the kind.
 /// - `system` -- the Peios system on it: the partition it is `on`, its
 ///   `edition` and `version`, and both as `text`.
 /// - `no_system` -- why there is none, when the disk was looked into
@@ -273,6 +292,7 @@ pub fn disk_detail(d: &Disk, mode: Mode, medium: Option<&Release>) -> Value {
         && let Some(becomes) = becomes(d.size)
     {
         detail.insert("becomes".into(), becomes);
+        detail.insert("erases".into(), json!(erases(d)));
     }
     if let Some((on, release)) = d.system() {
         detail.insert(
@@ -313,6 +333,38 @@ pub fn becomes(size: u64) -> Option<Value> {
     ]))
 }
 
+/// What a person would miss if `d` were erased, each by name: a system
+/// by what it calls itself, and any other filesystem with files on it by
+/// its label and how much is in use. What a machine starts from or
+/// repairs itself with (an EFI system partition, a Windows recovery
+/// partition) is not missed in its own right, and a filesystem that was
+/// not looked into is not claimed to hold anything.
+pub fn erases(d: &Disk) -> Vec<String> {
+    d.partitions
+        .iter()
+        .filter(|p| !p.fs.is_empty() && p.kind != "esp" && p.kind != "winre")
+        .filter_map(|p| {
+            let used = p.used.filter(|used| *used > 0)?;
+            Some(p.holds.clone().unwrap_or_else(|| {
+                format!(
+                    "“{}” ({} in use)",
+                    p.title(),
+                    crate::executor::size_text(used)
+                )
+            }))
+        })
+        .collect()
+}
+
+/// `a`, `a and b`, `a, b and c`.
+fn list_text(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [most @ .., last] => format!("{} and {last}", most.join(", ")),
+    }
+}
+
 /// Why this medium, carrying `carry`, cannot upgrade a disk holding
 /// `have`; `None` when it can. The one ordering the disk page and the
 /// confirmation both go by.
@@ -333,26 +385,49 @@ pub fn upgrade_blocked(have: &Release, carry: &Release) -> Option<String> {
     }
 }
 
-pub fn confirm_page(target: &str, label: &str) -> TurnSpec {
+/// The install's confirmation: which disk, that all of it goes, and what
+/// a person would miss of what is on it.
+///
+/// `disk` is the disk as it was just read, when it could be found. The
+/// sentence says everything a person needs; the same facts go with it as
+/// the text's `detail` (§3.B), for a surface that draws the disk: the
+/// row's `device`, `model`, `size` and `bus` as the disk page words
+/// them, and everything [`disk_detail`] says of a disk being installed
+/// onto.
+pub fn confirm_page(target: &str, label: &str, disk: Option<&Disk>) -> TurnSpec {
+    let lost = disk.map(erases).unwrap_or_default();
+    let including = if lost.is_empty() {
+        String::new()
+    } else {
+        format!(", including {}", list_text(&lost))
+    };
+    let mut summary = text(
+        "confirm.summary",
+        &format!(
+            "Peios will be installed onto {label} ({target}). \
+             The whole disk will be erased: partitioned, formatted, \
+             and overwritten{including}. This cannot be undone."
+        ),
+    );
+    if let Some(d) = disk {
+        let mut detail = match disk_detail(d, Mode::Install, None) {
+            Value::Object(detail) => detail,
+            _ => Map::new(),
+        };
+        detail.insert("device".into(), json!(d.device));
+        detail.insert("model".into(), json!(d.model));
+        detail.insert("size".into(), json!(crate::executor::size_text(d.size)));
+        detail.insert("bus".into(), json!(d.bus));
+        summary.state.insert("detail".into(), Value::Object(detail));
+    }
     TurnSpec {
         id: Some("confirm".into()),
         name: Some("Ready to install".into()),
-        elements: vec![
-            text(
-                "confirm.summary",
-                &format!(
-                    "Peios will be installed onto {label} ({target}). \
-                     The whole disk will be erased: partitioned, formatted, \
-                     and overwritten. This cannot be undone."
-                ),
-            ),
-            no_validate(action("nav.back", "Back")),
-            {
-                let mut go = primary(action("act.begin", "Erase disk and install"));
-                go.state.insert("destructive".into(), json!(true));
-                go
-            },
-        ],
+        elements: vec![summary, no_validate(action("nav.back", "Back")), {
+            let mut go = primary(action("act.begin", "Erase disk and install"));
+            go.state.insert("destructive".into(), json!(true));
+            go
+        }],
         class: vec!["confirm".into()],
     }
 }
@@ -492,36 +567,56 @@ pub fn advance(
     executor: &dyn Executor,
 ) -> Option<Advance> {
     let act = answer.action.as_deref().unwrap_or("");
-    let choose = |mode: Mode| {
+    // The disk page, for `mode`, with `chosen` still chosen when it is
+    // come back to.
+    let disks = |mode: Mode, chosen: Option<&str>| {
         Some(Advance::Page(
             FlowState::DiskSelect { mode },
-            disk_page(&survey(executor, mode), mode),
+            disk_page(&survey(executor, mode), mode, chosen),
         ))
     };
     match (state, act) {
-        (FlowState::Mode, "act.install") => choose(Mode::Install),
-        (FlowState::Mode, "act.upgrade") => choose(Mode::Upgrade),
-        (FlowState::Mode, "act.repair") => choose(Mode::Repair),
+        (FlowState::Mode, "act.install") => disks(Mode::Install, None),
+        (FlowState::Mode, "act.upgrade") => disks(Mode::Upgrade, None),
+        (FlowState::Mode, "act.repair") => disks(Mode::Repair, None),
         (FlowState::DiskSelect { mode }, "act.rescan") => Some(Advance::Rescan(*mode)),
         (FlowState::DiskSelect { .. }, "nav.back") => {
             Some(Advance::Page(FlowState::Mode, mode_page()))
         }
         (FlowState::DiskSelect { mode }, "nav.next") => {
             let target = answer.values.get("disk.target")?.as_str()?.to_string();
-            let label = executor
+            // The answer names a disk; whether it is one of this
+            // machine's, and one that may be chosen, is for here to say.
+            // A disk pulled since the page was drawn, or the medium this
+            // runs from, goes no further.
+            let reject =
+                |why: String| Some(Advance::Reject(vec![("disk.target".to_string(), why)]));
+            let Some(mut disk) = executor
                 .probe_disks()
-                .iter()
+                .into_iter()
                 .find(|d| d.device == target)
-                .map(|d| d.label())
-                .unwrap_or_else(|| target.clone());
+            else {
+                return reject(format!(
+                    "{target} is no longer there. Rescan and choose again."
+                ));
+            };
+            if disk.medium {
+                return reject(format!("{target} is the medium this is running from."));
+            }
+            let label = disk.label();
             match mode {
-                Mode::Install => Some(Advance::Page(
-                    FlowState::Confirm {
-                        target: target.clone(),
-                        label: label.clone(),
-                    },
-                    confirm_page(&target, &label),
-                )),
+                Mode::Install => {
+                    // What is about to be erased is read now, not
+                    // remembered from the page before.
+                    executor.read_contents(std::slice::from_mut(&mut disk));
+                    Some(Advance::Page(
+                        FlowState::Confirm {
+                            target: target.clone(),
+                            label: label.clone(),
+                        },
+                        confirm_page(&target, &label, Some(&disk)),
+                    ))
+                }
                 Mode::Upgrade => Some(Advance::Page(
                     FlowState::UpgradeConfirm {
                         target: target.clone(),
@@ -541,17 +636,17 @@ pub fn advance(
                 )),
             }
         }
-        (FlowState::Confirm { .. }, "nav.back") => choose(Mode::Install),
+        (FlowState::Confirm { target, .. }, "nav.back") => disks(Mode::Install, Some(target)),
         (FlowState::Confirm { target, .. }, "act.begin") => Some(Advance::Begin {
             kind: JobKind::Install,
             target: target.clone(),
         }),
-        (FlowState::UpgradeConfirm { .. }, "nav.back") => choose(Mode::Upgrade),
+        (FlowState::UpgradeConfirm { target }, "nav.back") => disks(Mode::Upgrade, Some(target)),
         (FlowState::UpgradeConfirm { target }, "act.begin") => Some(Advance::Begin {
             kind: JobKind::Upgrade,
             target: target.clone(),
         }),
-        (FlowState::RepairMenu { .. }, "nav.back") => choose(Mode::Repair),
+        (FlowState::RepairMenu { target }, "nav.back") => disks(Mode::Repair, Some(target)),
         (FlowState::RepairMenu { target }, kindref) => {
             let kind = match kindref {
                 "repair.boot" => JobKind::RepairBoot,

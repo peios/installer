@@ -246,7 +246,14 @@ impl App {
                 types::BOOLEAN => {
                     Input::Flag(e.default.as_ref().and_then(Value::as_bool).unwrap_or(false))
                 }
-                types::SELECT | types::TABLE => Input::Row(None),
+                // A list opens on its default, as a text field opens
+                // holding its own: a page come back to shows what was
+                // chosen on it.
+                types::SELECT | types::TABLE => Input::Row(e.default.as_ref().and_then(|d| {
+                    rows_of(e)
+                        .iter()
+                        .position(|row| row.get("value") == Some(d) && row_enabled(row))
+                })),
                 _ => continue,
             };
             self.inputs.insert(e.r#ref.clone(), input);

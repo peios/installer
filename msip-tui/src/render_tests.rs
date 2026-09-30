@@ -247,6 +247,29 @@ fn a_table_shows_its_columns_and_skips_disabled_rows() {
     assert!(!lines.iter().any(|l| l.contains("▸ /dev/vda")));
 }
 
+/// A list with a default opens with that row highlighted, not the first:
+/// a page come back to shows what was chosen on it. A default that cannot
+/// be chosen is no default.
+#[test]
+fn a_list_opens_on_its_default() {
+    let mut elements = disks();
+    elements[0]["rows"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"value": "/dev/vdc", "cells": {"device": "/dev/vdc", "model": "Virtio disk", "size": "16.0 GiB", "bus": "virtio"}}));
+    elements[0]["default"] = json!("/dev/vdc");
+    let lines = frame(&app(elements.clone(), json!([])), 120, 30);
+    assert!(lines.iter().any(|l| l.contains("▸ /dev/vdc")));
+    assert!(!lines.iter().any(|l| l.contains("▸ /dev/vdb")));
+
+    elements[0]["default"] = json!("/dev/vda");
+    let lines = frame(&app(elements, json!([])), 120, 30);
+    assert!(
+        lines.iter().any(|l| l.contains("▸ /dev/vdb")),
+        "the medium is not a default; the first row that can be chosen is"
+    );
+}
+
 /// Column order is priority order (a2): when the box is too narrow the
 /// rightmost column goes first, and the cells that remain are whole.
 #[test]
