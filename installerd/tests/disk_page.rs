@@ -124,6 +124,7 @@ fn dry_run(inventory: Inventory) -> DryRun {
     DryRun {
         step_ms: 1,
         inventory: Some(inventory),
+        fail_at: None,
     }
 }
 
@@ -320,15 +321,17 @@ fn the_confirmation_says_which_disk_and_what_goes_with_it() {
         "nav.next",
         "/dev/nvme0n1",
     ));
+    assert_eq!(page.id.as_deref(), Some("confirm"));
+    let summary = element(&page, "confirm.summary");
+    // What it says of the disk as structure is kept for the page after.
     assert_eq!(
         state,
         FlowState::Confirm {
             target: "/dev/nvme0n1".into(),
             label: "Samsung SSD 980 PRO 1TB, 931.5 GiB".into(),
+            detail: Some(summary["detail"].clone()),
         }
     );
-    assert_eq!(page.id.as_deref(), Some("confirm"));
-    let summary = element(&page, "confirm.summary");
     assert_eq!(
         summary["text"],
         "Peios will be installed onto Samsung SSD 980 PRO 1TB, 931.5 GiB (/dev/nvme0n1). \
@@ -365,6 +368,91 @@ fn the_confirmation_says_which_disk_and_what_goes_with_it() {
             .unwrap()
             .contains("formatted, and overwritten. This cannot be undone.")
     );
+}
+
+/// The page a job runs on says what it is being done to: in words for any
+/// surface, and for an install with the disk as the confirmation had it,
+/// since a surface may join when this page is the first it sees.
+#[test]
+fn the_page_a_job_runs_on_says_which_disk() {
+    let executor = dry_run(desktop_with_media());
+    let begin = ValidAnswer {
+        action: Some("act.begin".into()),
+        values: Default::default(),
+    };
+    let (confirming, confirmation) = page_of(pressed(
+        &executor,
+        Mode::Install,
+        "nav.next",
+        "/dev/nvme0n1",
+    ));
+    let Some(Advance::Begin { target, page, .. }) = advance(&confirming, &begin, &executor) else {
+        panic!("the confirmation's button did not begin a job");
+    };
+    assert_eq!(target, "/dev/nvme0n1");
+    assert_eq!(page.id.as_deref(), Some("install.progress"));
+    let summary = element(&page, "progress.summary");
+    assert_eq!(
+        summary["text"],
+        "Installing Peios onto Samsung SSD 980 PRO 1TB, 931.5 GiB (/dev/nvme0n1). \
+         Leave the machine on and the install medium in place until this finishes."
+    );
+    assert_eq!(
+        summary["detail"],
+        element(&confirmation, "confirm.summary")["detail"]
+    );
+    assert_eq!(summary["detail"]["becomes"][1]["role"], "root");
+    // The phases follow it, each from nothing, and then what the job says.
+    let refs: Vec<&str> = page.elements.iter().map(|e| e.r#ref.as_str()).collect();
+    assert_eq!(
+        refs,
+        [
+            "progress.summary",
+            "phase.partition",
+            "phase.format",
+            "phase.copy",
+            "phase.boot",
+            "out"
+        ]
+    );
+    assert_eq!(element(&page, "phase.copy")["value"], 0);
+
+    // The jobs on a system already there name the disk, and draw nothing.
+    for (state, id, says) in [
+        (
+            FlowState::UpgradeConfirm {
+                target: "/dev/sda".into(),
+            },
+            "upgrade.progress",
+            "Upgrading the system on /dev/sda. ",
+        ),
+        (
+            FlowState::RepairMenu {
+                target: "/dev/sda".into(),
+            },
+            "repair.progress",
+            "Repairing the system on /dev/sda. ",
+        ),
+    ] {
+        let press = ValidAnswer {
+            action: Some(
+                if id == "repair.progress" {
+                    "repair.boot"
+                } else {
+                    "act.begin"
+                }
+                .into(),
+            ),
+            values: Default::default(),
+        };
+        let Some(Advance::Begin { page, .. }) = advance(&state, &press, &executor) else {
+            panic!("no job was begun");
+        };
+        assert_eq!(page.id.as_deref(), Some(id));
+        let summary = element(&page, "progress.summary");
+        assert!(summary["text"].as_str().unwrap().starts_with(says));
+        assert_eq!(summary.get("detail"), None);
+    }
 }
 
 /// The answer names a disk, and any string is a well-formed answer: what
@@ -408,6 +496,7 @@ fn going_back_to_the_disks_leaves_the_disk_chosen() {
             FlowState::Confirm {
                 target: "/dev/sda".into(),
                 label: "CT500MX500SSD1, 465.8 GiB".into(),
+                detail: None,
             },
         ),
         (

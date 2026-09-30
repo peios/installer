@@ -34,11 +34,21 @@ fn start_daemon(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn start_daemon_with(dir: &std::path::Path, inventory: Inventory) -> std::path::PathBuf {
+    start_daemon_failing(dir, inventory, None)
+}
+
+/// The same, with every job told to fail part way through `fail_at`.
+fn start_daemon_failing(
+    dir: &std::path::Path,
+    inventory: Inventory,
+    fail_at: Option<&str>,
+) -> std::path::PathBuf {
     let socket = dir.join("installerd.sock");
     let listener = UnixListener::bind(&socket).unwrap();
     let executor: Arc<dyn installerd::executor::Executor> = Arc::new(DryRun {
         step_ms: 1,
         inventory: Some(inventory),
+        fail_at: fail_at.map(str::to_string),
     });
     let server = Server::new("install", "installerd/test", move || {
         Box::new(Install::new(Arc::clone(&executor)))
@@ -373,6 +383,69 @@ fn upgrade_flow_reaches_a_live_upgrade_button_and_finishes() {
             break;
         }
     }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A dry run told to fail does: the job stops in the phase named, the
+/// ones before it finished and the ones after never begun, and the
+/// conversation ends failed with why.
+#[test]
+fn a_dry_run_told_to_fail_ends_the_conversation_failed() {
+    let dir = std::env::temp_dir().join(format!("msip-test-fail-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let socket = start_daemon_failing(
+        &dir,
+        Inventory {
+            disks: vec![Disk {
+                device: "/dev/vdb".into(),
+                size: 8 * 1024 * 1024 * 1024,
+                ..Disk::default()
+            }],
+            ..Inventory::default()
+        },
+        Some("copy"),
+    );
+
+    let mut s = Surface::connect(&socket, types::ALL);
+    write_msg(
+        &mut s.stream,
+        MsgType::Start,
+        &Start {
+            kind: "install".into(),
+        },
+    )
+    .unwrap();
+    let Event::Bound(_) = s.recv() else { panic!() };
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.answer("act.install", vec![]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.answer("nav.next", vec![("disk.target", json!("/dev/vdb"))]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.answer("act.begin", vec![]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.turn_id(), "install.progress");
+
+    let mut last = Vec::new();
+    let end = loop {
+        match s.recv() {
+            Event::Ended(end) => break end,
+            _ => {
+                let page = s.session.page().unwrap();
+                last = ["partition", "format", "copy", "boot"]
+                    .map(|phase| {
+                        page.element(&format!("phase.{phase}")).unwrap().state["value"].clone()
+                    })
+                    .to_vec();
+            }
+        }
+    };
+    assert_eq!(end.outcome, msip::msg::Outcome::Failed);
+    assert_eq!(
+        end.message.as_deref(),
+        Some("dry run: stopped part way through copying the system, as it was told to")
+    );
+    assert_eq!(last, [json!(100), json!(100), json!(52), json!(0)]);
+
     std::fs::remove_dir_all(&dir).ok();
 }
 

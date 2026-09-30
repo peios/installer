@@ -10,6 +10,7 @@ installerd \- Peios installation and repair service
 .B installerd --dry-run
 .RB [ --socket " " PATH ]
 .RB [ --inventory " " FILE ]
+.RB [ --fail-at " " PHASE ]
 .SH DESCRIPTION
 .B installerd
 owns the privileged installation, repair, and upgrade flow.  It exposes that
@@ -52,6 +53,18 @@ nothing drives, and the release its
 .I medium
 carries.  For showing a surface a machine other than the one it is being
 worked on.  A key that is not recognised is an error.
+.TP
+.BI --fail-at " PHASE"
+With
+.BR --dry-run ,
+fail every job part way through PHASE, which is named as the end of the
+phase's element ref:
+.BR partition ,
+.BR format ,
+.B copy
+or
+.B boot
+for an installation.  For showing a surface a job that goes wrong.
 .TP
 .BR -h , " --help"
 Show command help.

@@ -23,10 +23,24 @@ pub enum Mode {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlowState {
     Mode,
-    DiskSelect { mode: Mode },
-    Confirm { target: String, label: String },
-    UpgradeConfirm { target: String },
-    RepairMenu { target: String },
+    DiskSelect {
+        mode: Mode,
+    },
+    Confirm {
+        target: String,
+        label: String,
+        /// What the confirmation said of the disk as structure, for the
+        /// page after it to say again. The disk is read for the
+        /// confirmation and is about to be erased, so it is kept from
+        /// there, not read a second time.
+        detail: Option<Value>,
+    },
+    UpgradeConfirm {
+        target: String,
+    },
+    RepairMenu {
+        target: String,
+    },
     Running,
 }
 
@@ -40,8 +54,13 @@ pub enum Advance {
     /// The answer is well formed and cannot be gone on with: say why on
     /// these elements of the open page, which stays open.
     Reject(Vec<(String, String)>),
-    /// Start a job; the server issues the progress page and runs it.
-    Begin { kind: JobKind, target: String },
+    /// Start a job on `target`: the server issues `page`, the job's
+    /// progress page, and runs it.
+    Begin {
+        kind: JobKind,
+        target: String,
+        page: TurnSpec,
+    },
 }
 
 fn text(r#ref: &str, body: &str) -> Element {
@@ -385,15 +404,29 @@ pub fn upgrade_blocked(have: &Release, carry: &Release) -> Option<String> {
     }
 }
 
+/// A disk being installed onto, as the `detail` (§3.B) of the sentence
+/// that names it: the row's `device`, `model`, `size` and `bus` as the
+/// disk page words them, and everything [`disk_detail`] says of a disk
+/// an install is for.
+fn install_detail(d: &Disk) -> Value {
+    let mut detail = match disk_detail(d, Mode::Install, None) {
+        Value::Object(detail) => detail,
+        _ => Map::new(),
+    };
+    detail.insert("device".into(), json!(d.device));
+    detail.insert("model".into(), json!(d.model));
+    detail.insert("size".into(), json!(crate::executor::size_text(d.size)));
+    detail.insert("bus".into(), json!(d.bus));
+    Value::Object(detail)
+}
+
 /// The install's confirmation: which disk, that all of it goes, and what
 /// a person would miss of what is on it.
 ///
 /// `disk` is the disk as it was just read, when it could be found. The
 /// sentence says everything a person needs; the same facts go with it as
-/// the text's `detail` (§3.B), for a surface that draws the disk: the
-/// row's `device`, `model`, `size` and `bus` as the disk page words
-/// them, and everything [`disk_detail`] says of a disk being installed
-/// onto.
+/// the text's `detail` (§3.B), for a surface that draws the disk
+/// ([`install_detail`]).
 pub fn confirm_page(target: &str, label: &str, disk: Option<&Disk>) -> TurnSpec {
     let lost = disk.map(erases).unwrap_or_default();
     let including = if lost.is_empty() {
@@ -410,15 +443,7 @@ pub fn confirm_page(target: &str, label: &str, disk: Option<&Disk>) -> TurnSpec 
         ),
     );
     if let Some(d) = disk {
-        let mut detail = match disk_detail(d, Mode::Install, None) {
-            Value::Object(detail) => detail,
-            _ => Map::new(),
-        };
-        detail.insert("device".into(), json!(d.device));
-        detail.insert("model".into(), json!(d.model));
-        detail.insert("size".into(), json!(crate::executor::size_text(d.size)));
-        detail.insert("bus".into(), json!(d.bus));
-        summary.state.insert("detail".into(), Value::Object(detail));
+        summary.state.insert("detail".into(), install_detail(d));
     }
     TurnSpec {
         id: Some("confirm".into()),
@@ -522,18 +547,45 @@ pub fn repair_menu(target: &str) -> TurnSpec {
     }
 }
 
-pub fn progress_page(kind: JobKind, executor: &dyn Executor) -> TurnSpec {
-    let mut elements: Vec<Element> = executor
-        .phases(kind)
-        .iter()
-        .map(|p| {
-            let mut e = Element::new(p.r#ref, types::PROGRESS);
-            e.name = Some(p.name.into());
-            e.state.insert("value".into(), json!(0));
-            e.state.insert("max".into(), json!(100));
-            e
-        })
-        .collect();
+/// A job's page while it runs: what it is being done to, its phases, and
+/// what it says of itself as it goes.
+///
+/// `label` is the disk as the pages before named it, where one did, and
+/// `detail` what the confirmation said of it as structure (§3.B). Both
+/// are said again here because a surface may join while the job is under
+/// way, and this page is then the first it sees.
+pub fn progress_page(
+    kind: JobKind,
+    executor: &dyn Executor,
+    target: &str,
+    label: Option<&str>,
+    detail: Option<Value>,
+) -> TurnSpec {
+    let what = match (kind, label) {
+        (JobKind::Install, Some(label)) => format!("Installing Peios onto {label} ({target})."),
+        (JobKind::Install, None) => format!("Installing Peios onto {target}."),
+        (JobKind::Upgrade, _) => format!("Upgrading the system on {target}."),
+        _ => format!("Repairing the system on {target}."),
+    };
+    // The system doing this runs from the medium, and no job can be
+    // picked up where it stopped.
+    let mut summary = text(
+        "progress.summary",
+        &format!(
+            "{what} Leave the machine on and the install medium in place until this finishes."
+        ),
+    );
+    if let Some(detail) = detail {
+        summary.state.insert("detail".into(), detail);
+    }
+    let mut elements = vec![summary];
+    elements.extend(executor.phases(kind).iter().map(|p| {
+        let mut e = Element::new(p.r#ref, types::PROGRESS);
+        e.name = Some(p.name.into());
+        e.state.insert("value".into(), json!(0));
+        e.state.insert("max".into(), json!(100));
+        e
+    }));
     let mut log = Element::new("out", types::LOG);
     log.name = Some("Details".into());
     log.state.insert("lines".into(), json!([]));
@@ -567,6 +619,13 @@ pub fn advance(
     executor: &dyn Executor,
 ) -> Option<Advance> {
     let act = answer.action.as_deref().unwrap_or("");
+    let begin = |kind: JobKind, target: &str, label: Option<&str>, detail: Option<Value>| {
+        Some(Advance::Begin {
+            kind,
+            target: target.to_string(),
+            page: progress_page(kind, executor, target, label, detail),
+        })
+    };
     // The disk page, for `mode`, with `chosen` still chosen when it is
     // come back to.
     let disks = |mode: Mode, chosen: Option<&str>| {
@@ -613,6 +672,7 @@ pub fn advance(
                         FlowState::Confirm {
                             target: target.clone(),
                             label: label.clone(),
+                            detail: Some(install_detail(&disk)),
                         },
                         confirm_page(&target, &label, Some(&disk)),
                     ))
@@ -637,15 +697,18 @@ pub fn advance(
             }
         }
         (FlowState::Confirm { target, .. }, "nav.back") => disks(Mode::Install, Some(target)),
-        (FlowState::Confirm { target, .. }, "act.begin") => Some(Advance::Begin {
-            kind: JobKind::Install,
-            target: target.clone(),
-        }),
+        (
+            FlowState::Confirm {
+                target,
+                label,
+                detail,
+            },
+            "act.begin",
+        ) => begin(JobKind::Install, target, Some(label), detail.clone()),
         (FlowState::UpgradeConfirm { target }, "nav.back") => disks(Mode::Upgrade, Some(target)),
-        (FlowState::UpgradeConfirm { target }, "act.begin") => Some(Advance::Begin {
-            kind: JobKind::Upgrade,
-            target: target.clone(),
-        }),
+        (FlowState::UpgradeConfirm { target }, "act.begin") => {
+            begin(JobKind::Upgrade, target, None, None)
+        }
         (FlowState::RepairMenu { target }, "nav.back") => disks(Mode::Repair, Some(target)),
         (FlowState::RepairMenu { target }, kindref) => {
             let kind = match kindref {
@@ -654,10 +717,7 @@ pub fn advance(
                 "repair.sd" => JobKind::RepairSd,
                 _ => return None,
             };
-            Some(Advance::Begin {
-                kind,
-                target: target.clone(),
-            })
+            begin(kind, target, None, None)
         }
         _ => None,
     }

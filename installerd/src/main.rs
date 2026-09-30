@@ -7,7 +7,7 @@ use installerd::real::Real;
 use msip_serve::{Server, serve};
 
 const USAGE: &str = "Usage: installerd [--socket PATH] [--medium PATH] [--force]\n\
-       installerd --dry-run [--socket PATH] [--inventory FILE]\n\
+       installerd --dry-run [--socket PATH] [--inventory FILE] [--fail-at PHASE]\n\
 \n\
 Peios installation and repair service.\n\
 \n\
@@ -18,6 +18,8 @@ Options:\n\
   --dry-run         exercise the flow without changing disks\n\
   --inventory FILE  with --dry-run, pretend to be the machine FILE describes\n\
                     rather than probing this one\n\
+  --fail-at PHASE   with --dry-run, fail every job part way through this\n\
+                    phase (partition, format, copy, boot, ...)\n\
   -h, --help        show this help\n\
   -V, --version     show the version";
 
@@ -44,6 +46,7 @@ fn main() {
     let mut socket = "/run/installerd.sock".to_string();
     let mut dry_run = false;
     let mut pretend = None;
+    let mut fail_at = None;
     let mut real = Real::default();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -53,6 +56,7 @@ fn main() {
             "--force" => real.force = true,
             "--dry-run" => dry_run = true,
             "--inventory" => pretend = Some(inventory(&required(&mut args, "--inventory"))),
+            "--fail-at" => fail_at = Some(required(&mut args, "--fail-at")),
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return;
@@ -72,10 +76,16 @@ fn main() {
         eprintln!("installerd: --inventory is for --dry-run\n{USAGE}");
         std::process::exit(2);
     }
+    if fail_at.is_some() && !dry_run {
+        // A real job fails when something goes wrong, not when told to.
+        eprintln!("installerd: --fail-at is for --dry-run\n{USAGE}");
+        std::process::exit(2);
+    }
     let executor: Arc<dyn Executor> = if dry_run {
         Arc::new(DryRun {
             step_ms: 400,
             inventory: pretend,
+            fail_at,
         })
     } else {
         Arc::new(real)
