@@ -152,13 +152,40 @@ pub enum Page {
         /// says it only in words, or that could not ask netd.
         interfaces: Option<Vec<Value>>,
         note: String,
+        /// The address given to an interface by hand, which oobed keeps
+        /// until the end of setup, if one is: its words, and as oobed read
+        /// it (`detail`: interface, address, gateway, name servers).
+        planned: Option<Planned>,
         refresh: Option<Action>,
+        /// Giving an interface an address by hand, or changing the one
+        /// given.
+        manual: Option<Action>,
+        /// Going back to the network's address, where one was given.
+        unplan: Option<Action>,
         /// What else oobed offers here, in its order: today, joining a
-        /// wireless network and addressing by hand, neither of which it can
-        /// do yet.
+        /// wireless network, which it cannot do yet.
         others: Vec<Action>,
         back: Option<Action>,
         next: Option<Action>,
+    },
+    /// oobed's `oobe.network.manual`: an address for one interface, given by
+    /// hand, which oobed applies at the end of setup.
+    Manual {
+        title: String,
+        intro: String,
+        /// The interfaces, each as a row of what it is now.
+        interfaces: Vec<Row>,
+        /// What oobed says in place of the interfaces when there are none.
+        empty: String,
+        /// The interface oobed starts with chosen: the one given an address
+        /// before, or the only one there is to choose.
+        assumed: Option<String>,
+        /// Why oobed turned down the interface answered with.
+        error: Option<String>,
+        /// The address, the gateway and the name servers.
+        fields: Vec<Field>,
+        back: Option<Action>,
+        save: Option<Action>,
     },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
@@ -222,6 +249,38 @@ pub struct Choice {
     pub help: Option<String>,
 }
 
+/// What oobed keeps to apply at the end of setup, in words and as it read it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Planned {
+    pub words: String,
+    pub detail: Value,
+}
+
+/// One row of a table that is not disks: what choosing it answers with,
+/// its cells by column, and whether it can be chosen, and if not, why.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Row {
+    pub value: String,
+    pub cells: Value,
+    pub enabled: bool,
+    pub note: String,
+}
+
+/// A line of text to fill in (MSIP `string`), as oobed asks for it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Field {
+    pub r#ref: String,
+    pub name: String,
+    pub help: Option<String>,
+    /// Ghost text: an example, not a value.
+    pub placeholder: Option<String>,
+    /// What it starts with filled in.
+    pub default: Option<String>,
+    pub required: bool,
+    /// Why oobed turned down what it was answered with.
+    pub error: Option<String>,
+}
+
 /// One row of installerd's table of disks.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Disk {
@@ -255,6 +314,10 @@ const LOG: &str = "out";
 const TAIL: usize = 200;
 /// What oobed says of the network, which carries the interfaces.
 const NETWORK: &str = "network.status";
+/// What oobed says of the address kept for the end of setup.
+const PLANNED: &str = "network.planned";
+/// The table of interfaces on oobed's manual page.
+const INTERFACES: &str = "manual.interface";
 
 impl View {
     pub fn starting(conversation: Conversation, release: Release, boot: String) -> View {
@@ -295,9 +358,9 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         // An install goes on to the confirmation, which is drawn; an
         // upgrade and a repair to pages of their own, which are not.
         (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
-        // First-boot setup's account page, and what the network page would
-        // lead to once oobed can do either.
-        (Some("oobe.network"), "nav.next" | "network.wifi" | "network.static") => true,
+        // First-boot setup's account page, and what joining a wireless
+        // network would lead to once oobed can do it.
+        (Some("oobe.network"), "nav.next" | "network.wifi") => true,
         _ => false,
     }
 }
@@ -341,6 +404,24 @@ pub fn values(turn: &Turn, chosen: Option<&str>) -> serde_json::Map<String, Valu
         values.insert(DISKS.into(), Value::String(chosen.into()));
     }
     values
+}
+
+/// Of what a browser says it filled in on `turn`, what is answered: text
+/// for a line of `turn`'s that is to be filled in, and a row `turn`'s table
+/// offers and lets be chosen. The disks are not among them, being chosen
+/// for everyone (`values`); nor is anything else, whatever it is called.
+pub fn filled(turn: &Turn, said: serde_json::Map<String, Value>) -> serde_json::Map<String, Value> {
+    said.into_iter()
+        .filter(|(r#ref, value)| {
+            let Some(e) = element(turn, r#ref).filter(|e| e.enabled && r#ref != DISKS) else { return false };
+            let Some(text) = value.as_str() else { return false };
+            match e.r#type.as_str() {
+                types::STRING => true,
+                types::TABLE => table_rows(e).iter().any(|row| row.get("value").and_then(Value::as_str) == Some(text) && enabled(row)),
+                _ => false,
+            }
+        })
+        .collect()
 }
 
 impl Page {
@@ -401,7 +482,7 @@ impl Page {
                 next: action("nav.next"),
             },
             Some("oobe.network") => {
-                const OWN: &[&str] = &["network.refresh", "nav.back", "nav.next"];
+                const OWN: &[&str] = &["network.refresh", "network.static", "network.unplan", "nav.back", "nav.next"];
                 Page::Network {
                     title,
                     status: text(turn, NETWORK),
@@ -411,10 +492,41 @@ impl Page {
                         .and_then(Value::as_array)
                         .cloned(),
                     note: text(turn, "network.note"),
+                    planned: element(turn, PLANNED).map(|e| Planned {
+                        words: text(turn, PLANNED),
+                        detail: e.state.get("detail").cloned().unwrap_or(Value::Null),
+                    }),
                     refresh: action("network.refresh"),
+                    manual: action("network.static"),
+                    unplan: action("network.unplan"),
                     others: turn.elements.iter().filter(|e| e.is_action() && !OWN.contains(&e.r#ref.as_str())).map(|e| Action::of(turn, e)).collect(),
                     back: action("nav.back"),
                     next: action("nav.next"),
+                }
+            }
+            Some("oobe.network.manual") => {
+                let table = element(turn, INTERFACES);
+                let said = |value: Option<&Value>| value.and_then(Value::as_str).unwrap_or_default().to_string();
+                Page::Manual {
+                    title,
+                    intro: text(turn, "manual.intro"),
+                    interfaces: table
+                        .map(table_rows)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|row| Row {
+                            value: said(row.get("value")),
+                            cells: row.get("cells").cloned().unwrap_or(Value::Null),
+                            enabled: enabled(row),
+                            note: said(row.get("note")),
+                        })
+                        .collect(),
+                    empty: said(table.and_then(|t| t.state.get("empty"))),
+                    assumed: table.and_then(|t| t.default.as_ref()).and_then(Value::as_str).map(str::to_string),
+                    error: table.and_then(|t| t.error.clone()),
+                    fields: turn.elements.iter().filter(|e| e.r#type == types::STRING).map(Field::of).collect(),
+                    back: action("nav.back"),
+                    save: action("manual.save"),
                 }
             }
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
@@ -520,6 +632,21 @@ impl Choice {
     }
 }
 
+impl Field {
+    fn of(element: &Element) -> Field {
+        let said = |key: &str| element.state.get(key).and_then(Value::as_str).map(str::to_string);
+        Field {
+            r#ref: element.r#ref.clone(),
+            name: element.name.clone().unwrap_or_default(),
+            help: element.help.clone(),
+            placeholder: said("placeholder"),
+            default: element.default.as_ref().and_then(Value::as_str).map(str::to_string),
+            required: element.required,
+            error: element.error.clone(),
+        }
+    }
+}
+
 impl Disk {
     fn of(row: &Value) -> Disk {
         let said = |value: Option<&Value>| value.and_then(Value::as_str).unwrap_or_default().to_string();
@@ -566,7 +693,12 @@ fn text(turn: &Turn, r#ref: &str) -> String {
 
 /// The rows of the table of disks, or none where `turn` has no such table.
 fn rows(turn: &Turn) -> &[Value] {
-    element(turn, DISKS).and_then(|e| e.state.get("rows")).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default()
+    element(turn, DISKS).map(table_rows).unwrap_or_default()
+}
+
+/// The rows of a table.
+fn table_rows(e: &Element) -> &[Value] {
+    e.state.get("rows").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default()
 }
 
 /// A row can be chosen unless it says otherwise (PGSS §3.B).
@@ -980,8 +1112,7 @@ mod tests {
                 { "ref": "network.refresh", "type": "action", "name": "Check again", "validate": false },
                 { "ref": "network.wifi", "type": "action", "name": "Connect to Wi-Fi…", "enabled": false,
                   "help": "No wireless stack is packaged yet." },
-                { "ref": "network.static", "type": "action", "name": "Configure manually…", "enabled": false,
-                  "help": "Manual addressing is configured after setup, with `net`." },
+                { "ref": "network.static", "type": "action", "name": "Configure manually…", "validate": false },
                 { "ref": "nav.back", "type": "action", "name": "Back", "validate": false },
                 { "ref": "nav.next", "type": "action", "name": "Next", "primary": true },
             ],
@@ -991,7 +1122,7 @@ mod tests {
 
     #[test]
     fn the_network_is_drawn_from_what_oobed_sends() {
-        let Page::Network { title, status, interfaces, note, refresh, others, back, next } = Page::of(&network(), None) else {
+        let Page::Network { title, status, interfaces, note, planned, refresh, manual, unplan, others, back, next } = Page::of(&network(), None) else {
             panic!("not the network page")
         };
         assert_eq!(title, "Network");
@@ -1002,16 +1133,88 @@ mod tests {
         // Checking again is answered: it changes the page, and leads nowhere.
         assert!(!refresh.unwrap().unbuilt);
         assert!(!back.unwrap().unbuilt);
+        // Addressing by hand leads to a page that is drawn.
+        let manual = manual.unwrap();
+        assert!(manual.enabled && !manual.unbuilt);
+        assert_eq!((planned, unplan), (None, None));
         let others: Vec<_> = others.iter().map(|a| (a.r#ref.as_str(), a.enabled, a.unbuilt)).collect();
-        assert_eq!(others, [("network.wifi", false, true), ("network.static", false, true)]);
+        assert_eq!(others, [("network.wifi", false, true)]);
         // The account page it leads to is not drawn yet.
         assert!(next.unwrap().unbuilt);
+
+        // With an address kept for the end, it says so, and it can be given up.
+        let mut kept = network();
+        kept.elements.insert(1, serde_json::from_value(json!({
+            "ref": "network.planned", "type": "text", "text": "At the end of setup, eth0 is given 10.0.0.5/24.",
+            "detail": { "interface": "eth0", "address": "10.0.0.5/24", "dns": [] },
+        })).unwrap());
+        kept.elements.insert(6, serde_json::from_value(json!({
+            "ref": "network.unplan", "type": "action", "name": "Use the network's address instead", "validate": false,
+        })).unwrap());
+        let Page::Network { planned, unplan, others, .. } = Page::of(&kept, None) else { panic!("not the network page") };
+        let planned = planned.unwrap();
+        assert_eq!((planned.words.as_str(), &planned.detail["address"]), ("At the end of setup, eth0 is given 10.0.0.5/24.", &json!("10.0.0.5/24")));
+        assert!(unplan.is_some_and(|a| a.enabled && !a.unbuilt));
+        assert_eq!(others.len(), 1);
 
         // An oobed that says it only in words, or could not ask netd.
         let mut words = network();
         words.elements[0].state.remove("detail");
         let Page::Network { interfaces, .. } = Page::of(&words, None) else { panic!("not the network page") };
         assert_eq!(interfaces, None);
+    }
+
+    /// oobed's manual page, as it sends it, with the address turned down.
+    fn manual() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 3, "id": "oobe.network.manual", "name": "Configure manually",
+            "elements": [
+                { "ref": "manual.intro", "type": "text", "text": "It is applied at the end of setup." },
+                { "ref": "manual.interface", "type": "table", "name": "Interface", "required": true, "default": "eth0",
+                  "columns": [{ "key": "name", "name": "Interface" }, { "key": "state", "name": "Status" }, { "key": "address", "name": "Address now" }],
+                  "rows": [
+                      { "value": "eth0", "cells": { "name": "eth0", "state": "connected", "address": "10.0.2.15/24" } },
+                      { "value": "wlan0", "cells": { "name": "wlan0", "state": "not used", "address": "" }, "enabled": false, "note": "not wired" },
+                  ],
+                  "empty": "This machine has no network hardware that Peios can use." },
+                { "ref": "manual.address", "type": "string", "name": "Address", "required": true, "placeholder": "192.168.1.20/24",
+                  "help": "With the length of its network after a slash.", "error": "An address and the length of its network, as 192.168.1.20/24." },
+                { "ref": "manual.gateway", "type": "string", "name": "Gateway", "placeholder": "192.168.1.1" },
+                { "ref": "manual.dns", "type": "string", "name": "Name servers", "default": "1.1.1.1" },
+                { "ref": "nav.back", "type": "action", "name": "Back", "validate": false },
+                { "ref": "manual.save", "type": "action", "name": "Save", "primary": true },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn an_address_by_hand_is_asked_for_as_oobed_asks() {
+        let Page::Manual { title, intro, interfaces, empty, assumed, error, fields, back, save } = Page::of(&manual(), None) else {
+            panic!("not the manual page")
+        };
+        assert_eq!((title.as_str(), intro.as_str()), ("Configure manually", "It is applied at the end of setup."));
+        let rows: Vec<_> = interfaces.iter().map(|r| (r.value.as_str(), r.enabled, r.note.as_str())).collect();
+        assert_eq!(rows, [("eth0", true, ""), ("wlan0", false, "not wired")]);
+        assert_eq!(interfaces[0].cells["address"], "10.0.2.15/24");
+        assert!(empty.starts_with("This machine has no network hardware"));
+        assert_eq!((assumed.as_deref(), error), (Some("eth0"), None));
+        let fields: Vec<_> = fields.iter().map(|f| (f.r#ref.as_str(), f.required, f.default.as_deref(), f.error.is_some())).collect();
+        assert_eq!(fields, [("manual.address", true, None, true), ("manual.gateway", false, None, false), ("manual.dns", false, Some("1.1.1.1"), false)]);
+        assert!(back.is_some() && save.is_some_and(|s| s.primary && !s.unbuilt));
+    }
+
+    #[test]
+    fn only_what_the_page_asks_for_is_answered() {
+        let said = json!({
+            "manual.interface": "eth0", "manual.address": "10.0.0.5/24",
+            // Not a row that can be chosen, not text, not the page's, not asked.
+            "manual.gateway": 7, "manual.intro": "x", "act.begin": "x", "disk.target": "/dev/sda",
+        });
+        let filled = filled(&manual(), said.as_object().unwrap().clone());
+        assert_eq!(Value::Object(filled), json!({ "manual.interface": "eth0", "manual.address": "10.0.0.5/24" }));
+        let wlan = json!({ "manual.interface": "wlan0" });
+        assert!(super::filled(&manual(), wlan.as_object().unwrap().clone()).is_empty(), "a row that cannot be chosen");
     }
 
     /// installerd's page after an install that finished

@@ -75,6 +75,11 @@ pub struct Asked {
     /// Choose this disk, on the page that asks for one.
     #[serde(default)]
     pub choose: Option<String>,
+    /// What was filled in on the page, by ref, sent with the action that
+    /// takes it. Unlike the disk chosen this is the browser's own until
+    /// then: what one person is typing is nobody else's to see.
+    #[serde(default)]
+    pub values: Map<String, Value>,
     /// Open another conversation, the last having ended.
     #[serde(default)]
     pub again: bool,
@@ -356,7 +361,13 @@ fn ask(
         }
         // An action that does not validate is one that leaves the page or
         // refreshes it, and carries nothing of what was filled in.
-        let values = if element.validates() { view::values(turn, chosen.as_deref()) } else { Map::new() };
+        let values = if element.validates() {
+            let mut values = view::values(turn, chosen.as_deref());
+            values.extend(view::filled(turn, asked.values));
+            values
+        } else {
+            Map::new()
+        };
         let Some(answer) = session.answer(Some(&action), values) else { return Ok(()) };
         write_msg(stream, MsgType::Answer, &answer).map_err(|e| format!("answer: {e}"))?;
         view.send_modify(|view| view.waiting = Some(action));
@@ -370,13 +381,17 @@ mod tests {
 
     #[test]
     fn what_a_browser_asks_for_is_read_whichever_it_is() {
+        let none = Map::new();
         let press: Asked = serde_json::from_str(r#"{ "seq": 3, "press": "nav.back" }"#).unwrap();
-        assert_eq!(press, Asked { seq: 3, press: Some("nav.back".into()), choose: None, again: false });
+        assert_eq!(press, Asked { seq: 3, press: Some("nav.back".into()), choose: None, values: none.clone(), again: false });
         let choose: Asked = serde_json::from_str(r#"{ "seq": 3, "choose": "/dev/sda" }"#).unwrap();
-        assert_eq!(choose, Asked { seq: 3, press: None, choose: Some("/dev/sda".into()), again: false });
+        assert_eq!(choose, Asked { seq: 3, press: None, choose: Some("/dev/sda".into()), values: none.clone(), again: false });
+        // What was filled in goes with the action that takes it.
+        let filled: Asked = serde_json::from_str(r#"{ "seq": 3, "press": "manual.save", "values": { "manual.address": "10.0.0.5/24" } }"#).unwrap();
+        assert_eq!(filled.values["manual.address"], "10.0.0.5/24");
         // Starting again is asked of no page: the conversation is over.
         let again: Asked = serde_json::from_str(r#"{ "seq": 0, "again": true }"#).unwrap();
-        assert_eq!(again, Asked { seq: 0, press: None, choose: None, again: true });
+        assert_eq!(again, Asked { seq: 0, press: None, choose: None, values: none, again: true });
         // It must say which page it was looking at.
         assert!(serde_json::from_str::<Asked>(r#"{ "press": "nav.back" }"#).is_err());
         assert!(serde_json::from_str::<Asked>("press nav.back").is_err());

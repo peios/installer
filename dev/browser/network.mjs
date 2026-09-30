@@ -71,6 +71,8 @@ const seen = () => js(`(() => {
         list: !turn.querySelector(".nets")?.hidden,
         words: turn.querySelector(".net-words:not([hidden])")?.textContent ?? null,
         note: turn.querySelector("p.note:not([hidden])")?.textContent ?? null,
+        planned: turn.querySelector(".planned:not([hidden]) .planned-words")?.textContent ?? null,
+        plannedActs: [...turn.querySelectorAll(".planned:not([hidden]) .planned-acts .btn:not([hidden])")].map((b) => b.textContent),
         links: [...turn.querySelectorAll(".aux .link")].filter((l) => !l.hidden).map((l) => [l.textContent, l.getAttribute("aria-disabled") === "true"]),
         help: turn.querySelector(".help.on")?.textContent ?? null,
         scanning: turn.querySelector(".nets")?.classList.contains("scanning") ?? false,
@@ -116,12 +118,12 @@ try {
     expect("the interface this page reaches the machine through is marked, and only that one",
         wayInRow.here && wayInRow.label === "enp4s0: This network only, the way this page reaches the machine" && out.network.nets.filter((n) => n.here).length === 1);
     expect("oobed's note is kept", out.network.note === "Setup does not need a network, and nothing here has to be answered.");
-    expect("Check again, and what cannot be done yet, greyed", JSON.stringify(out.network.links) === JSON.stringify([
-        ["Check again", false], ["Connect to Wi-Fi…", true], ["Configure manually…", true]]));
+    expect("Check again, addressing by hand, and what cannot be done yet, greyed", JSON.stringify(out.network.links) === JSON.stringify([
+        ["Check again", false], ["Configure manually…", false], ["Connect to Wi-Fi…", true]]));
     expect("the keyboard starts on Next", out.network.focused === "Next");
     expect("the words are not said twice", out.network.words === null);
 
-    await js(`document.querySelectorAll("#turn .aux .link")[1].focus()`);
+    await js(`document.querySelectorAll("#turn .aux .link")[2].focus()`);
     out.why = await eventually(seen, (s) => s.help !== null, 3);
     expect("what cannot be done says why", out.why.help === "No wireless stack is packaged yet.");
     await click("#turn .btn.go-on");
@@ -179,7 +181,66 @@ try {
     expect("a phone holds it without scrolling sideways", out.phone.wide === false);
     await send("Emulation.clearDeviceMetricsOverride");
 
-    await click("#turn .btn.quiet");
+    // An address by hand: its own page, said to be applied at the end.
+    await send("Emulation.clearDeviceMetricsOverride");
+    await click("#turn .aux .link:nth-of-type(2)");
+    const manual = () => js(`(() => {
+        const turn = document.getElementById("turn");
+        return {
+            kind: turn.dataset.kind, showing: turn.classList.contains("in"),
+            heading: turn.querySelector("h1")?.textContent, when: turn.querySelector(".when")?.textContent ?? null,
+            ifaces: [...turn.querySelectorAll(".iface")].map((r) => [r.dataset.value, r.getAttribute("aria-checked"), r.getAttribute("aria-disabled")]),
+            labels: [...turn.querySelectorAll(".field label")].map((l) => l.textContent),
+            errors: [...turn.querySelectorAll(".field-error")].map((e) => e.textContent).filter(Boolean),
+            // Clear of the bottom bar, which covers the last 84px or so.
+            errorSeen: [...turn.querySelectorAll(".field-error")].filter((e) => e.textContent).every((e) => {
+                const r = e.getBoundingClientRect();
+                return r.top >= 0 && r.bottom <= innerHeight - 90;
+            }),
+            focused: document.activeElement?.id || document.activeElement?.dataset?.value || document.activeElement?.tagName,
+            wide: document.documentElement.scrollWidth > innerWidth,
+        };
+    })()`);
+    out.manual = await eventually(manual, (s) => s.kind === "manual" && s.showing, 5);
+    await sleep(800);
+    out.manual = await manual();
+    await picture("network-5-manual.png");
+    expect("Configure manually goes to a page of its own, which says it is applied later",
+        out.manual.heading === "Configure manually" && out.manual.when === "Applied when setup finishes, not now.");
+    expect("the wired interfaces can be chosen, the wireless one not, none yet chosen", JSON.stringify(out.manual.ifaces) === JSON.stringify([
+        ["enp1s0", "false", null], ["enp2s0", "false", null], ["wlp3s0", "false", "true"], ["enp4s0", "false", null]]));
+    expect("the fields say which are needed", JSON.stringify(out.manual.labels) === JSON.stringify(["Address", "Gateway (optional)", "Name servers (optional)"]));
+    const type = async (ref, text) => js(`(() => { const i = document.getElementById("field-${ref.replace(/\W/g, "-")}"); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event("input")); })()`);
+    await click('#turn .iface[data-value="enp1s0"]');
+    await type("manual.address", "192.168.1.30");
+    await type("manual.gateway", "10.0.0.1");
+    await click("#turn .btn.go-on");
+    out.wrong = await eventually(manual, (s) => s.errors.length > 0, 5);
+    await sleep(700);
+    out.wrong = { ...await manual(), after: out.wrong.after };
+    await picture("network-6-wrong.png");
+    expect("and is scrolled to where it can be read", out.wrong.errorSeen);
+    expect("what oobed turns down is said on its field, the page staying and the typing kept",
+        out.wrong.kind === "manual" && out.wrong.errors[0] === "An address and the length of its network, as 192.168.1.20/24."
+        && out.wrong.focused === "field-manual-address" && (await js(`document.getElementById("field-manual-address").value`)) === "192.168.1.30");
+    await type("manual.address", "192.168.1.30/24");
+    await type("manual.gateway", "192.168.1.1");
+    await type("manual.dns", "1.1.1.1 9.9.9.9");
+    await key("Enter", "Enter", 13);
+    out.kept = await eventually(seen, (s) => onNetwork(s) && s.planned !== null, 5);
+    await sleep(700);
+    out.kept = await seen();
+    await picture("network-7-kept.png");
+    expect("saved, the network page says what happens at the end, and marks the interface",
+        out.kept.planned === "At the end of setup, enp1s0 is given 192.168.1.30/24, through 192.168.1.1, asking 1.1.1.1 and 9.9.9.9 for names. Until then it keeps the address it has."
+        && out.kept.nets[0].where.includes("192.168.1.30/24 at the end"));
+    expect("and offers to change it or give it up instead of Configure manually",
+        JSON.stringify(out.kept.plannedActs) === JSON.stringify(["Change", "Use the network's address instead"]) && !out.kept.links.some(([n]) => n.startsWith("Configure")));
+    await click("#turn .planned-acts .btn:nth-child(2)");
+    out.given = await eventually(seen, (s) => onNetwork(s) && s.planned === null && s.links.some(([n]) => n === "Configure manually…"), 5);
+    expect("given up, it is gone", out.given.after !== null);
+
+    await click("#turn .nav .btn.quiet");
     out.back = await eventually(seen, (s) => s.kind === "welcome" && s.showing, 5);
     expect("Back returns to the welcome", out.back.after !== null);
 

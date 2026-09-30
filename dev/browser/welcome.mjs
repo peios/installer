@@ -79,7 +79,7 @@ try {
     await click("#turn .btn.go-on");
     out.next = await eventually(seen, (s) => s.kind === "network" && s.showing, 3);
     expect("Next goes on to the network page", out.next.after !== null && out.next.toast === null);
-    await click("#turn .btn.quiet");
+    await click("#turn .nav .btn.quiet");
     out.back = await eventually(seen, (s) => s.kind === "welcome" && s.showing, 3);
     expect("and Back comes back to the welcome", out.back.after !== null && out.back.heading === "Welcome to Peios");
 

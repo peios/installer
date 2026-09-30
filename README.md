@@ -72,8 +72,13 @@ Of first-boot setup, the welcome and the network are drawn.
   connected, not used), and its addresses, way out and name servers, as
   `oobed` reads them from `net status`. The one whose address the page was
   opened by is marked as the way in. Check again has `oobed` ask again and
-  changes the page in place; joining a wireless network and addressing by
-  hand are shown greyed, with why.
+  changes the page in place; joining a wireless network is shown greyed,
+  with why.
+- **An address by hand**: a wired interface, its address, gateway and name
+  servers, which `oobed` checks and keeps for the end of setup. The page
+  says it is applied then and not now, and the network page shows what is
+  kept, marks the interface, and offers to change it or give it up. What is
+  typed is the browser's own until Save, and goes with it.
 
 An upgrade's and a repair's pages are not drawn yet, nor the rest of
 first-boot setup. An action that leads to a page not drawn here says so

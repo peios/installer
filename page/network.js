@@ -4,8 +4,10 @@
 // `detail` each interface as netd has it (where it has got to, its addresses,
 // its gateway and name servers, its hardware). Nothing on the page has to be
 // answered. Checking again asks oobed to ask netd again, and the page changes
-// in place for everyone looking; what it would take to join a wireless
-// network or address one by hand oobed cannot do yet, and says why.
+// in place for everyone looking. Addressing an interface by hand is a page of
+// its own (manual.js); what it comes to is kept by oobed until the end of
+// setup, and shown here until then. Joining a wireless network oobed cannot
+// do yet, and says why.
 //
 // Someone reading this page reached the machine over one of its interfaces,
 // by one of its addresses. Where the address in this page's own location is
@@ -21,7 +23,7 @@ const big = (body) => icon("0 0 24 24", 1.5, body);
 // other as a port a cable goes into.
 const PORT = big('<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M8 18.5v-4h8v4M10 14.5v-2h4v2"/>');
 const RADIO = big('<path d="M3 9.5a13 13 0 0 1 18 0M6 12.75a8.5 8.5 0 0 1 12 0M9 16a4 4 0 0 1 6 0"/><path d="M12 19.25h.01"/>');
-const OTHERS = { "network.wifi": WIFI, "network.static": MANUAL };
+const OTHERS = { "network.wifi": WIFI };
 
 // Where an interface has got to, in a word or two, and how it is shown:
 // `ok`, `wait`, or nothing much.
@@ -66,7 +68,14 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
             words: rise(2, "p", "net-words"),
             note: rise(4, "p", "note"),
             refresh: button("link", [picture(RESCAN), el("span")], () => page.refresh?.enabled && ask({ press: page.refresh.ref })),
+            manual: button("link", [picture(MANUAL), el("span")], () => page.manual?.enabled && ask({ press: page.manual.ref })),
             others: el("span", "others"),
+            // The address kept for the end of setup, and what can be done
+            // about it before then.
+            planned: rise(3, "div", "planned", null, { role: "note", "aria-labelledby": "planned-label" }),
+            plannedWords: el("p", "planned-words"),
+            change: button("btn quiet sm", [el("span")], () => page.manual?.enabled && ask({ press: page.manual.ref })),
+            unplan: button("btn quiet sm", [el("span")], () => page.unplan?.enabled && ask({ press: page.unplan.ref })),
             help: el("p", "help", "", { id: "network-help", "aria-live": "polite" }),
             back: button("btn quiet", [picture(BACK), el("span")], () => page.back?.enabled && ask({ press: page.back.ref })),
             next: button("btn go-on", [el("span"), picture(ONWARD)], () => {
@@ -77,9 +86,14 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
                 ask({ press: page.next.ref });
             }),
         };
+        parts.planned.append(
+            el("p", "planned-label", [el("i", "net-dot"), "Kept for the end of setup"], { id: "planned-label" }),
+            parts.plannedWords,
+            el("div", "planned-acts", [parts.change, parts.unplan]),
+        );
         turn.replaceChildren(
-            parts.title, parts.lede, parts.list, parts.words, parts.note,
-            rise(5, "div", "aux", [parts.refresh, parts.others, parts.help]),
+            parts.title, parts.lede, parts.list, parts.words, parts.planned, parts.note,
+            rise(5, "div", "aux", [parts.refresh, parts.manual, parts.others, parts.help]),
             rise(6, "div", "nav", [parts.back, parts.next]),
         );
         listAs = othersAs = hint = "";
@@ -111,8 +125,9 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
         }));
     }
 
-    // One interface: what it is, where it has got to, and what it has.
-    function row(net, n, here) {
+    // One interface: what it is, where it has got to, and what it has, and
+    // the address it is to be given at the end of setup, if it is.
+    function row(net, n, here, kept) {
         const [said, how] = STATES[net.state] ?? [net.state, ""];
         const wireless = /^wl/.test(net.name);
         const facts = [];
@@ -131,6 +146,7 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
                 el("span", "where", [
                     ...(hardware ? [el("span", "", hardware)] : []),
                     ...(here ? [el("span", "chip here", "Your way in")] : []),
+                    ...(kept ? [el("span", "chip later", `${kept} at the end`)] : []),
                 ]),
                 ...(facts.length ? [el("span", "net-facts", facts)] : []),
                 ...(net.warning ? [el("span", "net-warn", net.warning)] : []),
@@ -143,13 +159,32 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
     function drawList() {
         const nets = page.interfaces ?? [];
         const host = bare(location.hostname);
-        const as = JSON.stringify([nets, host]);
+        const kept = page.planned?.detail ?? null;
+        const as = JSON.stringify([nets, host, kept]);
         if (as === listAs) return;
         listAs = as;
         parts.list.setAttribute("role", "list");
         parts.list.setAttribute("aria-label", "Network interfaces");
-        parts.list.replaceChildren(...nets.map((net, n) => row(net, n, (net.addresses ?? []).some((a) => bare(a) === host))));
+        parts.list.replaceChildren(...nets.map((net, n) => row(
+            net, n, (net.addresses ?? []).some((a) => bare(a) === host), kept?.interface === net.name ? kept.address : null,
+        )));
         parts.list.hidden = !nets.length;
+    }
+
+    // The address kept for the end of setup, in oobed's words, with the way
+    // to change it or give it up. Without one, addressing by hand is offered
+    // beside checking again.
+    function drawPlanned() {
+        const { planned } = page;
+        parts.planned.hidden = !planned;
+        parts.plannedWords.textContent = planned?.words ?? "";
+        const name = (node, action, text) => {
+            node.hidden = !action;
+            if (action) node.querySelector("span").textContent = text ?? action.name;
+        };
+        name(parts.change, planned ? page.manual : null, "Change");
+        name(parts.unplan, planned ? page.unplan : null);
+        name(parts.manual, planned ? null : page.manual);
     }
 
     // While oobed asks netd again a light passes down the list, for at least
@@ -195,6 +230,7 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
         name(parts.refresh, page.refresh);
         name(parts.back, page.back);
         name(parts.next, page.next);
+        drawPlanned();
         drawOthers();
         drawChecking(waiting);
     }
