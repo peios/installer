@@ -17,8 +17,11 @@ use std::sync::mpsc;
 
 use tokio::sync::watch;
 
+use crate::Conversation;
 use crate::setup::{Asked, Heard, Said};
 use crate::view::View;
+
+const INDEX: &str = include_str!("../page/index.html");
 
 const HTML: &str = "text/html; charset=utf-8";
 const TEXT: &str = "text/plain; charset=utf-8";
@@ -41,10 +44,10 @@ struct Served {
     tell: mpsc::Sender<Heard>,
 }
 
-pub fn routes(view: watch::Receiver<View>, said: Said, tell: mpsc::Sender<Heard>) -> Router {
+pub fn routes(conversation: Conversation, view: watch::Receiver<View>, said: Said, tell: mpsc::Sender<Heard>) -> Router {
     let part = |content_type, bytes: &'static [u8]| get(move || async move { file(content_type, bytes) });
     Router::new()
-        .route("/", part(HTML, include_bytes!("../page/index.html")))
+        .route("/", part(HTML, index(conversation).as_bytes()))
         .route("/style.css", part(CSS, include_bytes!("../page/style.css")))
         .route("/app.js", part(SCRIPT, include_bytes!("../page/app.js")))
         .route("/bits.js", part(SCRIPT, include_bytes!("../page/bits.js")))
@@ -54,6 +57,7 @@ pub fn routes(view: watch::Receiver<View>, said: Said, tell: mpsc::Sender<Heard>
         .route("/intro.js", part(SCRIPT, include_bytes!("../page/intro.js")))
         .route("/progress.js", part(SCRIPT, include_bytes!("../page/progress.js")))
         .route("/restart.js", part(SCRIPT, include_bytes!("../page/restart.js")))
+        .route("/welcome.js", part(SCRIPT, include_bytes!("../page/welcome.js")))
         .route("/fonts/manrope.woff2", part(FONT, include_bytes!("../page/fonts/manrope.woff2")))
         .route("/fonts/schibsted-grotesk.woff2", part(FONT, include_bytes!("../page/fonts/schibsted-grotesk.woff2")))
         // The state, live. `any`, because a websocket arrives as a GET over
@@ -82,14 +86,29 @@ async fn log(State(served): State<Served>) -> Response {
     response
 }
 
+/// The page, saying whose conversation it draws before it has been sent
+/// anything, so that what it says while it starts is in the right words.
+fn index(conversation: Conversation) -> &'static str {
+    match conversation {
+        Conversation::Install => INDEX,
+        // Once, for the life of the process.
+        Conversation::Oobe => Box::leak(INDEX.replacen("<html lang=\"en\">", "<html lang=\"en\" data-conversation=\"oobe\">", 1).into_boxed_str()),
+    }
+}
+
 /// Who is answering at this address, and on which boot of the machine: what
-/// a page waiting on a restart asks, to tell what came back. Anything else
-/// answering here is not this installer.
+/// a page waiting on a restart asks, to tell what came back. The installer
+/// answers as `installer` and first-boot setup as `setup`; anything else
+/// answering here is neither.
 async fn hello(State(served): State<Served>) -> Response {
-    let said = serde_json::json!({
-        "installer": concat!("installer-gxwi/", env!("CARGO_PKG_VERSION")),
-        "boot": served.view.borrow().boot,
-    });
+    let view = served.view.borrow();
+    let program = format!("{}/{}", view.conversation.program(), env!("CARGO_PKG_VERSION"));
+    let who = match view.conversation {
+        Conversation::Install => "installer",
+        Conversation::Oobe => "setup",
+    };
+    let said = serde_json::json!({ who: program, "boot": view.boot });
+    drop(view);
     let mut response = said.to_string().into_response();
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));

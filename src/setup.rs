@@ -37,12 +37,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 use tokio::sync::watch;
 
+use crate::Conversation;
 use crate::view::{self, Link, Page, View};
 
-/// The kind of conversation this is a front end to.
-const KIND: &str = "install";
-/// What this program calls itself to installerd, which only records it.
-const SURFACE: &str = concat!("installer-gxwi/", env!("CARGO_PKG_VERSION"));
 /// How long after installerd was lost it is tried again.
 const AGAIN: Duration = Duration::from_secs(2);
 /// What is under way (`View::waiting`) while a conversation asked for after
@@ -89,7 +86,18 @@ pub struct Asked {
 ///
 /// `inbox` is where everything arrives, and `tell` is the way into it, which
 /// each connection's listener is given a copy of.
-pub fn keep(socket: &Path, view: &watch::Sender<View>, said: &Said, tell: &mpsc::Sender<Heard>, inbox: &mpsc::Receiver<Heard>) {
+///
+/// oobed's conversation is held the same way. Everything said here of
+/// installerd is true of oobed there, but for jobs and a restart, which
+/// oobed's pages have none of.
+pub fn keep(
+    conversation: Conversation,
+    socket: &Path,
+    view: &watch::Sender<View>,
+    said: &Said,
+    tell: &mpsc::Sender<Heard>,
+    inbox: &mpsc::Receiver<Heard>,
+) {
     let mut connection = 0;
     // Whether this is a conversation asked for after an ending. The ending
     // then stays on the page until the new conversation's first page takes
@@ -107,11 +115,11 @@ pub fn keep(socket: &Path, view: &watch::Sender<View>, said: &Said, tell: &mpsc:
                 view.page = None;
             }
             view.trail.clear();
-            view.did("$", "installer-gxwi");
+            view.did("$", conversation.program());
             view.did("connect", socket.display().to_string());
         });
         again = false;
-        match converse(socket, view, said, tell, inbox, connection) {
+        match converse(conversation, socket, view, said, tell, inbox, connection) {
             // The conversation ended as conversations do. What it ended with
             // stays on the page until someone asks to start again.
             Ok(()) => {
@@ -129,7 +137,7 @@ pub fn keep(socket: &Path, view: &watch::Sender<View>, said: &Said, tell: &mpsc:
                 continue;
             }
             Err(why) => {
-                eprintln!("installer-gxwi: {why}; trying again");
+                eprintln!("{}: {why}; trying again", conversation.program());
                 view.send_modify(|view| {
                     view.link = Link::Lost { why };
                     view.page = None;
@@ -148,6 +156,7 @@ pub fn keep(socket: &Path, view: &watch::Sender<View>, said: &Said, tell: &mpsc:
 /// One connection to installerd, from its opening to the end of the
 /// conversation. An error is why the connection was given up.
 fn converse(
+    conversation: Conversation,
     socket: &Path,
     view: &watch::Sender<View>,
     said: &Said,
@@ -156,20 +165,23 @@ fn converse(
     connection: u64,
 ) -> Result<(), String> {
     let mut stream = UnixStream::connect(socket).map_err(|e| format!("connect {}: {e}", socket.display()))?;
+    // What this program calls itself to the daemon, which only records it.
+    let surface = format!("{}/{}", conversation.program(), env!("CARGO_PKG_VERSION"));
     let hello = Hello {
-        surface: Some(SURFACE.into()),
+        surface: Some(surface.clone()),
         element_types: types::ALL.iter().map(|name| name.to_string()).collect(),
     };
     write_msg(&mut stream, MsgType::Hello, &hello).map_err(|e| format!("hello: {e}"))?;
-    view.send_modify(|view| view.did("hello", format!("surface={SURFACE}")));
+    view.send_modify(|view| view.did("hello", format!("surface={surface}")));
 
     let listener = stream.try_clone().map_err(|e| format!("socket: {e}"))?;
     let tell = tell.clone();
+    let daemon = conversation.daemon();
     std::thread::Builder::new()
-        .name("installerd".into())
-        .spawn(move || listen(listener, connection, &tell))
+        .name(daemon.into())
+        .spawn(move || listen(listener, daemon, connection, &tell))
         .map_err(|e| format!("listener thread: {e}"))?;
-    let outcome = talk(&mut stream, view, said, inbox, connection);
+    let outcome = talk(conversation, &mut stream, view, said, inbox, connection);
     // Whichever way it went, the listener is let go: it is reading, and this
     // is what ends its read.
     let _ = stream.shutdown(Shutdown::Both);
@@ -178,15 +190,15 @@ fn converse(
 
 /// Reads what installerd says on one connection and puts it in the queue,
 /// until the connection is over.
-fn listen(mut stream: UnixStream, connection: u64, tell: &mpsc::Sender<Heard>) {
+fn listen(mut stream: UnixStream, daemon: &str, connection: u64, tell: &mpsc::Sender<Heard>) {
     loop {
         let heard = match read_msg(&mut stream) {
             Ok((kind, body)) => Heard::Said(connection, kind, body),
             // The ordinary way for it to go: stopped, or restarted.
             Err(FrameError::Io(e)) if e.kind() == ErrorKind::UnexpectedEof => {
-                Heard::Gone(connection, "installerd closed the connection".into())
+                Heard::Gone(connection, format!("{daemon} closed the connection"))
             }
-            Err(e) => Heard::Gone(connection, format!("installerd went away: {e}")),
+            Err(e) => Heard::Gone(connection, format!("{daemon} went away: {e}")),
         };
         let over = matches!(heard, Heard::Gone(..));
         if tell.send(heard).is_err() || over {
@@ -196,18 +208,20 @@ fn listen(mut stream: UnixStream, connection: u64, tell: &mpsc::Sender<Heard>) {
 }
 
 fn talk(
+    conversation: Conversation,
     stream: &mut UnixStream,
     view: &watch::Sender<View>,
     said: &Said,
     inbox: &mpsc::Receiver<Heard>,
     connection: u64,
 ) -> Result<(), String> {
+    let daemon = conversation.daemon();
     let mut session = Session::new();
     // The disk chosen on the page that asks for one. It is this process's to
     // hold: installerd hears of it only when the page is answered.
     let mut chosen: Option<String> = None;
     loop {
-        let (kind, body) = match inbox.recv().map_err(|_| "nothing is listening to installerd".to_string())? {
+        let (kind, body) = match inbox.recv().map_err(|_| format!("nothing is listening to {daemon}"))? {
             Heard::Said(from, kind, body) if from == connection => (kind, body),
             Heard::Gone(from, why) if from == connection => return Err(why),
             // The last words of a connection already given up.
@@ -217,10 +231,11 @@ fn talk(
                 continue;
             }
         };
-        match session.handle(kind, body).map_err(|e| format!("installerd said something unreadable: {e}"))? {
+        match session.handle(kind, body).map_err(|e| format!("{daemon} said something unreadable: {e}"))? {
             Event::Welcome(welcome) => {
-                let daemon = welcome.daemon.unwrap_or_else(|| "installerd".into());
-                write_msg(stream, MsgType::Start, &Start { kind: KIND.into() }).map_err(|e| format!("start: {e}"))?;
+                let daemon = welcome.daemon.unwrap_or_else(|| daemon.into());
+                let start = Start { kind: conversation.kind().into() };
+                write_msg(stream, MsgType::Start, &start).map_err(|e| format!("start: {e}"))?;
                 view.send_modify(|view| {
                     view.did("welcome", daemon.clone());
                     view.link = Link::Connected { daemon };
@@ -232,7 +247,7 @@ fn talk(
             }),
             Event::Refused(refused) => {
                 let message = refused.message.unwrap_or_default();
-                return Err(format!("installerd refused the conversation ({:?}) {message}", refused.reason));
+                return Err(format!("{daemon} refused the conversation ({:?}) {message}", refused.reason));
             }
             event @ (Event::NewTurn | Event::Updated) => {
                 let Some(page) = session.page() else { continue };
@@ -281,11 +296,11 @@ fn talk(
                 // Before there is a page, it is about how this program opened
                 // the conversation, and there is no going on from that.
                 if session.page().is_none() {
-                    return Err(format!("installerd says this program broke the protocol ({:?}) {message}", error.code));
+                    return Err(format!("{daemon} says this program broke the protocol ({:?}) {message}", error.code));
                 }
                 // With one, it is installerd turning down what was pressed.
                 // The page stands as it was.
-                eprintln!("installer-gxwi: installerd turned an answer down ({:?}) {message}", error.code);
+                eprintln!("{}: {daemon} turned an answer down ({:?}) {message}", conversation.program(), error.code);
                 view.send_modify(|view| view.waiting = None);
             }
             // This program never asks for a listing.

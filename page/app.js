@@ -3,15 +3,29 @@
 // The installer holds the state: which page this is and what is on it. It
 // sends the whole of it whenever it changes, and this draws it. How a page
 // arrives and leaves, the intro included, is decided here and nowhere else.
+//
+// First-boot setup is drawn by the same page, from oobe-gxwi, which holds
+// oobed's conversation as the installer holds installerd's. The page says
+// whose it is before anything has been sent, and the few things said here of
+// "the installer" are said of setup instead.
+import { WOKE } from "./bits.js";
 import { createConfirmPage } from "./confirm.js";
 import { createDiskPage } from "./disk.js";
 import { createField } from "./field.js";
 import { createIntro } from "./intro.js";
 import { createProgressPage } from "./progress.js";
 import { createRestart } from "./restart.js";
+import { createWelcomePage } from "./welcome.js";
 
 const $ = (id) => document.getElementById(id);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const firstBoot = document.documentElement.dataset.conversation === "oobe";
+const WORDS = firstBoot ? {
+    reaching: "Reaching setup", silent: "Setup is not answering", unbuilt: "This step is not drawn in the browser yet.",
+} : {
+    reaching: "Reaching the installer", silent: "The installer is not answering",
+    unbuilt: "This step is not drawn by the graphical installer yet.",
+};
 const els = {
     stage: $("stage"),
     introStack: $("intro-stack"),
@@ -149,8 +163,8 @@ function drawStatus() {
         : ended === "complete" ? ["Finished", ""]
         : ended ? ["Stopped", "bad"]
         : link.state === "connected" ? [`Connected to ${link.daemon}`, ""]
-        : link.state === "lost" ? ["The installer is not answering", "bad"]
-        : ["Reaching the installer", "wait"];
+        : link.state === "lost" ? [WORDS.silent, "bad"]
+        : [WORDS.reaching, "wait"];
     els.statusText.textContent = text;
     els.status.classList.toggle("bad", how === "bad");
     els.status.classList.toggle("wait", how === "wait");
@@ -170,11 +184,11 @@ function pageWanted() {
     if (view.page) return view.page;
     if (view.link.state === "lost") {
         return {
-            kind: "lost", title: "The installer is not answering",
+            kind: "lost", title: WORDS.silent,
             lede: "Peios Setup is trying again.", why: view.link.why,
         };
     }
-    return { kind: "starting", title: "Peios Setup", lede: "Reaching the installer." };
+    return { kind: "starting", title: "Peios Setup", lede: `${WORDS.reaching}.` };
 }
 
 const ENDED = { complete: "Done", cancelled: "Stopped", failed: "It did not finish" };
@@ -186,14 +200,16 @@ function fill(page) {
     turn.dataset.kind = page.kind;
     if (was === "confirm" && page.kind !== "confirm") confirmPage.gone();
     if (was === "progress" && page.kind !== "progress") progressPage.gone();
+    if (was === "welcome" && page.kind !== "welcome") welcomePage.gone();
     if (page.kind === "mode") return fillMode(page, was === "mode");
+    if (page.kind === "welcome") return welcomePage.draw(page, view?.waiting);
     if (page.kind === "disk") return diskPage.draw(page, view?.waiting);
     if (page.kind === "confirm") return confirmPage.draw(page, view?.waiting);
     if (page.kind === "progress") return progressPage.draw(page, view?.waiting);
     const parts =
         page.kind === "unbuilt" ? {
             title: page.title || "The next step",
-            lede: "This step is not drawn by the graphical installer yet.",
+            lede: WORDS.unbuilt,
             why: page.id,
         }
         : page.kind === "ended" ? { title: ENDED[page.outcome] ?? "Finished", lede: page.message }
@@ -265,6 +281,7 @@ const confirmPage = createConfirmPage({
     turn, stage: els.stage, el, rise, ask, toast: (text) => toast(text), say, field, flash: els.flash, reduced,
 });
 const progressPage = createProgressPage({ turn, stage: els.stage, el, rise, ask, say, retitle, field, reduced });
+const welcomePage = createWelcomePage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 
 function menuKeys(e) {
     const at = actions.findIndex((button) => button.classList.contains("hl"));
@@ -287,19 +304,23 @@ function retitle(heading) {
 // A page arriving: its heading is said and names the tab, and the keyboard
 // starts at the first thing that can be answered.
 function arrived() {
-    const heading = turn.querySelector("h1")?.textContent.trim() ?? "";
+    // A heading that says something else to the eye (the welcome's greeting)
+    // is named for what it is.
+    const h1 = turn.querySelector("h1");
+    const heading = (h1?.getAttribute("aria-label") ?? h1?.textContent ?? "").trim();
     retitle(heading);
     if (heading) say(heading);
     if (shown?.kind === "mode") actions.find((button) => button.classList.contains("hl"))?.focus({ preventScroll: true });
     if (shown?.kind === "disk") diskPage.focus();
     if (shown?.kind === "confirm") confirmPage.focus();
     if (shown?.kind === "progress") progressPage.focus();
+    if (shown?.kind === "welcome") welcomePage.arrived();
 }
 
 // Where each page comes in the installation, which decides the side it
 // arrives from: a later page from the right, an earlier one from the left.
 // The pages that are not steps (starting, lost, an ending) count as later.
-const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3 };
+const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3, welcome: 0 };
 const order = (page) => ORDER[page?.kind] ?? 9;
 
 // What is on the page now, and whether the intro has landed: until it has,
@@ -394,8 +415,15 @@ $("replay").addEventListener("click", () => { landed = false; intro.start(); });
 
 draw();
 listen();
+// Arrived from the installer's page, which followed the machine's restart
+// down and went on to this when first-boot setup answered.
+let woke = false;
+try {
+    woke = sessionStorage.getItem(WOKE) === "1";
+    sessionStorage.removeItem(WOKE);
+} catch { /* no storage: the intro plays from the top */ }
 // The lockups are measured only once the faces have arrived.
 let begun = false;
-const begin = () => { if (!begun) { begun = true; intro.start(); } };
+const begin = () => { if (!begun) { begun = true; if (woke) intro.wake(); else intro.start(); } };
 (document.fonts ? document.fonts.ready : Promise.resolve()).then(begin);
 setTimeout(begin, 1500);

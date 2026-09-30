@@ -6,25 +6,36 @@
 // stars gather back into the mark, as the intro made it), waits while nothing
 // answers, and lands on whatever does:
 //
-// - Peios, from the disk it was installed on. Its first-boot setup is on the
-//   machine's own screen, since there is none in a browser yet.
+// - First-boot setup, in a browser, from the disk it was installed on: the
+//   page goes on to it, and the mark that went to sleep here wakes there.
+// - Peios, from that disk, with first-boot setup on the machine's own screen
+//   only, where it has no browser surface installed.
 // - The installer again: the machine started from the medium, not the disk.
 // - Nothing, for long enough to say so, with what the machine's own screen
 //   might be showing.
 //
 // What answers is told apart by asking the address for `/hello`, which only
-// this installer answers, with the boot of the machine it is on. The same
-// installer on the same boot is the machine that has not gone yet. Anything
-// else counts only once nothing at all has answered, so that the rest of the
-// live system, still answering as it goes down, is not taken for Peios.
+// this installer and first-boot setup answer, each with the boot of the
+// machine it is on. The same installer on the same boot is the machine that
+// has not gone yet. Anything else counts only once nothing at all has
+// answered, so that the rest of the live system, still answering as it goes
+// down, is not taken for Peios; and only once it has gone on answering for a
+// while, since a machine coming up may answer with its sign-in page before
+// setup has taken the address over.
 //
 // Nothing here goes back to the installer's state: once the machine is going,
 // what the installer said is over.
-import { AGAIN, CLOCK, ONWARD, picture } from "./bits.js";
+import { AGAIN, CLOCK, ONWARD, WOKE, picture } from "./bits.js";
 
 // How often the address is asked, how long one asking may take, and how long
 // before the page says the machine has not come back.
 const EVERY = 1500, ASKING = 4000, PATIENCE = 3 * 60 * 1000;
+// How long something that is neither the installer nor setup must go on
+// answering before it is taken for Peios without setup in a browser.
+const SETTLE = 10 * 1000;
+// What GXWI answers with while the overlay it is to send everyone to is not
+// up yet: setup, on its way.
+const UNAVAILABLE = 503;
 // The going down, in ms from the restart being taken.
 const T = { centre: 480, formed: 2450, drawn: 2700, fade: 3400, away: 4000 };
 // Coming back: the burst, the name, and the landing.
@@ -52,6 +63,7 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
     let disk = null;        // what Peios was installed on, as the job said
     let closedSaid = false;
     let answer = null;      // what came back, while the going down finishes
+    let other = 0;          // since when something else has been answering
 
     const later = (ms, fn) => timers.push(setTimeout(fn, reduced ? 0 : ms));
     const stop = () => { timers.forEach(clearTimeout); timers = []; clearTimeout(asking); };
@@ -90,6 +102,7 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         at = "down";
         away = gone = false;
         answer = null;
+        other = 0;
         since = Date.now();
         ticker.replaceChildren();
         stage.classList.add("rebooting");
@@ -141,7 +154,10 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
             if (response.ok) {
                 try { said = await response.json(); } catch { said = null; }
             }
-            return { answered: true, installer: typeof said?.installer === "string", boot: said?.boot };
+            return {
+                answered: true, installer: typeof said?.installer === "string", setup: typeof said?.setup === "string",
+                coming: response.status === UNAVAILABLE, boot: said?.boot,
+            };
         } catch {
             return { answered: false };
         } finally {
@@ -152,10 +168,17 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
     async function ask() {
         const heard = await hello();
         if (!active || (at !== "down" && at !== "lost")) return;
-        let back = null;
+        let back = null, elsewhere = false;
         if (!heard.answered) gone = true;
         else if (heard.installer) back = heard.boot === boot ? null : "again";
-        else if (gone) back = "running";
+        // Setup is never on the medium, so it answering is the machine back.
+        else if (heard.setup) back = "setup";
+        else if (gone && !heard.coming) {
+            elsewhere = true;
+            other ||= Date.now();
+            if (Date.now() - other >= SETTLE) back = "running";
+        }
+        if (!elsewhere) other = 0;
         if (back) {
             if (at === "lost") return landFromLost(back);
             answer = back;
@@ -172,6 +195,7 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         stop();
         at = "back";
         line("answered", location.host);
+        if (what === "setup") return onToSetup();
         introLockup.classList.remove("sleeping");
         introLockup.classList.add("popped");
         stage.classList.add("aurora-on");
@@ -208,8 +232,21 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         asking = setTimeout(ask, EVERY * 2);
     }
 
+    // First-boot setup answered: its page is this page's next, and is loaded
+    // in its place. It is told to wake the mark rather than play the intro
+    // from the beginning, since this page has already played the machine
+    // down.
+    function onToSetup() {
+        stop();
+        at = "setup";
+        say("Peios is running. First-boot setup is starting.");
+        try { sessionStorage.setItem(WOKE, "1"); } catch { /* it plays the intro from the top */ }
+        location.replace("/");
+    }
+
     // It answered while the page was saying it had not.
     function landFromLost(what) {
+        if (what === "setup") return onToSetup();
         stop();
         stage.classList.remove("stalled");
         field.wake();

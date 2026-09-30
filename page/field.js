@@ -363,6 +363,17 @@ export function createField(canvas, mark, reduced) {
         if (!reduced && released) mode = "dark";
     }
 
+    /** A new field, out, as a restart leaves it while the machine is away:
+        for a page that arrives while the mark sleeps, to wake with `burst`. */
+    function asleep() {
+        seed();
+        // With less motion there is no burst to wake to: the field is simply
+        // there, as it is after the intro.
+        if (reduced) return release();
+        released = true;
+        mode = "dark";
+    }
+
     /** The machine is back: every star is thrown out of the mark, as the
         intro's burst threw them, and the field drifts again. */
     function burst() {
@@ -563,5 +574,5 @@ export function createField(canvas, mark, reduced) {
         retarget();
     });
 
-    return { seed, gather, release, even, stream, hold, finale, stall, wake, regather, fade, darken, burst, draw };
+    return { seed, gather, release, even, stream, hold, finale, stall, wake, regather, fade, darken, asleep, burst, draw };
 }

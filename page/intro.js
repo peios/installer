@@ -14,6 +14,8 @@ const T = {
     formed: 2450, outline: 2700, aurora: 3500, burst: 3600,
     word: 4000, named: 4550, settle: 6000,
 };
+// Waking from a restart: the lines, the burst, the name, and the settling.
+const WAKE = { lines: [150, 450, 750, 1050, 1350, 1650], burst: 700, word: 1200, settle: 2600 };
 // How long the lockup takes to reach the corner once it sets off.
 const GLIDE = 1080;
 
@@ -78,7 +80,7 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         void stage.offsetWidth;
         stage.classList.remove("instant");
         for (const cue of cues) cue.done = true;
-        t0 = performance.now() - T.settle;
+        t0 = performance.now() - Math.max(0, ...cues.map((cue) => cue.at));
         settle();
     }
 
@@ -104,6 +106,46 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         field.seed();
         field.gather(T.gather, T.gatherFor);
         cues = makeCues();
+        t0 = performance.now();
+        raf = requestAnimationFrame(frame);
+        if (reduced) skip();
+    }
+
+    /** The intro for a page that arrives from a restart another page
+        followed down: the mark is already made and asleep in the middle of
+        a dark field, as that page left it, and wakes as it would have woken
+        there. The same ending as the intro's, without its beginning. */
+    function wake() {
+        cancelAnimationFrame(raf);
+        timers.forEach(clearTimeout);
+        timers = [];
+        stage.classList.add("instant");
+        stage.classList.remove("settled", "aurora-on");
+        introLockup.classList.remove("popped", "word-in", "gone");
+        introLockup.classList.add("formed", "drawn", "sleeping");
+        introStack.classList.remove("named");
+        introLockup.style.transform = "";
+        headLockup.classList.remove("shown");
+        edition.classList.remove("shown");
+        page.classList.remove("live");
+        turn.classList.remove("in", "out");
+        turn.classList.add("first");
+        onLines(0);
+        void stage.offsetWidth;
+        stage.classList.remove("instant");
+        settled = false;
+        field.asleep();
+        cues = [
+            ...WAKE.lines.map((at, i) => ({ at, run: () => onLines(i + 1) })),
+            { at: WAKE.burst, run: () => {
+                introLockup.classList.remove("sleeping");
+                introLockup.classList.add("popped");
+                stage.classList.add("aurora-on");
+                field.burst();
+            } },
+            { at: WAKE.word, run: () => { introLockup.classList.add("word-in"); introStack.classList.add("named"); } },
+            { at: WAKE.settle, run: settle },
+        ].sort((a, b) => a.at - b.at).map((cue) => ({ ...cue, done: false }));
         t0 = performance.now();
         raf = requestAnimationFrame(frame);
         if (reduced) skip();
@@ -139,5 +181,5 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         }, reduced ? 0 : GLIDE));
     }
 
-    return { start, skip, recall, reland, get settled() { return settled; } };
+    return { start, wake, skip, recall, reland, get settled() { return settled; } };
 }

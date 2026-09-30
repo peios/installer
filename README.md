@@ -1,13 +1,19 @@
 # installer-gxwi
 
-The graphical Peios installer.
+The graphical Peios installer, and first-boot setup in a browser.
 
-It is what GXWI runs as its overlay on an install medium: one process for the
-machine, which everyone who opens the machine's address in a browser is sent
-to, with no logon. It installs nothing itself. `installerd` does that, as
-SYSTEM, and asks its questions over a socket (MSIP). This program holds that
-conversation, keeps what it has come to as one state, and serves a page that
-draws it.
+`installer-gxwi` is what GXWI runs as its overlay on an install medium: one
+process for the machine, which everyone who opens the machine's address in a
+browser is sent to, with no logon. It installs nothing itself. `installerd`
+does that, as SYSTEM, and asks its questions over a socket (MSIP). This
+program holds that conversation, keeps what it has come to as one state, and
+serves a page that draws it.
+
+`oobe-gxwi` is the same for `oobed`, first-boot setup, on a machine that has
+been installed and not set up. `oobed` makes it GXWI's overlay while setup is
+pending, running as a passwordless account it makes for the purpose, and
+takes it away again when setup is done. The two are one program built twice,
+because they are one page: a restart from the installer lands in setup.
 
 - **The process holds the state.** Which page is showing and what is on it
   live here, in `src/`. Every browser is sent the same thing over a websocket
@@ -49,23 +55,30 @@ disk is really to be erased, the installation as it runs, and the restart.
   can be saved whole from `/log.txt`. Finished, it offers Reboot now.
 - **The restart**: the page leaves and the stars gather back into the mark,
   which sleeps while the machine is away. The page asks the address for
-  `/hello`, which only this installer answers, with the machine's boot id,
-  and lands on what comes back: Peios, with its first-boot setup on the
-  machine's own screen; the installer again, on another boot, which is the
-  machine starting from the medium; or, after three minutes of nothing, what
-  the machine's screen might be showing.
+  `/hello`, which only this installer and first-boot setup answer, with the
+  machine's boot id, and lands on what comes back: first-boot setup, whose
+  page is loaded in this one's place and wakes the sleeping mark; Peios,
+  with first-boot setup on the machine's own screen only; the installer
+  again, on another boot, which is the machine starting from the medium; or,
+  after three minutes of nothing, what the machine's screen might be showing.
 
-An upgrade's and a repair's pages are not drawn yet. An action that leads to
-a page not drawn here says so instead of moving everyone on to it: today,
-the disk page's Next for an upgrade or a repair. First-boot setup in the
-browser, once the machine is back, is not here either.
+Of first-boot setup, the welcome is drawn: the greeting, going round the
+languages, and the language, which `oobed` shows and cannot yet let be
+chosen. The keyboard layout `oobed` asks about is the console's, and is not
+drawn: in a browser the keyboard is the browser's.
+
+An upgrade's and a repair's pages are not drawn yet, nor the rest of
+first-boot setup. An action that leads to a page not drawn here says so
+instead of moving everyone on to it: today, the disk page's Next for an
+upgrade or a repair, and the welcome's Next.
 
 The pages draw what `installerd` has only lately learned to say (the
 `detail` of each row of disks, of the confirmation's sentence and of the
 running job's), so they want an `installerd` from a current `../installer`.
 Against an older one they show what it says in words and leave the rest out.
 
-It is not packaged and not on any image yet.
+Neither is packaged or on any image yet. Until `oobe-gxwi` is installed at
+`/bin/oobe-gxwi`, `oobed` offers setup on the console only.
 
 ## Working on it
 
@@ -85,6 +98,17 @@ node dev/browser/restart.mjs                       # the restart, and what comes
 node dev/browser/states.mjs                        # what it shows when things go away
 cargo +1.98.1 test
 ```
+
+First-boot setup the same way, against an `oobed` that only pretends:
+
+```sh
+dev/host-oobe.sh                                   # http://127.0.0.1:7791/
+node dev/browser/welcome.mjs                       # the welcome, and waking into it
+```
+
+`restart.mjs` starts its own `oobed` and `oobe-gxwi` to come back as, so it
+wants `oobed` built too (`cargo +1.98.1 build -p installerd -p oobed -p
+msip-drive` in `../installer`).
 
 A pretended installation takes about a quarter of a minute.
 `FAIL_AT=copy dev/host.sh` makes each one fail part way through that phase,

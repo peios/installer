@@ -18,6 +18,10 @@ export const sizeText = (bytes) =>
     installer holds such an action back, since an answer would move everyone
     looking on to a page nobody can see. */
 export const NOT_DRAWN = "The step after this one is not drawn yet.";
+// Left in the tab's session storage by a page that followed a restart down
+// and saw first-boot setup answer, for the page it went on to: the mark that
+// went to sleep there wakes there.
+export const WOKE = "peios.woke";
 
 export const listText =(xs) => xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
 export const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;

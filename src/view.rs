@@ -14,11 +14,16 @@ use msip::msg::{End, Outcome, Turn};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::Conversation;
 use crate::release::Release;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct View {
-    /// Which Peios the medium carries.
+    /// Whose conversation this is: installerd's (`install`) or oobed's
+    /// (`oobe`). The page is the same page either way, and says what
+    /// is being done in the words of the one it is.
+    pub conversation: Conversation,
+    /// Which Peios the medium carries, or the machine runs.
     pub release: Release,
     /// How things stand with installerd.
     pub link: Link,
@@ -124,6 +129,17 @@ pub enum Page {
         /// or installerd went on to offer the restart.
         ended: Option<Ended>,
     },
+    /// oobed's `oobe.locale`: the first page of first-boot setup, which
+    /// welcomes and would ask for a language and a keyboard.
+    Welcome {
+        title: String,
+        intro: String,
+        /// The language, which oobed shows and cannot yet let be chosen.
+        /// The keyboard is not sent: in a browser it is the browser's own,
+        /// and what oobed says of the console's is nothing to do with it.
+        language: Option<Choice>,
+        next: Option<Action>,
+    },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
     /// The conversation is over, and not on a page that stays to say so.
@@ -174,6 +190,18 @@ pub struct Action {
     pub unbuilt: bool,
 }
 
+/// A choice among several, as oobed asks for one (MSIP `select`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Choice {
+    pub r#ref: String,
+    pub name: String,
+    /// What there is to choose from, each as its value and its name.
+    pub choices: Vec<(String, String)>,
+    pub enabled: bool,
+    /// Why it cannot be chosen, where it cannot.
+    pub help: Option<String>,
+}
+
 /// One row of installerd's table of disks.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Disk {
@@ -207,8 +235,18 @@ const LOG: &str = "out";
 const TAIL: usize = 200;
 
 impl View {
-    pub fn starting(release: Release, boot: String) -> View {
-        View { release, link: Link::Connecting, trail: Vec::new(), seq: 0, waiting: None, page: None, restarting: false, boot }
+    pub fn starting(conversation: Conversation, release: Release, boot: String) -> View {
+        View {
+            conversation,
+            release,
+            link: Link::Connecting,
+            trail: Vec::new(),
+            seq: 0,
+            waiting: None,
+            page: None,
+            restarting: false,
+            boot,
+        }
     }
 
     pub fn did(&mut self, what: &str, to: impl Into<String>) {
@@ -235,6 +273,8 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         // An install goes on to the confirmation, which is drawn; an
         // upgrade and a repair to pages of their own, which are not.
         (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
+        // First-boot setup's network page.
+        (Some("oobe.locale"), "nav.next") => true,
         _ => false,
     }
 }
@@ -331,6 +371,12 @@ impl Page {
                     ended: None,
                 }
             }
+            Some("oobe.locale") => Page::Welcome {
+                title,
+                intro: text(turn, "locale.intro"),
+                language: element(turn, "locale.language").filter(|e| e.r#type == types::SELECT).map(Choice::of),
+                next: action("nav.next"),
+            },
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
         }
     }
@@ -414,6 +460,22 @@ impl Action {
             help: element.help.clone(),
             destructive: element.state.get("destructive").and_then(Value::as_bool).unwrap_or(false),
             unbuilt: unbuilt(turn, &element.r#ref),
+        }
+    }
+}
+
+impl Choice {
+    /// A `select`'s choices are each a value and a name (PGSS §3.B); one
+    /// without both is not a choice.
+    fn of(element: &Element) -> Choice {
+        let choices = element.state.get("choices").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        let said = |choice: &Value, key: &str| choice.get(key).and_then(Value::as_str).map(str::to_string);
+        Choice {
+            r#ref: element.r#ref.clone(),
+            name: element.name.clone().unwrap_or_default(),
+            choices: choices.iter().filter_map(|choice| Some((said(choice, "value")?, said(choice, "name")?))).collect(),
+            enabled: element.enabled,
+            help: element.help.clone(),
         }
     }
 }
@@ -754,6 +816,7 @@ mod tests {
     #[test]
     fn a_page_is_sent_as_the_kind_it_is() {
         let view = View {
+            conversation: Conversation::Install,
             release: Release { version: "2026.8".into(), variant: "Experimental".into() },
             link: Link::Connected { daemon: "installerd/0.1.10".into() },
             trail: vec![("connect".into(), "/run/installerd.sock".into())],
@@ -764,6 +827,8 @@ mod tests {
             boot: "8c7c".into(),
         };
         let sent = serde_json::to_value(&view).unwrap();
+        assert_eq!(sent["conversation"], "install");
+        assert_eq!(serde_json::to_value(Conversation::Oobe).unwrap(), "oobe");
         assert_eq!(sent["link"], json!({ "state": "connected", "daemon": "installerd/0.1.10" }));
         assert_eq!(sent["seq"], 1);
         assert_eq!(sent["waiting"], "act.install");
@@ -813,6 +878,51 @@ mod tests {
         let sent = serde_json::to_value(Page::ended(Some(Page::of(&installing(), None)), &done)).unwrap();
         assert_eq!(sent["kind"], "progress");
         assert_eq!(sent["ended"], json!({ "outcome": "complete", "message": "", "reboot": null, "start": null, "error": null }));
+    }
+
+    /// oobed's first page, as it sends it (`oobed/src/flow.rs`).
+    fn welcome() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 1, "id": "oobe.locale", "name": "Welcome to Peios",
+            "elements": [
+                { "ref": "locale.intro", "type": "text", "text": "A few questions and this machine is ready to use." },
+                { "ref": "locale.language", "type": "select", "name": "Language", "choices": [], "enabled": false,
+                  "help": "Peios ships in English only for now; there is no locale data to choose from yet." },
+                { "ref": "locale.keyboard", "type": "select", "name": "Keyboard layout", "choices": [], "enabled": false,
+                  "help": "No keymaps are packaged yet." },
+                { "ref": "nav.next", "type": "action", "name": "Next", "primary": true },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn first_boot_setup_is_welcomed_from_what_oobed_sends() {
+        let Page::Welcome { title, intro, language, next } = Page::of(&welcome(), None) else { panic!("not the welcome") };
+        assert_eq!((title.as_str(), intro.as_str()), ("Welcome to Peios", "A few questions and this machine is ready to use."));
+        let language = language.unwrap();
+        assert_eq!((language.r#ref.as_str(), language.name.as_str(), language.enabled), ("locale.language", "Language", false));
+        assert!(language.choices.is_empty());
+        assert!(language.help.unwrap().starts_with("Peios ships in English only"));
+        let next = next.unwrap();
+        assert!(next.primary && next.enabled);
+        // The network page it leads to is not drawn yet.
+        assert!(next.unbuilt);
+        // The keyboard is the browser's, and is not sent.
+        let sent = serde_json::to_value(Page::of(&welcome(), None)).unwrap();
+        assert_eq!(sent["kind"], "welcome");
+        assert!(!sent.to_string().contains("keyboard"));
+    }
+
+    #[test]
+    fn a_choice_is_a_value_and_a_name() {
+        let mut turn = welcome();
+        turn.elements[1].state.insert(
+            "choices".into(),
+            json!([{ "value": "en-GB", "name": "English (United Kingdom)" }, { "value": "de" }, "fr", { "value": "nl", "name": "Nederlands" }]),
+        );
+        let Page::Welcome { language: Some(language), .. } = Page::of(&turn, None) else { panic!("no language") };
+        assert_eq!(language.choices, [("en-GB".into(), "English (United Kingdom)".into()), ("nl".into(), "Nederlands".into())]);
     }
 
     /// installerd's page after an install that finished

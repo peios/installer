@@ -9,15 +9,17 @@
 // played here: the installer and installerd are stopped, and then something
 // else answers at the address, as the machine that comes back would:
 //
+//   - first-boot setup in a browser: GXWI saying its overlay is not up yet,
+//     and then oobe-gxwi, against its own oobed (--dry-run);
 //   - Peios' own sign-in, which answers every address with a 401;
 //   - the installer again, on another boot, which is the machine starting
 //     from the medium;
 //   - with LOST=1, nothing at all for as long as the page waits, and then
 //     Peios after all.
 //
-// installerd and msip-drive come from ../installer (cargo +1.98.1 build -p
-// installerd -p msip-drive) and installer-gxwi from this checkout (cargo
-// +1.98.1 build).
+// installerd, oobed and msip-drive come from ../installer (cargo +1.98.1
+// build -p installerd -p oobed -p msip-drive) and installer-gxwi and
+// oobe-gxwi from this checkout (cargo +1.98.1 build).
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -33,7 +35,7 @@ const [host, port] = ["127.0.0.1", 7795];
 const site = `http://${host}:${port}/`;
 const env = { ...process.env, LD_LIBRARY_PATH: join(root, "../libpeios/target/debug") };
 
-let installerd = null, installerGxwi = null, standIn = null;
+let installerd = null, installerGxwi = null, standIn = null, oobed = null, oobeGxwi = null;
 const startMachine = async () => {
     installerd = spawn(join(installer, "installerd"),
         ["--dry-run", "--inventory", join(root, "dev/desktop.json"), "--socket", socket], { stdio: "ignore" });
@@ -43,8 +45,7 @@ const startMachine = async () => {
 };
 /** The machine goes down: nothing answers at the address. */
 const down = async () => {
-    installerGxwi?.kill();
-    installerd?.kill();
+    for (const program of [installerGxwi, installerd, oobeGxwi, oobed]) program?.kill();
     await new Promise((r) => (standIn ? standIn.close(r) : r()));
     standIn = null;
     await sleep(300);
@@ -54,6 +55,21 @@ const comesBack = (answer) => new Promise((r) => {
     standIn = createServer(answer);
     standIn.listen(port, host, r);
 });
+/** First-boot setup comes up in a browser, as it does on a machine just
+    installed: GXWI answers first, with its overlay not up yet. */
+const setupComesBack = async () => {
+    await comesBack((req, res) => { res.writeHead(503, { "content-type": "text/html" }); res.end("<!doctype html><title>Not available yet</title>"); });
+    await sleep(4000);
+    // Its connections too, which the page's asking keeps alive, or the
+    // address is not free for setup to take.
+    standIn.closeAllConnections();
+    await new Promise((r) => standIn.close(r));
+    standIn = null;
+    const oobedSocket = join(run, "oobed.sock");
+    oobed = spawn(join(installer, "oobed"), ["--dry-run", "--socket", oobedSocket], { stdio: "ignore" });
+    await sleep(400);
+    oobeGxwi = spawn(join(root, "target/debug/oobe-gxwi"), ["--socket", oobedSocket, "--listen", `${host}:${port}`], { stdio: "ignore", env });
+};
 // Peios' own GXWI on the installed system: everything wants a sign-in.
 const peios = (req, res) => { res.writeHead(401, { "content-type": "text/html" }); res.end("<!doctype html><title>Sign in</title>"); };
 // The installer, on the next boot of the machine: it started from the medium.
@@ -101,6 +117,9 @@ const seen = () => js(`(() => {
         title: document.title,
         said: document.getElementById("say").textContent,
         wide: document.documentElement.scrollWidth > innerWidth,
+        conversation: document.documentElement.dataset.conversation ?? "install",
+        settled: stage.classList.contains("settled"),
+        woke: (() => { try { return sessionStorage.getItem("peios.woke"); } catch { return "no storage"; } })(),
     };
 })()`);
 
@@ -127,7 +146,36 @@ async function finishedAndRebooted(label) {
 }
 
 try {
-    // ---- Peios comes back ----
+    // ---- first-boot setup comes back, in a browser ----
+    await finishedAndRebooted("setup");
+    await eventually(seen, (s) => s.mark.includes("sleeping"), 8);
+    await down();
+    await sleep(2000);
+    const answering = setupComesBack();
+    // While GXWI says its overlay is not up, the machine is coming, and the
+    // page does not take it for Peios without setup.
+    await sleep(3500);
+    out.coming = await seen();
+    expect("GXWI answering that setup is not up yet is waited through", out.coming.kind === "restart" && out.coming.rebooting);
+    await answering;
+    // The page is replaced by setup's, which wakes the mark where this one
+    // left it rather than playing the intro from the start.
+    out.waking = await eventually(seen, (s) => s.conversation === "oobe" && (s.mark.includes("formed") || s.settled), 20);
+    expect("setup answering, the page goes on to setup's own",
+        out.waking.after !== null && out.waking.conversation === "oobe" && out.waking.woke === null);
+    expect("which wakes the mark it arrives with, already made and asleep or bursting, and not yet in the corner",
+        out.waking.mark.includes("drawn") && (out.waking.mark.includes("sleeping") || out.waking.mark.includes("popped")) && !out.waking.settled);
+    await picture("restart-0-waking.png");
+    out.setup = await eventually(seen, (s) => s.kind === "welcome" && s.showing, 10);
+    await sleep(1200);
+    out.setup = { ...await seen(), after: out.setup.after };
+    await picture("restart-0-setup.png");
+    expect("and lands on setup's welcome, the lockup in the corner",
+        out.setup.after !== null && out.setup.heading === "Welcome to Peios" && out.setup.headShown && out.setup.settled
+        && /^Connected to oobed\/\d/.test(out.setup.status) && out.setup.focused === "Next");
+    await down();
+
+    // ---- Peios comes back, with no setup in a browser ----
     await finishedAndRebooted("peios");
     expect("an installation finishes with the restart offered", out.peiosFinished.after !== null);
     out.going = await eventually(seen, (s) => s.rebooting && s.ticker[0] === "reboot asked of installerd" && s.tickerShown && !s.showing, 5);
@@ -148,7 +196,12 @@ try {
     expect("the connection closing is noted, as it goes", out.closed.after !== null);
     await sleep(3000);
     await comesBack(peios);
-    out.running = await eventually(seen, (s) => s.kind === "running" && s.showing, 20);
+    // It is taken for Peios only once it has gone on answering: setup may
+    // yet take the address over.
+    await sleep(6000);
+    out.settling = await seen();
+    expect("something else answering is not taken for Peios at once", out.settling.kind === "restart");
+    out.running = await eventually(seen, (s) => s.kind === "running" && s.showing, 30);
     await sleep(1200);
     out.running = { ...await seen(), after: out.running.after };
     await picture("restart-2-running.png");
@@ -196,7 +249,7 @@ try {
         expect("a phone holds it without scrolling sideways", out.lostPhone.wide === false);
         await send("Emulation.clearDeviceMetricsOverride");
         await comesBack(peios);
-        out.lateComer = await eventually(seen, (s) => s.kind === "running" && s.showing, 30);
+        out.lateComer = await eventually(seen, (s) => s.kind === "running" && s.showing, 40);
         expect("and when Peios does answer after all, the page goes to it", out.lateComer.after !== null && !out.lateComer.stalled);
     }
 

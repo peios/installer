@@ -779,6 +779,29 @@ h1 {
     .turn[data-kind="lost"] { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ---- first-boot setup's welcome ---- */
+.turn[data-kind="welcome"] { max-width: 560px; }
+/* the greeting goes round the languages; the heading keeps one height
+   whatever it says, so nothing under it moves */
+.turn[data-kind="welcome"] h1 { height: 1.1em; display: flex; align-items: flex-end; white-space: nowrap; }
+.greet { display: inline-block; transition: opacity .45s ease, filter .45s ease, transform .6s var(--ease-out); }
+.greet.out { opacity: 0; filter: blur(6px); transform: translateY(-8px); }
+.turn[data-kind="welcome"] .nav { justify-content: flex-end; }
+.fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 4px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; min-width: 0; }
+.field label { font: 500 13px/1.2 var(--font-text); color: var(--text-secondary); }
+.field .note { font-size: 13px; }
+.select {
+    display: flex; align-items: center; gap: 10px;
+    height: 48px; padding: 0 14px; box-sizing: border-box;
+    border: 1px solid var(--border-default); border-radius: 12px;
+    background: rgb(255 255 255 / 3%);
+    color: var(--text-primary);
+    font: 500 15px/1 var(--font-text);
+}
+.select[aria-disabled="true"] { color: var(--text-secondary); border-style: dashed; }
+.select .sv { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* the moment it is begun, over everything */
 .flash {
     position: fixed; inset: 0; z-index: 6; pointer-events: none;
@@ -897,7 +920,7 @@ h1 {
    and every choice keeps an edge the system colours draw */
 @media (forced-colors: active) {
     #field, .aurora, .vignette, .flash { display: none; }
-    .act, .toast, .disk, .plan, .erased, .build, .layout, .btn, .log, .ptrack { border: 1px solid CanvasText; }
+    .act, .toast, .disk, .plan, .erased, .build, .layout, .btn, .log, .ptrack, .select { border: 1px solid CanvasText; }
     .ptrack i, .st svg { forced-color-adjust: none; }
     .destroy { border: 2px solid ButtonText; }
     .destroy .fill { forced-color-adjust: none; }
