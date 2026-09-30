@@ -32,6 +32,17 @@ under
 naming the interface by its stable id; until then the machine keeps the
 address it has.
 .PP
+The account page is checked when it is answered, against what
+.B lpsd
+will store, so that nothing is refused at the end, where a refusal fails the
+whole of setup: the password must not be empty and must be typed the same
+twice, and the name, trimmed, must be printable ASCII of at most 256
+characters, contain none of
+.BR "@ \e / : ,"
+and not be a well-known group's.  All that is wrong is said at once, each on
+its field, and what an earlier answer got wrong and this one did not is no
+longer said.
+.PP
 Where the browser program is installed, setup can also be done in a browser,
 as the GXWI overlay: before it accepts connections,
 .B oobed
