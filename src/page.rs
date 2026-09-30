@@ -51,6 +51,7 @@ pub fn routes(conversation: Conversation, view: watch::Receiver<View>, said: Sai
         .route("/style.css", part(CSS, include_bytes!("../page/style.css")))
         .route("/app.js", part(SCRIPT, include_bytes!("../page/app.js")))
         .route("/bits.js", part(SCRIPT, include_bytes!("../page/bits.js")))
+        .route("/account.js", part(SCRIPT, include_bytes!("../page/account.js")))
         .route("/confirm.js", part(SCRIPT, include_bytes!("../page/confirm.js")))
         .route("/disk.js", part(SCRIPT, include_bytes!("../page/disk.js")))
         .route("/field.js", part(SCRIPT, include_bytes!("../page/field.js")))

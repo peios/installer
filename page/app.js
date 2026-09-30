@@ -9,6 +9,7 @@
 // whose it is before anything has been sent, and the few things said here of
 // "the installer" are said of setup instead.
 import { WOKE } from "./bits.js";
+import { createAccountPage } from "./account.js";
 import { createConfirmPage } from "./confirm.js";
 import { createDiskPage } from "./disk.js";
 import { createField } from "./field.js";
@@ -204,10 +205,12 @@ function fill(page) {
     if (was === "progress" && page.kind !== "progress") progressPage.gone();
     if (was === "welcome" && page.kind !== "welcome") welcomePage.gone();
     if (was === "manual" && page.kind !== "manual") manualPage.gone();
+    if (was === "account" && page.kind !== "account") accountPage.gone();
     if (page.kind === "mode") return fillMode(page, was === "mode");
     if (page.kind === "welcome") return welcomePage.draw(page, view?.waiting);
     if (page.kind === "network") return networkPage.draw(page, view?.waiting);
     if (page.kind === "manual") return manualPage.draw(page, view?.waiting ?? null);
+    if (page.kind === "account") return accountPage.draw(page, view?.waiting ?? null);
     if (page.kind === "disk") return diskPage.draw(page, view?.waiting);
     if (page.kind === "confirm") return confirmPage.draw(page, view?.waiting);
     if (page.kind === "progress") return progressPage.draw(page, view?.waiting);
@@ -289,6 +292,7 @@ const progressPage = createProgressPage({ turn, stage: els.stage, el, rise, ask,
 const welcomePage = createWelcomePage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 const networkPage = createNetworkPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 const manualPage = createManualPage({ turn, el, rise, ask, reduced });
+const accountPage = createAccountPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 
 function menuKeys(e) {
     const at = actions.findIndex((button) => button.classList.contains("hl"));
@@ -324,13 +328,14 @@ function arrived() {
     if (shown?.kind === "welcome") welcomePage.arrived();
     if (shown?.kind === "network") networkPage.focus();
     if (shown?.kind === "manual") manualPage.focus();
+    if (shown?.kind === "account") accountPage.focus();
 }
 
 // Where each page comes in the installation, or in setup, which decides the
 // side it arrives from: a later page from the right, an earlier one from the
 // left. The pages that are not steps (starting, lost, an ending) count as
 // later.
-const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3, welcome: 0, network: 1, manual: 2 };
+const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3, welcome: 0, network: 1, manual: 2, account: 3 };
 const order = (page) => ORDER[page?.kind] ?? 9;
 
 // What is on the page now, and whether the intro has landed: until it has,

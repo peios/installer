@@ -871,6 +871,59 @@ h1 {
 .field-error { margin: 0; font-size: 13px; color: var(--danger); }
 .field-error:empty { display: none; }
 
+/* ---- first-boot setup's account ---- */
+.turn[data-kind="account"] { max-width: 520px; }
+.turn[data-kind="account"] .input { height: 44px; font: 400 15px/1 var(--font-text); }
+.turn[data-kind="account"] .input[type="password"] { font-family: var(--font-mono); letter-spacing: .08em; }
+/* who the account will be, as its name is typed */
+.who {
+    --hue: 200;
+    display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 14px;
+    padding: 12px 16px 12px 12px;
+    border: 1px solid var(--border-default); border-radius: 16px;
+    background: linear-gradient(100deg, hsl(var(--hue) 70% 50% / 9%), rgb(255 255 255 / 2%) 60%);
+    transition: background .5s;
+}
+.who-face {
+    display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, hsl(var(--hue) 85% 72%), hsl(calc(var(--hue) + 40) 60% 38%));
+    box-shadow: 0 6px 22px -8px hsl(var(--hue) 80% 55% / 70%);
+    color: #fff; font: 700 1.35rem/1 var(--font-display); text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+    transition: background .5s, box-shadow .5s;
+}
+.who.nobody .who-face { background: var(--surface-2); box-shadow: none; }
+.who-said { display: grid; gap: 3px; min-width: 0; }
+.who-name { font: 600 1.05rem/1.25 var(--font-display); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who.nobody .who-name { color: var(--text-muted); font-weight: 500; }
+.who-what { font-size: 13px; color: var(--text-secondary); }
+.who-badge { color: var(--accent-quiet); }
+.who-badge svg { width: 20px; height: 20px; }
+/* a password, and the way to see it */
+.secret { position: relative; display: flex; }
+.secret .input { padding-right: 46px; }
+.eye {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    display: grid; place-items: center; width: 36px; height: 36px;
+    border: 0; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.eye:hover, .eye[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-1); }
+.eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.eye svg { width: 18px; height: 18px; }
+.field-caps { margin: 0; font-size: 13px; color: var(--wait); }
+.field-hint { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--text-muted); }
+.field-hint:empty { display: none; }
+.field-hint[data-state="match"] { color: var(--ok); }
+.field-hint[data-state="differ"] { color: var(--wait); }
+.field-hint svg { width: 12px; height: 12px; }
+/* the password crosses a network in the clear */
+.clear {
+    display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; margin: 0;
+    padding: 10px 14px; border-radius: 12px;
+    background: rgb(240 184 110 / 7%); border: 1px solid rgb(240 184 110 / 22%);
+    font-size: 13px; color: var(--text-secondary);
+}
+.clear svg { width: 16px; height: 16px; margin-top: 2px; color: var(--wait); }
+
 /* the moment it is begun, over everything */
 .flash {
     position: fixed; inset: 0; z-index: 6; pointer-events: none;
@@ -989,7 +1042,8 @@ h1 {
    and every choice keeps an edge the system colours draw */
 @media (forced-colors: active) {
     #field, .aurora, .vignette, .flash { display: none; }
-    .act, .toast, .disk, .net, .iface, .planned, .plan, .erased, .build, .layout, .btn, .log, .ptrack, .select { border: 1px solid CanvasText; }
+    .act, .toast, .disk, .net, .iface, .planned, .plan, .erased, .build, .layout, .btn, .log, .ptrack, .select, .who, .clear { border: 1px solid CanvasText; }
+    .who-face { forced-color-adjust: none; }
     .ptrack i, .st svg { forced-color-adjust: none; }
     .destroy { border: 2px solid ButtonText; }
     .destroy .fill { forced-color-adjust: none; }

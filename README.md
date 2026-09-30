@@ -62,7 +62,7 @@ disk is really to be erased, the installation as it runs, and the restart.
   again, on another boot, which is the machine starting from the medium; or,
   after three minutes of nothing, what the machine's screen might be showing.
 
-Of first-boot setup, the welcome and the network are drawn.
+Of first-boot setup, the welcome, the network and the account are drawn.
 
 - **The welcome**: the greeting, going round the languages, and the language,
   which `oobed` shows and cannot yet let be chosen. The keyboard layout
@@ -79,11 +79,18 @@ Of first-boot setup, the welcome and the network are drawn.
   says it is applied then and not now, and the network page shows what is
   kept, marks the interface, and offers to change it or give it up. What is
   typed is the browser's own until Save, and goes with it.
+- **The account**: a name, a password and the password again, which `oobed`
+  checks when Next is pressed. As they are typed the page shows who the
+  account will be, whether the second password matches the first, and when
+  Caps Lock is on, and can show the passwords as typed. What is typed is the
+  browser's own until Next, and a password is never sent to anyone else
+  looking. Opened by an address that is not the loopback, the page says the
+  password will cross the network unencrypted.
 
 An upgrade's and a repair's pages are not drawn yet, nor the rest of
 first-boot setup. An action that leads to a page not drawn here says so
 instead of moving everyone on to it: today, the disk page's Next for an
-upgrade or a repair, and the network page's Next.
+upgrade or a repair, and the account page's Next.
 
 The pages draw what `installerd` has only lately learned to say (the
 `detail` of each row of disks, of the confirmation's sentence and of the
@@ -118,13 +125,15 @@ First-boot setup the same way, against an `oobed` that only pretends:
 dev/host-oobe.sh                                   # http://127.0.0.1:7791/
 node dev/browser/welcome.mjs                       # the welcome, and waking into it
 node dev/browser/network.mjs                       # the network page
+node dev/browser/account.mjs                       # the account page
 ```
 
 The network the pretended `oobed` reports is what `dev/net-status.txt` says
 `net status` prints (`NET_STATUS=FILE dev/host-oobe.sh` for another). It is
 read again each time the page checks, so editing it and pressing Check again
-is a cable plugged in or pulled. `network.mjs` starts its own `oobed` and
-`oobe-gxwi`, and needs nothing else running.
+is a cable plugged in or pulled. `network.mjs` and `account.mjs` start their
+own `oobed` and `oobe-gxwi`, and need nothing else running. `account.mjs`
+serves on every address, to open the page by one that is not the loopback.
 
 `restart.mjs` starts its own `oobed` and `oobe-gxwi` to come back as, so it
 wants `oobed` built too (`cargo +1.98.1 build -p installerd -p oobed -p

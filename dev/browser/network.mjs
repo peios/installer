@@ -9,9 +9,8 @@
 // the person were reaching the machine by that address.
 //
 // It goes from the welcome to the network page and looks at what the page
-// says of each interface, that the one it is reached through is marked, that
-// what cannot be done yet says why, and that Next says the page after is not
-// drawn. Then the cable is pulled, by changing the file, and Check again
+// says of each interface, that the one it is reached through is marked, and
+// that what cannot be done yet says why. Then the cable is pulled, by changing the file, and Check again
 // shows it for everyone looking; then netd is taken away altogether, and the
 // page says so in oobed's words. An interface whose names are markup is shown
 // as written. Last, a narrow screen, and Back to the welcome.
@@ -126,10 +125,6 @@ try {
     await js(`document.querySelectorAll("#turn .aux .link")[2].focus()`);
     out.why = await eventually(seen, (s) => s.help !== null, 3);
     expect("what cannot be done says why", out.why.help === "No wireless stack is packaged yet.");
-    await click("#turn .btn.go-on");
-    out.next = await eventually(seen, (s) => s.toast !== null, 3);
-    expect("Next says the page after is not drawn, and stays", out.next.toast === "The step after this one is not drawn yet." && out.next.kind === "network");
-    expect("and nobody else is moved on", (await elsewhere()).page.kind === "network");
 
     // The cable pulled: the file changes, and checking again shows it.
     writeFileSync(status, sample.replace("state      up, carrier\n  readiness  routed", "state      up, no-carrier\n  readiness  absent")

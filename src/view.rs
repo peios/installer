@@ -187,6 +187,16 @@ pub enum Page {
         back: Option<Action>,
         save: Option<Action>,
     },
+    /// oobed's `oobe.account`: the machine's first account, which
+    /// administers it.
+    Account {
+        title: String,
+        intro: String,
+        /// The name, the password, and the password again.
+        fields: Vec<Field>,
+        back: Option<Action>,
+        next: Option<Action>,
+    },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
     /// The conversation is over, and not on a page that stays to say so.
@@ -274,9 +284,11 @@ pub struct Field {
     pub help: Option<String>,
     /// Ghost text: an example, not a value.
     pub placeholder: Option<String>,
-    /// What it starts with filled in.
+    /// What it starts with filled in. Never anything for a secret.
     pub default: Option<String>,
     pub required: bool,
+    /// What is typed is not to be shown: a password.
+    pub secret: bool,
     /// Why oobed turned down what it was answered with.
     pub error: Option<String>,
 }
@@ -358,9 +370,10 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         // An install goes on to the confirmation, which is drawn; an
         // upgrade and a repair to pages of their own, which are not.
         (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
-        // First-boot setup's account page, and what joining a wireless
-        // network would lead to once oobed can do it.
-        (Some("oobe.network"), "nav.next" | "network.wifi") => true,
+        // What joining a wireless network would lead to once oobed can do
+        // it, and first-boot setup's naming page.
+        (Some("oobe.network"), "network.wifi") => true,
+        (Some("oobe.account"), "nav.next") => true,
         _ => false,
     }
 }
@@ -529,6 +542,13 @@ impl Page {
                     save: action("manual.save"),
                 }
             }
+            Some("oobe.account") => Page::Account {
+                title,
+                intro: text(turn, "account.intro"),
+                fields: turn.elements.iter().filter(|e| e.r#type == types::STRING).map(Field::of).collect(),
+                back: action("nav.back"),
+                next: action("nav.next"),
+            },
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
         }
     }
@@ -640,8 +660,11 @@ impl Field {
             name: element.name.clone().unwrap_or_default(),
             help: element.help.clone(),
             placeholder: said("placeholder"),
-            default: element.default.as_ref().and_then(Value::as_str).map(str::to_string),
+            // Everyone looking is sent the page, and a password is not
+            // everyone's, whatever oobed starts it with.
+            default: element.default.as_ref().and_then(Value::as_str).filter(|_| !element.secret).map(str::to_string),
             required: element.required,
+            secret: element.secret,
             error: element.error.clone(),
         }
     }
@@ -1139,8 +1162,8 @@ mod tests {
         assert_eq!((planned, unplan), (None, None));
         let others: Vec<_> = others.iter().map(|a| (a.r#ref.as_str(), a.enabled, a.unbuilt)).collect();
         assert_eq!(others, [("network.wifi", false, true)]);
-        // The account page it leads to is not drawn yet.
-        assert!(next.unwrap().unbuilt);
+        // The account page it leads to is drawn.
+        assert!(!next.unwrap().unbuilt);
 
         // With an address kept for the end, it says so, and it can be given up.
         let mut kept = network();
@@ -1215,6 +1238,49 @@ mod tests {
         assert_eq!(Value::Object(filled), json!({ "manual.interface": "eth0", "manual.address": "10.0.0.5/24" }));
         let wlan = json!({ "manual.interface": "wlan0" });
         assert!(super::filled(&manual(), wlan.as_object().unwrap().clone()).is_empty(), "a row that cannot be chosen");
+    }
+
+    /// oobed's account page, as it sends it, with the passwords turned down.
+    fn account() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 4, "id": "oobe.account", "name": "Create your account",
+            "elements": [
+                { "ref": "account.intro", "type": "text", "text": "This account administers the machine." },
+                { "ref": "account.name", "type": "string", "name": "User name", "required": true, "default": "peios",
+                  "help": "What you sign in as." },
+                // A secret oobed has started with something, which it never does.
+                { "ref": "account.password", "type": "string", "name": "Password", "required": true, "secret": true, "default": "hunter2" },
+                { "ref": "account.confirm", "type": "string", "name": "Confirm password", "required": true, "secret": true,
+                  "error": "The passwords do not match." },
+                { "ref": "nav.back", "type": "action", "name": "Back", "validate": false },
+                { "ref": "nav.next", "type": "action", "name": "Next", "primary": true },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_account_is_asked_for_as_oobed_asks() {
+        let Page::Account { title, intro, fields, back, next } = Page::of(&account(), None) else { panic!("not the account page") };
+        assert_eq!((title.as_str(), intro.as_str()), ("Create your account", "This account administers the machine."));
+        let fields: Vec<_> = fields.iter().map(|f| (f.r#ref.as_str(), f.secret, f.default.as_deref(), f.error.as_deref())).collect();
+        assert_eq!(
+            fields,
+            [
+                ("account.name", false, Some("peios"), None),
+                ("account.password", true, None, None),
+                ("account.confirm", true, None, Some("The passwords do not match.")),
+            ]
+        );
+        // Nothing of a password is sent to everyone looking.
+        assert!(!serde_json::to_value(Page::of(&account(), None)).unwrap().to_string().contains("hunter2"));
+        assert!(back.is_some_and(|b| !b.unbuilt));
+        // The naming page it leads to is not drawn yet.
+        assert!(next.is_some_and(|n| n.primary && n.unbuilt));
+        // What is typed is answered with, passwords and all.
+        let said = json!({ "account.name": "jack", "account.password": "one", "account.confirm": "one", "account.intro": "x" });
+        let filled = filled(&account(), said.as_object().unwrap().clone());
+        assert_eq!(Value::Object(filled), json!({ "account.name": "jack", "account.password": "one", "account.confirm": "one" }));
     }
 
     /// installerd's page after an install that finished
