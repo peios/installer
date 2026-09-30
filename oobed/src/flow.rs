@@ -8,6 +8,7 @@ use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::{Element, types};
 use serde_json::{Map, Value, json};
 
+use crate::account;
 use crate::network::{Answered, Manual, Network};
 use crate::setup::Setup;
 
@@ -304,6 +305,10 @@ pub fn network_patch(setup: &dyn Setup) -> Map<String, Value> {
 pub fn account_page(prefill: &str) -> TurnSpec {
     let mut name = field("account.name", "User name", false);
     name.default = Some(json!(prefill));
+    name.help = Some(
+        "What you sign in as. Letters, digits, spaces and punctuation, except @ \\ / : and commas."
+            .into(),
+    );
     TurnSpec {
         id: Some("oobe.account".into()),
         name: Some("Create your account".into()),
@@ -431,30 +436,19 @@ pub fn advance(
             Some(Advance::Page(Page::Network, network_page(setup, plan)))
         }
         (Page::Account { .. }, "nav.next") => {
-            let account = value(answer, "account.name");
             let password = value(answer, "account.password");
-            // Setup keeps an account that already exists, and this one does
-            // while setup runs: taking its name would finish setup with no
-            // account the person can use, and remove it besides.
-            if account.trim().eq_ignore_ascii_case(crate::setup::VISITOR) {
-                return Some(Advance::Reject(vec![(
-                    "account.name".into(),
-                    "That name is used by setup itself. Choose another.".into(),
-                )]));
-            }
-            if password != value(answer, "account.confirm") {
-                // On confirm, not on password: the person retypes the
-                // one they got wrong, and the first field keeps what
-                // they meant.
-                return Some(Advance::Reject(vec![(
-                    "account.confirm".into(),
-                    "The passwords do not match.".into(),
-                )]));
-            }
-            Some(Advance::Page(
-                Page::Naming { account, password },
-                naming_page(&setup.suggested_hostname()),
-            ))
+            let answered = account::Answered {
+                name: &value(answer, "account.name"),
+                password: &password,
+                confirm: &value(answer, "account.confirm"),
+            };
+            Some(match account::check(answered) {
+                Ok(account) => Advance::Page(
+                    Page::Naming { account, password },
+                    naming_page(&setup.suggested_hostname()),
+                ),
+                Err(wrong) => Advance::Reject(wrong),
+            })
         }
         // Back from naming re-asks for the password rather than keeping
         // it: it is the one answer worth making the person confirm

@@ -380,6 +380,61 @@ fn the_name_setup_runs_as_cannot_be_taken() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// A browser answers with every field, the empty ones as empty, and MSIP
+/// counts an empty answer as an answer. What lpsd would refuse at the end,
+/// failing the whole of setup, is refused on the page instead; and the name
+/// is made as lpsd will keep it, trimmed.
+#[test]
+fn what_lpsd_would_refuse_is_refused_on_the_account_page() {
+    let dir = scratch("refused");
+    let setup = Arc::new(Recorder::default());
+    let mut s = Surface::open(&dir, Arc::clone(&setup));
+
+    s.advance_to_account();
+    for (name, password, wrong) in [
+        ("jack", "", "account.password"),
+        ("", "x", "account.name"),
+        ("jack@home", "x", "account.name"),
+        ("Administrators", "x", "account.name"),
+    ] {
+        s.press(
+            "nav.next",
+            &[
+                ("account.name", name),
+                ("account.password", password),
+                ("account.confirm", password),
+            ],
+        );
+        assert!(matches!(s.recv(), Event::Updated), "{name:?} {password:?}");
+        assert_eq!(s.id(), "oobe.account");
+        // Said on the field that is wrong, and taken off the ones that were
+        // wrong last time and are not now.
+        for r in ["account.name", "account.password", "account.confirm"] {
+            let field = s.session.page().unwrap().element(r).unwrap();
+            assert_eq!(
+                field.error.is_some(),
+                r == wrong,
+                "{r} after {name:?} {password:?}"
+            );
+        }
+    }
+
+    s.press(
+        "nav.next",
+        &[
+            ("account.name", "  jack "),
+            ("account.password", "x"),
+            ("account.confirm", "x"),
+        ],
+    );
+    assert!(matches!(s.recv(), Event::NewTurn));
+    s.press("nav.finish", &[("hostname", "workshop")]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.drain_to_end(), Outcome::Complete);
+    assert_eq!(wait_for_steps(&setup, 1)[0], "create jack:x");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// A cable plugged in while the network page is open is seen by checking
 /// again, which changes the page for every surface without leaving it.
 #[test]
