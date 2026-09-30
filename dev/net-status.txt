@@ -1,0 +1,32 @@
+hostname   (unset)
+readiness  routed
+
+lo  [f5e053da-4128-5dae-89c9-9d7a1c33d2bb]
+  verdict    IGNORE by backstop
+  state      up, carrier
+  address    127.0.0.1/8
+
+enp1s0  [96f5d807-229f-52f7-818d-a863d64664e9]
+  verdict    JOIN(default) by wired
+  state      up, carrier
+  readiness  routed
+  hardware   52:54:00:12:34:56 pci-0000:01:00.0 igc
+  network    Office [1e928e4e-2a16-5232-a018-4e6bc4eb6dff] trust private
+  address    192.168.1.20/24
+  address    fd00::5054:ff:fe12:3456/64
+  gateway    192.168.1.1
+  gateway6   fe80::1
+  dns        192.168.1.1
+  search     home.arpa
+  lease      bound from 192.168.1.1, 86365s left
+
+enp2s0  [0b1c9a4e-5e1d-5a7e-9c55-2f1f0f6b8a10]
+  verdict    JOIN(default) by wired
+  state      up, no-carrier
+  readiness  absent
+  hardware   52:54:00:ab:cd:ef pci-0000:02:00.0 r8169
+
+wlp3s0  [7d3e4c1a-9b2f-5e6d-8a7c-1f2e3d4c5b6a]
+  verdict    (none) by backstop
+  state      down, no-carrier
+  hardware   8c:b8:7e:01:02:03 pci-0000:03:00.0 iwlwifi

@@ -140,6 +140,26 @@ pub enum Page {
         language: Option<Choice>,
         next: Option<Action>,
     },
+    /// oobed's `oobe.network`: what the machine's network is. Nothing on it
+    /// has to be answered.
+    Network {
+        title: String,
+        /// What oobed says of the network in words: the machine, then a line
+        /// for each interface.
+        status: String,
+        /// Each interface, as oobed read it for this page (`detail`), passed
+        /// on as it came for the page to draw. Nothing from an oobed that
+        /// says it only in words, or that could not ask netd.
+        interfaces: Option<Vec<Value>>,
+        note: String,
+        refresh: Option<Action>,
+        /// What else oobed offers here, in its order: today, joining a
+        /// wireless network and addressing by hand, neither of which it can
+        /// do yet.
+        others: Vec<Action>,
+        back: Option<Action>,
+        next: Option<Action>,
+    },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
     /// The conversation is over, and not on a page that stays to say so.
@@ -233,6 +253,8 @@ const DOING: &str = "progress.summary";
 const LOG: &str = "out";
 /// How many lines of that a page is sent.
 const TAIL: usize = 200;
+/// What oobed says of the network, which carries the interfaces.
+const NETWORK: &str = "network.status";
 
 impl View {
     pub fn starting(conversation: Conversation, release: Release, boot: String) -> View {
@@ -273,8 +295,9 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         // An install goes on to the confirmation, which is drawn; an
         // upgrade and a repair to pages of their own, which are not.
         (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
-        // First-boot setup's network page.
-        (Some("oobe.locale"), "nav.next") => true,
+        // First-boot setup's account page, and what the network page would
+        // lead to once oobed can do either.
+        (Some("oobe.network"), "nav.next" | "network.wifi" | "network.static") => true,
         _ => false,
     }
 }
@@ -377,6 +400,23 @@ impl Page {
                 language: element(turn, "locale.language").filter(|e| e.r#type == types::SELECT).map(Choice::of),
                 next: action("nav.next"),
             },
+            Some("oobe.network") => {
+                const OWN: &[&str] = &["network.refresh", "nav.back", "nav.next"];
+                Page::Network {
+                    title,
+                    status: text(turn, NETWORK),
+                    interfaces: element(turn, NETWORK)
+                        .and_then(|e| e.state.get("detail"))
+                        .and_then(|detail| detail.get("interfaces"))
+                        .and_then(Value::as_array)
+                        .cloned(),
+                    note: text(turn, "network.note"),
+                    refresh: action("network.refresh"),
+                    others: turn.elements.iter().filter(|e| e.is_action() && !OWN.contains(&e.r#ref.as_str())).map(|e| Action::of(turn, e)).collect(),
+                    back: action("nav.back"),
+                    next: action("nav.next"),
+                }
+            }
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
         }
     }
@@ -906,8 +946,8 @@ mod tests {
         assert!(language.help.unwrap().starts_with("Peios ships in English only"));
         let next = next.unwrap();
         assert!(next.primary && next.enabled);
-        // The network page it leads to is not drawn yet.
-        assert!(next.unbuilt);
+        // The network page it leads to is drawn.
+        assert!(!next.unbuilt);
         // The keyboard is the browser's, and is not sent.
         let sent = serde_json::to_value(Page::of(&welcome(), None)).unwrap();
         assert_eq!(sent["kind"], "welcome");
@@ -923,6 +963,55 @@ mod tests {
         );
         let Page::Welcome { language: Some(language), .. } = Page::of(&turn, None) else { panic!("no language") };
         assert_eq!(language.choices, [("en-GB".into(), "English (United Kingdom)".into()), ("nl".into(), "Nederlands".into())]);
+    }
+
+    /// oobed's network page, as it sends it (`oobed/src/flow.rs`), with one
+    /// interface connected.
+    fn network() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 2, "id": "oobe.network", "name": "Network",
+            "elements": [
+                { "ref": "network.status", "type": "text",
+                  "text": "This machine is connected to a network.\neth0: connected, as 10.0.2.15/24, through 10.0.2.2.",
+                  "detail": { "readiness": "routed", "interfaces": [
+                      { "name": "eth0", "state": "connected", "addresses": ["10.0.2.15/24"], "dns": ["10.0.2.3"], "gateway": "10.0.2.2" },
+                  ] } },
+                { "ref": "network.note", "type": "text", "text": "Setup does not need a network, and nothing here has to be answered." },
+                { "ref": "network.refresh", "type": "action", "name": "Check again", "validate": false },
+                { "ref": "network.wifi", "type": "action", "name": "Connect to Wi-Fi…", "enabled": false,
+                  "help": "No wireless stack is packaged yet." },
+                { "ref": "network.static", "type": "action", "name": "Configure manually…", "enabled": false,
+                  "help": "Manual addressing is configured after setup, with `net`." },
+                { "ref": "nav.back", "type": "action", "name": "Back", "validate": false },
+                { "ref": "nav.next", "type": "action", "name": "Next", "primary": true },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_network_is_drawn_from_what_oobed_sends() {
+        let Page::Network { title, status, interfaces, note, refresh, others, back, next } = Page::of(&network(), None) else {
+            panic!("not the network page")
+        };
+        assert_eq!(title, "Network");
+        assert!(status.starts_with("This machine is connected to a network.\n"));
+        assert!(note.starts_with("Setup does not need a network"));
+        let interfaces = interfaces.unwrap();
+        assert_eq!((interfaces.len(), &interfaces[0]["state"]), (1, &json!("connected")));
+        // Checking again is answered: it changes the page, and leads nowhere.
+        assert!(!refresh.unwrap().unbuilt);
+        assert!(!back.unwrap().unbuilt);
+        let others: Vec<_> = others.iter().map(|a| (a.r#ref.as_str(), a.enabled, a.unbuilt)).collect();
+        assert_eq!(others, [("network.wifi", false, true), ("network.static", false, true)]);
+        // The account page it leads to is not drawn yet.
+        assert!(next.unwrap().unbuilt);
+
+        // An oobed that says it only in words, or could not ask netd.
+        let mut words = network();
+        words.elements[0].state.remove("detail");
+        let Page::Network { interfaces, .. } = Page::of(&words, None) else { panic!("not the network page") };
+        assert_eq!(interfaces, None);
     }
 
     /// installerd's page after an install that finished

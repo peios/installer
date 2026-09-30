@@ -6,8 +6,8 @@
 // dev/host-oobe.sh. It lets the intro play, then looks at the page it lands
 // on: that it says what oobed sent, that the language is shown and not a
 // choice, that the keyboard is left to the browser, that the greeting goes
-// round, that Next says the page after is not drawn rather than moving
-// everyone on, and that a narrow screen holds it. Then it arrives as a page
+// round, that Next goes on to the network page and Back comes back, and that
+// a narrow screen holds it. Then it arrives as a page
 // following a restart would, and sees the mark woken rather than made.
 //
 // The conversation is oobed's and outlives any one browser, so this expects
@@ -77,8 +77,11 @@ try {
     expect("while the heading is still what oobed called it", out.greeted.heading === "Welcome to Peios");
 
     await click("#turn .btn.go-on");
-    out.next = await eventually(seen, (s) => s.toast, 3);
-    expect("Next says the page after is not drawn, and stays", out.next.toast === "The step after this one is not drawn yet." && out.next.kind === "welcome");
+    out.next = await eventually(seen, (s) => s.kind === "network" && s.showing, 3);
+    expect("Next goes on to the network page", out.next.after !== null && out.next.toast === null);
+    await click("#turn .btn.quiet");
+    out.back = await eventually(seen, (s) => s.kind === "welcome" && s.showing, 3);
+    expect("and Back comes back to the welcome", out.back.after !== null && out.back.heading === "Welcome to Peios");
 
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await sleep(500);
