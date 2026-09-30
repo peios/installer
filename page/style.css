@@ -36,6 +36,7 @@
     --ok: #5fe0a8;
     --wait: #f0b86e;
     --danger: #ff9e92;
+    --esp: #9d8cff;
 
     --font-display: "Schibsted Grotesk", system-ui, sans-serif;
     --font-text: "Manrope", system-ui, sans-serif;
@@ -56,6 +57,8 @@ body {
 }
 
 .stage { position: relative; min-height: 100%; }
+/* Hidden is hidden, whatever else a rule says of how the thing is laid out. */
+[hidden] { display: none !important; }
 
 /* ---- backdrop: three glows, the stars, a vignette ---- */
 .aurora { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
@@ -271,6 +274,212 @@ h1 {
 .act[aria-disabled="true"] .name, .act[aria-disabled="true"] .key { color: var(--text-muted); opacity: .6; border-color: var(--border-default); }
 .act[aria-disabled="true"] .go { visibility: hidden; }
 .menu-help { margin: 0; min-height: 1.55em; padding-left: 18px; font-size: 13.5px; color: var(--text-muted); }
+/* The one pressed, until installerd says what comes of it. */
+.act.pending .go { opacity: 1; color: var(--accent); animation: going .7s ease-in-out infinite alternate; }
+@keyframes going { from { transform: translateX(0); } to { transform: translateX(8px); } }
+
+/* ---- the disk page: the disks, and beside them what the chosen one will
+   become, or what is on it ---- */
+.turn[data-kind="disk"] {
+    display: grid;
+    grid-template-columns: minmax(0, 600px) minmax(280px, 380px);
+    gap: clamp(28px, 5vw, 72px);
+    align-items: center;
+    max-width: none;
+}
+.turn[data-kind="disk"] .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.turn[data-kind="disk"] h1 { font-size: clamp(2rem, 4vw, 2.9rem); }
+.turn[data-kind="disk"] .lede { max-width: 58ch; }
+
+.disks { display: grid; gap: 8px; margin-top: 4px; position: relative; }
+.disk {
+    width: 100%;
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto 22px; align-items: center; gap: 14px;
+    padding: 9px 16px 9px 10px;
+    border: 1px solid var(--border-default); border-radius: 14px;
+    background: rgb(255 255 255 / 3%);
+    color: var(--text-body);
+    font: inherit; text-align: left;
+    cursor: pointer;
+    transition: background-color .25s, border-color .25s, box-shadow .35s, opacity .3s;
+}
+.disk:hover:not([aria-disabled="true"]) { background: var(--surface-1); border-color: var(--border-strong); }
+.disk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.disk[aria-checked="true"] {
+    border-color: rgb(98 210 255 / 70%);
+    background: rgb(98 210 255 / 8%);
+    box-shadow: 0 0 32px -10px var(--accent-glow);
+}
+.disk[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.glyph {
+    display: grid; place-items: center;
+    width: 40px; height: 40px;
+    border-radius: 11px;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+    transition: color .25s, background-color .25s;
+}
+.glyph svg { width: 22px; height: 22px; }
+.disk[aria-checked="true"] .glyph { color: var(--accent); background: rgb(98 210 255 / 12%); }
+.who { min-width: 0; display: grid; gap: 3px; }
+.model { font: 600 1.04rem/1.25 var(--font-display); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.where { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font: 400 12px/1.4 var(--font-mono); color: var(--text-muted); overflow-wrap: anywhere; }
+.chip { font: 500 11px/1 var(--font-text); padding: 4px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); }
+.size { font: 600 1.04rem/1 var(--font-display); color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tick {
+    display: grid; place-items: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1.5px solid var(--border-strong);
+    transition: background-color .25s, border-color .25s;
+}
+.tick svg { width: 12px; height: 12px; color: #05141d; transform: scale(0); transition: transform .35s cubic-bezier(.3, 1.6, .5, 1); }
+.disk[aria-checked="true"] .tick { background: var(--accent); border-color: var(--accent); }
+.disk[aria-checked="true"] .tick svg { transform: none; }
+.disk[aria-disabled="true"] .tick { border-style: dashed; }
+
+/* looking at the disks again: a light passes down the list for as long as
+   installerd takes over it */
+.disks::after {
+    content: ""; position: absolute; left: -8px; right: -8px; height: 70px; top: -70px;
+    background: linear-gradient(to bottom, transparent, rgb(98 210 255 / 16%) 60%, rgb(155 228 255 / 60%) 96%, transparent);
+    border-radius: 14px; opacity: 0; pointer-events: none;
+}
+.disks.scanning::after { animation: scan 1s cubic-bezier(.45, 0, .25, 1) infinite; }
+.disks.scanning .disk { opacity: .45; }
+@keyframes scan { 10% { opacity: 1; } 90% { opacity: 1; } to { top: 100%; opacity: 0; } }
+
+/* nothing to choose: installerd's own words for it */
+.no-disks { margin: 0; padding: 16px 18px; border: 1.5px dashed var(--border-strong); border-radius: 14px; color: var(--text-secondary); }
+/* what installerd has to say about the disks as a whole */
+.trouble { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; margin: 0; font-size: 14px; color: var(--text-secondary); }
+.trouble svg { width: 16px; height: 16px; margin-top: 3px; color: var(--wait); }
+
+.aux { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.link {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 12px;
+    border: 1px solid transparent; border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: 500 14px/1 var(--font-text);
+    cursor: pointer;
+    transition: background-color .2s, color .2s;
+}
+.link:hover:not([aria-disabled="true"]) { background: var(--surface-1); color: var(--text-primary); }
+.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.link svg { width: 15px; height: 15px; }
+.link[aria-disabled="true"] { color: var(--text-muted); opacity: .6; cursor: not-allowed; }
+.link.spin svg { animation: spin .8s var(--ease-swift) infinite; }
+@keyframes spin { to { rotate: 360deg; } }
+/* Why something cannot be pressed is what a person reads, so the line is
+   kept whether or not it says anything. */
+.help { margin: 0; padding-left: 4px; flex: 1 1 220px; min-height: 1.4em; font-size: 13px; color: var(--text-muted); opacity: 0; transition: opacity .2s; }
+.help.on { opacity: 1; }
+
+.nav {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-default);
+}
+.btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    height: 44px; padding: 0 18px;
+    border-radius: 12px;
+    font: 600 15px/1 var(--font-display);
+    cursor: pointer;
+    transition: background-color .2s, color .2s, box-shadow .3s, border-color .2s;
+}
+.btn svg { width: 17px; height: 17px; transition: transform .3s var(--ease-out); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.btn.quiet { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); }
+.btn.quiet:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.btn.quiet:hover svg { transform: translateX(-3px); }
+.btn.go-on { background: var(--accent); border: 1px solid var(--accent); color: #05141d; }
+.btn.go-on:hover:not([aria-disabled="true"]) { box-shadow: 0 0 0 4px rgb(98 210 255 / 18%), 0 10px 32px -8px var(--accent-glow); }
+.btn.go-on:hover:not([aria-disabled="true"]) svg { transform: translateX(3px); }
+.btn.go-on[aria-disabled="true"] { background: var(--surface-2); border-color: transparent; color: var(--text-muted); cursor: not-allowed; }
+
+/* the panel beside the disks */
+.plan {
+    display: grid; gap: 18px;
+    padding: 24px;
+    border: 1px solid var(--border-default); border-radius: 18px;
+    background: rgb(14 17 22 / 55%);
+    backdrop-filter: blur(14px);
+}
+.plan-label { margin: 0; font: 500 12px/1 var(--font-text); letter-spacing: .06em; color: var(--text-muted); }
+.plan-body { display: grid; gap: 18px; }
+.plan-body.swap { animation: swap .45s var(--ease-out); }
+@keyframes swap { from { opacity: 0; transform: translateY(6px); } }
+.plan-title { display: grid; gap: 5px; }
+.plan-title b { font: 600 1.2rem/1.25 var(--font-display); color: var(--text-primary); overflow-wrap: anywhere; }
+.plan-title span { font: 400 12px/1.4 var(--font-mono); color: var(--text-muted); }
+
+/* the disk, end to end: what is on it, and over that, wiped into view, what
+   an install makes of it */
+.layout { position: relative; height: 44px; border-radius: 11px; overflow: hidden; background: var(--surface-2); }
+.layout .old { position: absolute; inset: 0; }
+.layout .new {
+    position: absolute; inset: 0;
+    background: #20242b;
+    clip-path: inset(0 100% 0 0);
+}
+.layout.wiped .new { clip-path: inset(0 0 0 0); transition: clip-path 1.2s cubic-bezier(.65, 0, .35, 1); }
+/* one partition: placed by a map of the disk that gives the small ones room
+   to be seen */
+.ls { position: absolute; top: 0; bottom: 0; left: calc(var(--l) * 1%); width: calc(var(--w) * 1% - 2px); border-radius: 7px; }
+.ls.was { background: rgb(255 255 255 / 15%); }
+.ls.doomed { background: repeating-linear-gradient(135deg, rgb(255 158 146 / 26%) 0 6px, rgb(255 158 146 / 8%) 6px 12px); }
+.ls.r-esp { background: var(--esp); }
+.ls.r-root {
+    background: linear-gradient(100deg, #1f8fc4, var(--accent) 55%, #b5ecff);
+    background-size: 200% 100%;
+    animation: sheen 6s ease-in-out infinite alternate;
+}
+@keyframes sheen { to { background-position: 100% 0; } }
+.layout .edge { position: absolute; inset: 0; pointer-events: none; transform: translateX(-2%); opacity: 0; }
+.layout .edge::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px;
+    background: #fff;
+    box-shadow: 0 0 14px 5px var(--accent-glow), 0 0 4px 1px #fff;
+}
+.layout.wiped .edge { animation: edge 1.2s cubic-bezier(.65, 0, .35, 1) forwards; }
+@keyframes edge { 0% { transform: translateX(0); opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(100%); opacity: 0; } }
+.layout.empty { background: transparent; border: 1.5px dashed var(--border-strong); }
+
+.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; font-size: 14px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; align-self: center; background: rgb(255 255 255 / 28%); }
+.legend i.r-esp { background: var(--esp); }
+.legend i.r-root { background: var(--accent); }
+.legend b { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.legend span { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.erase { display: flex; gap: 9px; align-items: flex-start; margin: 0; font-size: 13.5px; color: var(--danger); overflow-wrap: anywhere; }
+.erase svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.note { margin: 0; font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+.note b { color: var(--text-primary); font-weight: 600; }
+.plan-empty { margin: 0; color: var(--text-secondary); }
+
+/* what is on the disk, and what this medium would move it to */
+.rel { display: grid; grid-template-columns: 1fr 40px 1fr; align-items: center; gap: 6px; }
+.rel.alone { grid-template-columns: 1fr; }
+.rel-v { display: grid; gap: 4px; min-width: 0; padding: 10px 12px; border-radius: 14px; background: rgb(255 255 255 / 4%); border: 1px solid var(--border-default); }
+.rel-v small { font: 500 11.5px/1 var(--font-text); letter-spacing: .04em; color: var(--text-muted); }
+.rel-v b { font: 700 1.15rem/1.05 var(--font-display); letter-spacing: -.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rel-v.to { border-color: rgb(98 210 255 / 45%); background: rgb(98 210 255 / 7%); box-shadow: 0 0 32px -12px var(--accent-glow); }
+.rel-v.to b { color: var(--accent-quiet); }
+.rel-line { position: relative; height: 2px; background: linear-gradient(90deg, var(--border-strong), rgb(98 210 255 / 70%)); border-radius: 1px; }
+.rel-line::after { content: ""; position: absolute; right: -1px; top: 50%; width: 8px; height: 8px; border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); translate: 0 -50%; rotate: 45deg; }
+.rel-line i { position: absolute; top: 50%; left: 0; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px 2px var(--accent-glow); translate: -50% -50%; animation: travel 2.2s var(--ease-swift) infinite; }
+@keyframes travel { 0% { left: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+
+@media (max-width: 900px) {
+    .turn[data-kind="disk"] { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
+    /* One column: the panel is something to read before going on, so it
+       comes before Back and Next, not after them. */
+    .turn[data-kind="disk"] > .col { display: contents; }
+    .turn[data-kind="disk"] > .col > .nav { order: 1; }
+}
 
 /* ---- the bottom bar: what the installer is doing, then how it stands ---- */
 .bar {
@@ -358,8 +567,9 @@ h1 {
    and every choice keeps an edge the system colours draw */
 @media (forced-colors: active) {
     #field, .aurora, .vignette { display: none; }
-    .act, .toast { border: 1px solid CanvasText; }
-    .act.hl { outline: 3px solid Highlight; outline-offset: 1px; }
+    .act, .toast, .disk, .plan, .layout, .btn { border: 1px solid CanvasText; }
+    .act.hl, .disk[aria-checked="true"] { outline: 3px solid Highlight; outline-offset: 1px; }
+    .ls { forced-color-adjust: none; }
 }
 
 /* skip and replay put everything where it goes without playing transitions */
@@ -372,6 +582,12 @@ h1 {
     .rp-label { display: none; }
     .ghost { padding: 8px 11px; }
     .menu-help { padding-left: 14px; }
+    .disk { grid-template-columns: 34px minmax(0, 1fr) auto 20px; gap: 10px; padding-inline: 10px 12px; }
+    .glyph { width: 34px; height: 34px; }
+    .plan { padding: 18px; }
+    /* a disk's model is how it is recognised: it wraps rather than being cut */
+    .disk .model { white-space: normal; overflow-wrap: anywhere; }
+    .disk .size { font-size: .92rem; }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-delay: 0s !important; }

@@ -3,6 +3,7 @@
 // The installer holds the state: which page this is and what is on it. It
 // sends the whole of it whenever it changes, and this draws it. How a page
 // arrives and leaves, the intro included, is decided here and nowhere else.
+import { createDiskPage } from "./disk.js";
 import { createField } from "./field.js";
 import { createIntro } from "./intro.js";
 
@@ -60,9 +61,10 @@ function svg(viewBox, d, className) {
 // ---- what the installer last said, and whether it can be heard ----
 let view = null;
 let heard = "opening"; // this browser's own line to the installer: opening, open or lost
+let socket = null;
 
 function listen() {
-    const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live`);
+    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live`);
     socket.onopen = () => { heard = "open"; draw(); };
     socket.onmessage = (message) => { view = JSON.parse(message.data); draw(); };
     // The installer has gone, or the machine has. The page stays as it is
@@ -73,6 +75,15 @@ function listen() {
         draw();
         setTimeout(listen, 1500);
     };
+}
+
+// Asks the installer for something: to press an action, to choose a disk. It
+// is told which page this was looking at, so that what is pressed on a page
+// that has just gone is not taken for an answer to the next. Nothing comes
+// back but the state, which says what came of it.
+function ask(request) {
+    if (socket?.readyState !== WebSocket.OPEN || !view?.seq) return;
+    socket.send(JSON.stringify({ ...request, seq: view.seq }));
 }
 
 // ---- said to a screen reader, politely ----
@@ -148,9 +159,13 @@ function pageWanted() {
 
 const ENDED = { complete: "Done", cancelled: "Stopped", failed: "It did not finish" };
 
-/** Draws `page` into the turn, replacing what was there. */
+/** Draws `page` into the turn. The pages that answer change only what
+    changed, so that the keyboard stays where it was; the rest are replaced. */
 function fill(page) {
-    if (page.kind === "mode") return fillMode(page);
+    const was = turn.dataset.kind;
+    turn.dataset.kind = page.kind;
+    if (page.kind === "mode") return fillMode(page, was === "mode");
+    if (page.kind === "disk") return diskPage.draw(page, view?.waiting);
     const parts =
         page.kind === "unbuilt" ? {
             title: page.title || "The next step",
@@ -168,8 +183,13 @@ function fill(page) {
 
 // The first page: what to do with this machine. One action is highlighted,
 // following the pointer and the focus; arrows walk them and numbers choose.
-let actions = [];
-function fillMode(page) {
+let actions = [], modeAs = "";
+function fillMode(page, already) {
+    // The one pressed is shown as under way until installerd answers.
+    const mark = () => actions.forEach((button, n) => button.classList.toggle("pending", view?.waiting === page.actions[n].ref));
+    const as = JSON.stringify(page);
+    if (already && as === modeAs) return mark();
+    modeAs = as;
     const help = rise(2 + page.actions.length, "p", "menu-help", "", { id: "menu-help" });
     actions = page.actions.map((action, n) => {
         const button = el("button", `act${action.primary ? " primary" : ""}`, [
@@ -194,9 +214,10 @@ function fillMode(page) {
         button.addEventListener("focus", highlight);
         button.addEventListener("click", () => {
             if (!action.enabled) return;
-            // Nothing past this page is drawn yet, so nothing is answered:
-            // an answer would move the installer on to a page nobody can see.
-            toast(el("b", "", action.name), " is not built yet.");
+            // The page it leads to is not drawn yet, and an answer would move
+            // everyone looking on to a page nobody can see.
+            if (action.unbuilt) return toast(el("b", "", action.name), " is not built yet.");
+            ask({ press: action.ref });
         });
         return button;
     });
@@ -210,7 +231,10 @@ function fillMode(page) {
         ?? actions.find((button, n) => page.actions[n].enabled)
         ?? actions[0];
     first?.classList.add("hl");
+    mark();
 }
+
+const diskPage = createDiskPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 
 function menuKeys(e) {
     const at = actions.findIndex((button) => button.classList.contains("hl"));
@@ -232,16 +256,26 @@ function arrived() {
     document.title = heading && heading !== "Peios Setup" ? `${heading} · Peios Setup` : "Peios Setup";
     if (heading) say(heading);
     if (shown?.kind === "mode") actions.find((button) => button.classList.contains("hl"))?.focus({ preventScroll: true });
+    if (shown?.kind === "disk") diskPage.focus();
 }
+
+// Where each page comes in the installation, which decides the side it
+// arrives from: a later page from the right, an earlier one from the left.
+// The pages that are not steps (starting, lost, an ending) count as later.
+const ORDER = { mode: 0, disk: 1 };
+const order = (page) => ORDER[page?.kind] ?? 9;
 
 // What is on the page now, and whether the intro has landed: until it has,
 // nothing here can be seen, so a page is drawn without ceremony.
 let shown = null, shownAs = "";
 let landed = false, moving = false;
 
+// What is drawn, as one string: the page, and what on it is under way.
+const drawnAs = (page) => JSON.stringify([page, view?.waiting ?? null]);
+
 function drawPage() {
     const wanted = pageWanted();
-    const as = JSON.stringify(wanted);
+    const as = drawnAs(wanted);
     if (as === shownAs || moving) return;
     if (!landed || wanted.kind === shown?.kind) {
         // The same page with something on it changed, or nobody looking yet.
@@ -251,13 +285,14 @@ function drawPage() {
     }
     // Another page: this one leaves, the next arrives.
     moving = true;
+    els.page.style.setProperty("--dir", order(wanted) < order(shown) ? -1 : 1);
     turn.classList.remove("in", "first");
     turn.classList.add("out");
     setTimeout(() => {
         const next = pageWanted();
         turn.classList.remove("out");
         fill(next);
-        [shown, shownAs] = [next, JSON.stringify(next)];
+        [shown, shownAs] = [next, drawnAs(next)];
         void turn.offsetWidth;
         turn.classList.add("in");
         moving = false;

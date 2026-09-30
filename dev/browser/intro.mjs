@@ -10,44 +10,14 @@
 // lands on: that it says what installerd sent, that nothing was fetched from
 // anywhere else, that the keyboard works, and that a narrow screen holds it.
 // A second load presses a key early, which is how the intro is skipped.
-import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+//
+// The conversation is installerd's and outlives any one browser, so this
+// expects to find it on its first page, and leaves it there.
+import { browser, eventually, sleep } from "./chrome.mjs";
 
 const site = process.argv[2] ?? "http://127.0.0.1:7780/";
-const port = 9370;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const chrome = spawn("chromium", ["--headless", "--disable-gpu", "--hide-scrollbars",
-    "--blink-settings=preferredColorScheme=0", "--window-size=1280,800",
-    `--remote-debugging-port=${port}`, "about:blank"], { stdio: "ignore" });
-
-let target;
-for (let i = 0; i < 40 && !target; i++) {
-    await sleep(500);
-    try {
-        target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((t) => t.type === "page");
-    } catch {}
-}
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((r) => (ws.onopen = r));
-let next = 1;
-const waiting = new Map();
-const problems = [], requests = [];
-ws.onmessage = (m) => {
-    const msg = JSON.parse(m.data);
-    if (msg.id) return waiting.get(msg.id)?.(msg);
-    if (msg.method === "Log.entryAdded") problems.push(`${msg.params.entry.level}: ${msg.params.entry.text}`);
-    if (msg.method === "Runtime.exceptionThrown") problems.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
-    if (msg.method === "Runtime.consoleAPICalled" && msg.params.type === "error") problems.push(msg.params.args.map((a) => a.value).join(" "));
-    if (msg.method === "Network.requestWillBeSent") requests.push(msg.params.request.url);
-    if (msg.method === "Network.webSocketCreated") requests.push(msg.params.url);
-};
-const send = (method, params = {}) => new Promise((r) => { const id = next++; waiting.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
-const js = async (expression) => (await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })).result.result?.value;
-const picture = async (name) => writeFileSync(new URL(name, import.meta.url), Buffer.from((await send("Page.captureScreenshot")).result.data, "base64"));
-const key = async (k, code, vk) => {
-    await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code, windowsVirtualKeyCode: vk });
-    await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk });
-};
+const chrome = await browser(9370);
+const { send, js, picture, key, problems } = chrome;
 /** What the page is showing. */
 const seen = () => js(`({
     settled: document.getElementById("stage").classList.contains("settled"),
@@ -69,6 +39,8 @@ const seen = () => js(`({
     focused: document.activeElement?.closest?.(".act")?.querySelector(".name").textContent ?? document.activeElement?.tagName,
     header: document.getElementById("head-lockup").classList.contains("shown"),
     wide: document.documentElement.scrollWidth > innerWidth,
+    // A page has arrived, and is not on its way out or in.
+    shown: document.getElementById("turn").classList.contains("in") && document.getElementById("page").classList.contains("live"),
 })`);
 
 const out = {};
@@ -76,11 +48,6 @@ const failed = [];
 const expect = (what, holds) => { if (!holds) failed.push(what); };
 
 try {
-    await send("Log.enable");
-    await send("Runtime.enable");
-    await send("Network.enable");
-    await send("Page.enable");
-
     // The intro, left alone.
     await send("Page.navigate", { url: site });
     await sleep(1900);
@@ -106,20 +73,22 @@ try {
         out.landed.actions[0]?.primary && out.landed.actions[0]?.highlighted && out.landed.focused === "Install Peios");
     expect("the status line says which installer answered", /^Connected to installerd\/\d/.test(out.landed.status) && out.landed.statusShown === "1");
 
-    // The keyboard: arrows walk, a number chooses, and choosing does nothing yet but say so.
+    // The keyboard: arrows walk, a number chooses, and choosing goes on to
+    // the page installerd asks next, and back again.
     await key("ArrowDown", "ArrowDown", 40);
     await sleep(200);
     out.walked = (await seen()).focused;
     expect("an arrow moves to the next action", out.walked === "Upgrade an installation");
     await key("3", "Digit3", 51);
-    await sleep(400);
-    out.chosen = await seen();
+    out.chosen = await eventually(seen, (s) => s.heading === "Repair: choose a disk" && s.shown, 30);
     await picture("intro-5-chosen.png");
-    expect("a number chooses, and the page says the step is not built", out.chosen.toast === "Repair an existing system is not built yet." && out.chosen.heading === "Peios Setup");
+    expect("a number chooses, and installerd's next page arrives", out.chosen.after !== null && out.chosen.title === "Repair: choose a disk · Peios Setup");
+    await chrome.click("#turn .btn.quiet");
+    out.back = await eventually(seen, (s) => s.heading === "Peios Setup" && s.shown && s.actions.length === 3);
+    expect("and Back returns to the first", out.back.after !== null && out.back.focused === "Install Peios");
 
     // Nothing came from anywhere but the installer, and nothing went wrong.
-    const origin = new URL(site).origin;
-    out.elsewhere = requests.filter((url) => !url.startsWith(origin) && !url.startsWith(origin.replace(/^http/, "ws")) && !url.startsWith("data:"));
+    out.elsewhere = chrome.elsewhere(site);
     expect("nothing is fetched from anywhere else", out.elsewhere.length === 0);
     out.problems = [...problems];
     expect("the page reports no errors", out.problems.length === 0);
@@ -160,7 +129,6 @@ try {
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));
-    ws.close();
-    chrome.kill();
+    chrome.close();
     process.exit(failed.length ? 1 : 0);
 }

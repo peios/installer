@@ -1,0 +1,9 @@
+{
+    "disks": [
+        {"device": "/dev/sdb", "model": "SanDisk Ultra Fit", "size": 30752636928, "bus": "USB", "removable": true, "medium": true}
+    ],
+    "controllers": [
+        {"address": "0000:00:0e.0", "kind": "RAID", "id": "8086:9a0b"}
+    ],
+    "medium": {"edition": "dev.peios.peios-experimental", "version": "2026.9-1"}
+}

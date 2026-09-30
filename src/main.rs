@@ -50,12 +50,15 @@ async fn main() {
         }
     }
 
-    let (tell, view) = watch::channel(view::View::starting(release::read()));
+    let (show, view) = watch::channel(view::View::starting(release::read()));
+    // Everything the conversation is to hear of, from installerd and from
+    // browsers alike, in the order it came.
+    let (tell, inbox) = std::sync::mpsc::channel();
+    let app = page::routes(view, tell.clone());
     std::thread::Builder::new()
         .name("setup".into())
-        .spawn(move || setup::keep(&socket, &tell))
+        .spawn(move || setup::keep(&socket, &show, &tell, &inbox))
         .unwrap_or_else(|e| die(&format!("setup thread: {e}")));
-    let app = page::routes(view);
 
     if let Some(address) = listen {
         let listener = tokio::net::TcpListener::bind(&address).await.unwrap_or_else(|e| die(&format!("listen {address}: {e}")));

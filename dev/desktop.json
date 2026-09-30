@@ -1,0 +1,22 @@
+{
+    "disks": [
+        {"device": "/dev/mmcblk0", "model": "SD64G", "size": 63864569856, "bus": "SD/MMC", "removable": true, "read": true, "partitions": [
+            {"number": 1, "device": "/dev/mmcblk0p1", "start": 4194304, "size": 63858278400, "kind": "msdata", "fs": "FAT32", "label": "CAMERA", "used": 22870491136}
+        ]},
+        {"device": "/dev/nvme0n1", "model": "Samsung SSD 980 PRO 1TB", "size": 1000204886016, "bus": "NVMe", "read": true, "partitions": [
+            {"number": 1, "device": "/dev/nvme0n1p1", "start": 1048576, "size": 272629760, "kind": "esp", "name": "EFI system partition", "fs": "FAT32", "used": 98566144, "holds": "Windows Boot Manager"},
+            {"number": 2, "device": "/dev/nvme0n1p2", "start": 273678336, "size": 16777216, "kind": "msr", "name": "Microsoft reserved partition"},
+            {"number": 3, "device": "/dev/nvme0n1p3", "start": 290455552, "size": 999126204416, "kind": "msdata", "name": "Basic data partition", "fs": "NTFS", "label": "Windows", "used": 228063182848, "holds": "Windows"},
+            {"number": 4, "device": "/dev/nvme0n1p4", "start": 999416659968, "size": 786432000, "kind": "winre", "fs": "NTFS", "used": 545259520}
+        ]},
+        {"device": "/dev/sda", "model": "WDC WD20EZAZ-00GGJB0", "size": 2000398934016, "bus": "SATA", "read": true, "partitions": [
+            {"number": 1, "device": "/dev/sda1", "start": 1048576, "size": 1319413743616, "kind": "msdata", "name": "Basic data partition", "fs": "NTFS", "label": "Media", "used": 687194767360}
+        ]},
+        {"device": "/dev/sdb", "model": "SanDisk Ultra Fit", "size": 30752636928, "bus": "USB", "removable": true, "medium": true},
+        {"device": "/dev/sdc", "model": "CT500MX500SSD1", "size": 500107862016, "bus": "SATA", "read": true, "partitions": [
+            {"number": 1, "device": "/dev/sdc1", "start": 1048576, "size": 536870912, "kind": "esp", "name": "EFI system partition", "fs": "FAT32", "label": "PEIOSESP", "used": 74448896},
+            {"number": 2, "device": "/dev/sdc2", "start": 537919488, "size": 499568869376, "kind": "linux", "name": "Peios root", "fs": "ext4", "label": "peios-root", "used": 19757268992, "holds": "Peios 2026.8-7 (experimental)", "peios": {"edition": "dev.peios.peios-experimental", "version": "2026.8-7"}}
+        ]}
+    ],
+    "medium": {"edition": "dev.peios.peios-experimental", "version": "2026.9-1"}
+}
