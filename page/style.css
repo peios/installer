@@ -724,6 +724,61 @@ h1 {
 /* what was copied before it stopped is not a system */
 .stopped .layout.made .r-root .fill { background: repeating-linear-gradient(135deg, rgb(255 158 146 / 60%) 0 5px, rgb(255 158 146 / 22%) 5px 10px); animation: none; }
 
+/* the way on from a job that finished, and why a restart could not be had */
+.nav.ends { flex-wrap: wrap; }
+.nav.ends .err { flex: 1 1 100%; }
+.err { margin: 0; font-size: 13.5px; color: var(--danger); overflow-wrap: anywhere; }
+.err:empty { display: none; }
+
+/* ---- a restart: the page goes, the stars gather into the mark, and the
+   mark keeps a slow pulse while the machine is away ---- */
+.stage.rebooting .top { opacity: 0; transition: opacity .4s; }
+.stage.rebooting .status { opacity: 0; transition: opacity .3s; }
+.stage.rebooting .ticker { opacity: 1; }
+.stage.rebooting .intro-btns { opacity: 0; visibility: hidden; }
+.ticker .waiting::after { content: ""; animation: dots 1.4s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+.intro .sleeping .mark { animation: heartbeat 2.4s ease-in-out infinite; }
+@keyframes heartbeat {
+    0%, 100% { opacity: .3; filter: drop-shadow(0 0 .04em var(--accent-glow)); }
+    45% { opacity: .85; filter: drop-shadow(0 0 .22em var(--accent)); }
+}
+/* nothing came back: the field dims and stops */
+.stalled #field { filter: saturate(.3); transition: filter 2.5s ease; }
+.stalled .aurora i:not(.ember) { opacity: .28; }
+
+/* what came back */
+.turn[data-kind="running"], .turn[data-kind="again"] { max-width: 600px; }
+.turn[data-kind="running"] .lede, .turn[data-kind="again"] .lede { max-width: 52ch; }
+.turn[data-kind="lost"] {
+    display: grid;
+    grid-template-columns: minmax(0, 480px) minmax(300px, 500px);
+    gap: clamp(28px, 5vw, 72px);
+    align-items: center;
+    max-width: none;
+}
+.turn[data-kind="lost"] .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.turn[data-kind="lost"] h1 { font-size: clamp(2rem, 3.8vw, 2.8rem); }
+.turn[data-kind="lost"] aside { display: grid; gap: 12px; }
+.cases { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.cases li { padding: 14px 16px; border: 1px solid var(--border-default); border-radius: 14px; background: rgb(14 17 22 / 55%); backdrop-filter: blur(14px); display: grid; gap: 4px; }
+.cases b { font: 600 15px/1.3 var(--font-text); color: var(--text-primary); }
+.cases p { margin: 0; font-size: 14px; color: var(--text-secondary); }
+.addr { display: flex; gap: 8px; margin-top: 8px; max-width: 360px; }
+.input {
+    flex: 1; min-width: 0; height: 38px; padding: 0 12px; box-sizing: border-box;
+    border: 1px solid var(--border-default); border-radius: 10px;
+    background: rgb(6 8 12 / 55%);
+    color: var(--text-primary);
+    font: 400 14px/1 var(--font-mono);
+}
+.input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.btn.sm { height: 38px; padding: 0 14px; font-size: 14px; }
+@media (max-width: 900px) {
+    .turn[data-kind="lost"] { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* the moment it is begun, over everything */
 .flash {
     position: fixed; inset: 0; z-index: 6; pointer-events: none;

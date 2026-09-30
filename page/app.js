@@ -8,6 +8,7 @@ import { createDiskPage } from "./disk.js";
 import { createField } from "./field.js";
 import { createIntro } from "./intro.js";
 import { createProgressPage } from "./progress.js";
+import { createRestart } from "./restart.js";
 
 const $ = (id) => document.getElementById(id);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -69,13 +70,21 @@ let socket = null;
 function listen() {
     socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live`);
     socket.onopen = () => { heard = "open"; draw(); };
-    socket.onmessage = (message) => { view = JSON.parse(message.data); draw(); };
+    socket.onmessage = (message) => {
+        // Once the machine is restarting, what was said is over.
+        if (restart?.active) return;
+        view = JSON.parse(message.data);
+        draw();
+    };
     // The installer has gone, or the machine has. The page stays as it is
     // and says so, and keeps asking: a restarted installer sends everything
-    // again, so there is nothing here to put right.
+    // again, so there is nothing here to put right. Unless the machine is
+    // restarting: then the page has its own way of waiting, and whatever
+    // answers here next is not this installer.
     socket.onclose = () => {
         heard = "lost";
         draw();
+        if (restart?.active) return restart.closed();
         setTimeout(listen, 1500);
     };
 }
@@ -339,6 +348,19 @@ function drawPage() {
 }
 
 function draw() {
+    // installerd has taken the restart, or this lost touch while it was
+    // being asked for: the machine is going, and the page goes with it.
+    if (!restart?.active && view && (view.restarting || (heard === "lost" && view.waiting === "act.reboot"))) {
+        restart.begin({
+            boot: view.boot,
+            installed: view.page?.disk,
+            leave: () => {
+                if (turn.dataset.kind === "progress") progressPage.gone();
+                clearTimeout(lingering);
+            },
+        });
+    }
+    if (restart?.active) return;
     drawRelease();
     drawTicker();
     drawStatus();
@@ -348,9 +370,11 @@ function draw() {
 // ---- the intro ----
 const intro = createIntro({
     els, field, reduced,
-    onLines: (n) => { linesAllowed = n; drawTicker(); },
+    onLines: (n) => { if (!restart?.active) { linesAllowed = n; drawTicker(); } },
     onLanded: () => { landed = true; arrived(); },
 });
+// What happens to the page once the machine is restarting.
+const restart = createRestart({ els, el, rise, field, intro, say, retitle, reduced });
 
 window.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;

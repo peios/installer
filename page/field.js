@@ -9,8 +9,10 @@
 // have that evened out across the whole of it, by as much as it says, and let
 // it fall back. It can have them drain into a place on the page, each star
 // setting off at its own moment so that the flow is steady from the first
-// second, and have what drained come back out at once. And it can have them
-// stop.
+// second, and have what drained come back out at once. It can have them
+// stop. And across a restart it can gather them into the mark again, as the
+// intro did, put them out while the machine is away, and throw them out of
+// the mark when it is back.
 //
 // The field knows nothing of what the installer is doing. It is told when to
 // gather, when to let go, how far to even out, where to drain to and when to
@@ -45,8 +47,12 @@ export function createField(canvas, mark, reduced) {
     // How far the field is evened out, 0 to 1, and how far it is heading.
     let spread = 0, spreadTo = 0;
     // What the field is doing once it is a backdrop: drifting ("ambient"),
-    // draining into a place on the page ("stream"), or stopped ("stall").
+    // draining into a place on the page ("stream"), stopped ("stall"),
+    // gathering into the mark again ("gather"), or out ("dark").
     let mode = "ambient";
+    // The gathering again: when it began, and when the stars began to fade
+    // into the solid mark, if they have.
+    let regatherAt = 0, fadeAt = 0;
     // The stream: where it goes (a function, asked each frame, since the
     // place moves with the page), how many stars are in it, how many it
     // settles at, and whether it has stopped taking new ones.
@@ -297,12 +303,18 @@ export function createField(canvas, mark, reduced) {
     }
 
     /** Something went wrong. Stars the stream had taken in stay taken; the
-        rest coast to a stop where they are, and dim. */
+        rest coast to a stop where they are, and dim. Out of the dark (a
+        machine that never came back) they come up scattered and faint. */
     function stall() {
         if (reduced || !released || mode === "stall") return;
         for (const p of parts) {
             if (mode === "stream") {
                 p.hid = !p.st;
+            } else if (mode === "dark" || mode === "gather") {
+                p.x = Math.random() * W;
+                p.y = Math.random() * H;
+                p.vx = p.vy = p.a = 0;
+                p.hid = false;
             } else {
                 [p.x, p.y] = drawnAt(p);
                 p.hid = false;
@@ -313,10 +325,71 @@ export function createField(canvas, mark, reduced) {
         mode = "stall";
     }
 
+    /** Every star, wherever it is, flies into the mark's core as it now
+        sits, the way the intro made it: the machine is going down. */
+    function regather() {
+        if (reduced || !released) return;
+        const points = sampleMark();
+        parts.forEach((p, i) => {
+            const q = points[i % points.length];
+            if (mode === "stream" ? !p.st : mode === "stall" && p.hid) {
+                // Out of sight: it comes in from wherever, faintly.
+                p.fx = Math.random() * W;
+                p.fy = Math.random() * H;
+                p.fa = 0;
+            } else {
+                [p.fx, p.fy] = mode === "ambient" ? drawnAt(p) : [p.x, p.y];
+                p.fa = p.a;
+            }
+            p.tx = q[0] + (Math.random() - .5) * .8;
+            p.ty = q[1] + (Math.random() - .5) * .8;
+            p.delay = Math.random() * 450;
+            p.hid = p.st = false;
+        });
+        spread = spreadTo = 0;
+        into = null;
+        regatherAt = now;
+        fadeAt = 0;
+        mode = "gather";
+    }
+
+    /** The gathered stars fade into the solid mark. */
+    function fade() {
+        if (mode === "gather") fadeAt = now;
+    }
+
+    /** No stars at all: the machine is away. */
+    function darken() {
+        if (!reduced && released) mode = "dark";
+    }
+
+    /** The machine is back: every star is thrown out of the mark, as the
+        intro's burst threw them, and the field drifts again. */
+    function burst() {
+        if (reduced || !released) return;
+        const points = sampleMark();
+        parts.forEach((p, i) => {
+            const q = points[i % points.length];
+            p.x = q[0];
+            p.y = q[1];
+            const angle = Math.atan2(p.y - markY, p.x - markX) + (Math.random() - .5) * .9;
+            const speed = (3 + Math.random() * 10) * (.45 + p.z);
+            p.vx = Math.cos(angle) * speed;
+            p.vy = Math.sin(angle) * speed;
+            p.a = 1;
+            p.hid = p.st = false;
+            p.ex = p.ey = undefined;
+        });
+        spread = spreadTo = 0;
+        into = null;
+        mode = "ambient";
+    }
+
     /** Back to the ordinary drift, from a stream or a stop. Stars that were
         out of sight fade back in where they can be seen. */
     function wake() {
         if (mode === "ambient") return;
+        if (mode === "gather" || mode === "dark") return burst();
         for (const p of parts) {
             if (mode === "stream" ? !p.st : p.hid) {
                 p.x = Math.random() * W;
@@ -383,7 +456,18 @@ export function createField(canvas, mark, reduced) {
 
         for (const p of parts) {
             let x, y, a, s;
-            if (released && mode === "stall") {
+            if (released && mode === "dark") continue;
+            if (released && mode === "gather") {
+                // The intro's convergence, run again: from wherever each
+                // star was, straight into the mark's core, and then, once
+                // the mark is solid, gone into it.
+                const e = easeInOut(clamp((t - regatherAt - p.delay) / 1500, 0, 1));
+                x = p.fx + (p.tx - p.fx) * e;
+                y = p.fy + (p.ty - p.fy) * e;
+                a = (p.fa + (.95 - p.fa) * e) * (fadeAt ? Math.max(0, 1 - (t - fadeAt) / 600) : 1);
+                s = (.7 + p.z * 1.5) * (1 - e) + 2.2 * e;
+                p.x = x; p.y = y; p.a = a;
+            } else if (released && mode === "stall") {
                 // Whatever was moving coasts to a stop, keeping only the
                 // faintest drift, and the field dims.
                 if (p.hid) continue;
@@ -479,5 +563,5 @@ export function createField(canvas, mark, reduced) {
         retarget();
     });
 
-    return { seed, gather, release, even, stream, hold, finale, stall, wake, draw };
+    return { seed, gather, release, even, stream, hold, finale, stall, wake, regather, fade, darken, burst, draw };
 }

@@ -25,6 +25,8 @@ mod view;
 /// Where peinit puts the first descriptor a job was submitted with.
 const LISTENER_FD: i32 = 3;
 const INSTALLERD_SOCKET: &str = "/run/installerd.sock";
+/// A fresh one each time the machine starts.
+const BOOT_ID: &str = "/proc/sys/kernel/random/boot_id";
 
 const USAGE: &str = "usage: installer-gxwi [--socket PATH] [--listen ADDRESS:PORT]
 
@@ -50,7 +52,8 @@ async fn main() {
         }
     }
 
-    let (show, view) = watch::channel(view::View::starting(release::read()));
+    let boot = std::fs::read_to_string(BOOT_ID).map(|id| id.trim().to_string()).unwrap_or_default();
+    let (show, view) = watch::channel(view::View::starting(release::read(), boot));
     // Everything the conversation is to hear of, from installerd and from
     // browsers alike, in the order it came.
     let (tell, inbox) = std::sync::mpsc::channel();

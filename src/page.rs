@@ -53,12 +53,14 @@ pub fn routes(view: watch::Receiver<View>, said: Said, tell: mpsc::Sender<Heard>
         .route("/field.js", part(SCRIPT, include_bytes!("../page/field.js")))
         .route("/intro.js", part(SCRIPT, include_bytes!("../page/intro.js")))
         .route("/progress.js", part(SCRIPT, include_bytes!("../page/progress.js")))
+        .route("/restart.js", part(SCRIPT, include_bytes!("../page/restart.js")))
         .route("/fonts/manrope.woff2", part(FONT, include_bytes!("../page/fonts/manrope.woff2")))
         .route("/fonts/schibsted-grotesk.woff2", part(FONT, include_bytes!("../page/fonts/schibsted-grotesk.woff2")))
         // The state, live. `any`, because a websocket arrives as a GET over
         // HTTP/1.1 and as a CONNECT over HTTP/2, which is how GXWI sends it.
         .route("/live", any(live))
         .route("/log.txt", get(log))
+        .route("/hello", get(hello))
         .fallback(elsewhere)
         .with_state(Served { view, said, tell })
 }
@@ -76,6 +78,21 @@ async fn log(State(served): State<Served>) -> Response {
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(TEXT));
     headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=\"peios-setup.log\""));
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+/// Who is answering at this address, and on which boot of the machine: what
+/// a page waiting on a restart asks, to tell what came back. Anything else
+/// answering here is not this installer.
+async fn hello(State(served): State<Served>) -> Response {
+    let said = serde_json::json!({
+        "installer": concat!("installer-gxwi/", env!("CARGO_PKG_VERSION")),
+        "boot": served.view.borrow().boot,
+    });
+    let mut response = said.to_string().into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }

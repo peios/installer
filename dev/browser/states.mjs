@@ -10,8 +10,9 @@
 //     back, and then to one that is not drawn yet, and back;
 //   - installerd goes, and comes back;
 //   - the installer itself goes, and comes back;
-//   - another front end sees an install through, and the conversation ends;
-//   - the installer goes while that ending is up, and comes back.
+//   - another front end sees an install through, to installerd's page of what
+//     came of it;
+//   - the installer goes while that page is up, and comes back.
 //
 // installerd and msip-drive come from ../installer (cargo +1.98.1 build -p
 // installerd -p msip-drive) and installer-gxwi from this checkout (cargo
@@ -60,6 +61,7 @@ const seen = () => js(`({
     statusIs: document.getElementById("status").className.replace("status", "").trim(),
     title: document.title,
     said: document.getElementById("say").textContent,
+    reboot: document.querySelector('#turn [data-way="reboot"]:not([hidden])')?.textContent ?? null,
 })`);
 const onFirstPage = (s) => s.heading === "Peios Setup" && s.actions === 3 && s.showing && s.status.startsWith("Connected to installerd");
 
@@ -122,9 +124,9 @@ try {
     out.problems = chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p));
     expect("the page reports no errors but the connections it lost", out.problems.length === 0);
 
-    // Another front end sees an install through (a pretended one), and the
-    // conversation ends. What it ended with stays on the page, with nothing
-    // lost, until someone asks to start again.
+    // Another front end sees an install through (a pretended one), and
+    // installerd goes on to its page of what came of it. That stays, with
+    // nothing lost, until someone restarts the machine or goes back.
     press("act.install");
     await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing);
     press("nav.next", "--set", "disk.target=/dev/sdc");
@@ -141,13 +143,15 @@ try {
         && chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p)).length === 0);
     driving.kill();
 
-    // The installer goes while the ending is up, and comes back: there is no
-    // conversation for it to join, so it opens one, at the first page.
+    // The installer goes while that page is up, and comes back: it joins the
+    // conversation on installerd's page, never having seen the job, and
+    // draws the job as finished with nothing of it to show but the way on.
     installerGxwi.kill();
     await eventually(seen, (s) => s.heading === "Lost touch with this machine" && s.showing);
     installerGxwi = startInstaller();
-    out.reopened = await eventually(seen, onFirstPage, 15);
-    expect("an installer restarted after an ending starts from the first page", out.reopened.after !== null);
+    out.reopened = await eventually(seen, (s) => s.heading === "Installation complete" && s.showing, 15);
+    expect("an installer restarted on the finished page joins it there, with the restart still offered",
+        out.reopened.after !== null && out.reopened.lede === "Reboot to start Peios." && out.reopened.reboot === "Reboot now");
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));

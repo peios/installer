@@ -109,5 +109,35 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         if (reduced) skip();
     }
 
-    return { start, skip, get settled() { return settled; } };
+    /** The lockup back in the middle of the screen, the mark not yet made
+        and no name beside it, and the header's copy gone: where a restart
+        starts from. Nothing moves: it is simply there. */
+    function recall() {
+        stage.classList.add("instant");
+        introLockup.classList.remove("formed", "drawn", "popped", "word-in", "gone", "sleeping");
+        introStack.classList.remove("named");
+        introLockup.style.transform = "";
+        headLockup.classList.remove("shown");
+        edition.classList.remove("shown");
+        void stage.offsetWidth;
+        stage.classList.remove("instant");
+    }
+
+    /** The lockup glides back to the corner, as it did when the intro
+        settled, and `then` is called once it is there and the page under it
+        can be used. */
+    function reland(then) {
+        const from = introLockup.getBoundingClientRect();
+        const to = headLockup.getBoundingClientRect();
+        introLockup.style.transformOrigin = "0 0";
+        introLockup.style.transform = `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.height / from.height})`;
+        timers.push(setTimeout(() => {
+            headLockup.classList.add("shown");
+            edition.classList.add("shown");
+            introLockup.classList.add("gone");
+            then();
+        }, reduced ? 0 : GLIDE));
+    }
+
+    return { start, skip, recall, reland, get settled() { return settled; } };
 }

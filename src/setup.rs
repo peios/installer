@@ -15,9 +15,12 @@
 //! page not drawn here yet would move them to a page nobody can see. Those
 //! are held back until their page exists (`view::unbuilt`).
 //!
-//! A conversation ends when its job does, finished or failed. What it ended
-//! with stays on the page until someone at a browser asks to start again,
-//! and then another is opened in its place.
+//! A job that fails ends the conversation, and what it ended with stays on
+//! the page until someone at a browser asks to start again; then another is
+//! opened in its place. A job that finishes goes on to a page of
+//! installerd's that offers to restart the machine, and a restart ends the
+//! conversation too: the machine goes down, this process with it, and the
+//! page is left to wait for what comes back (`View::restarting`).
 
 use std::io::ErrorKind;
 use std::net::Shutdown;
@@ -28,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use msip::element::types;
 use msip::frame::{FrameError, MsgType, read_msg, write_msg};
-use msip::msg::{Hello, Start};
+use msip::msg::{Hello, Outcome, Start};
 use msip::surface::{Event, Session};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -45,6 +48,9 @@ const AGAIN: Duration = Duration::from_secs(2);
 /// What is under way (`View::waiting`) while a conversation asked for after
 /// an ending is opened.
 const STARTING_AGAIN: &str = "again";
+/// installerd's action on the page after a finished job that restarts the
+/// machine.
+const REBOOT: &str = "act.reboot";
 
 /// Everything the job under way has said of itself, a line each: what is
 /// served as a file, where a page is sent only the last of it. Empty when no
@@ -93,6 +99,7 @@ pub fn keep(socket: &Path, view: &watch::Sender<View>, said: &Said, tell: &mpsc:
         connection += 1;
         view.send_modify(|view| {
             view.link = Link::Connecting;
+            view.restarting = false;
             view.without_a_turn();
             if again {
                 view.waiting = Some(STARTING_AGAIN.into());
@@ -238,7 +245,12 @@ fn talk(
                     // A rescan may have taken the chosen disk away.
                     chosen = chosen.filter(|disk| view::can_choose(turn, disk));
                 }
-                hear(said, turn, matches!(event, Event::NewTurn));
+                // What the job said stays, to be saved, on the page it goes
+                // on to once it has finished.
+                let done = view::is_done(turn);
+                if !done {
+                    hear(said, turn, matches!(event, Event::NewTurn));
+                }
                 view.send_modify(|view| {
                     if matches!(event, Event::NewTurn) {
                         let class = if turn.class.is_empty() { String::new() } else { format!("  class={}", turn.class.join(",")) };
@@ -247,13 +259,20 @@ fn talk(
                     view.seq = turn.seq;
                     // Either is installerd's answer to whatever was pressed.
                     view.waiting = None;
-                    view.page = Some(Page::of(turn, chosen.as_deref()));
+                    view.page = Some(if done { Page::done(view.page.take(), turn) } else { Page::of(turn, chosen.as_deref()) });
                 });
             }
             Event::Ended(end) => {
                 view.send_modify(|view| {
+                    // installerd ends the conversation as its answer to the
+                    // restart asked for: the machine is on its way down. The
+                    // page it was asked on stays as it was.
+                    if view.waiting.as_deref() == Some(REBOOT) && end.outcome == Outcome::Complete {
+                        view.restarting = true;
+                    } else {
+                        view.page = Some(Page::ended(view.page.take(), &end));
+                    }
                     view.without_a_turn();
-                    view.page = Some(Page::ended(view.page.take(), &end));
                 });
                 return Ok(());
             }

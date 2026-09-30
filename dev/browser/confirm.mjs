@@ -242,7 +242,7 @@ try {
     // follows here.
     await eventually(seen, (s) => s.kind === "progress" && s.heading === "Installation complete", 60);
     await sleep(1200);
-    await click("#turn .nav.ends .btn");
+    await click('#turn .nav.ends [data-way="again"]');
     await eventually(seen, onFirstPage, 15);
 
     // A disk whose names are markup: they are names, and shown as written.

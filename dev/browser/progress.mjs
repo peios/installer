@@ -53,7 +53,8 @@ const seen = () => js(`(() => {
     const build = turn.querySelector(".build");
     const number = (of, name) => of ? Number(getComputedStyle(of).getPropertyValue(name) || 0) : null;
     const log = turn.querySelector(".log");
-    const again = turn.querySelector(".nav.ends .btn");
+    const again = turn.querySelector('.nav.ends [data-way="again"]');
+    const reboot = turn.querySelector('.nav.ends [data-way="reboot"]');
     return {
         kind: turn.dataset.kind,
         heading: turn.querySelector("h1")?.textContent ?? null,
@@ -99,6 +100,9 @@ const seen = () => js(`(() => {
             says: again.textContent, how: again.className, off: again.getAttribute("aria-disabled") === "true",
             // Whether it is clear of the bar along the bottom of the screen.
             clear: again.getBoundingClientRect().bottom <= document.getElementById("status").getBoundingClientRect().top,
+        } : null,
+        reboot: reboot && !reboot.hidden && !turn.querySelector(".nav.ends").hidden ? {
+            says: reboot.textContent, how: reboot.className, off: reboot.getAttribute("aria-disabled") === "true",
         } : null,
         heat: Number(getComputedStyle(document.getElementById("stage")).getPropertyValue("--heat") || 0),
         status: document.getElementById("status-text").textContent,
@@ -209,12 +213,15 @@ try {
     expect("every phase is done, the figure has given way, and the disk is whole",
         out.done.phases.every((p) => p.state === "done") && out.done.overall === "100" && out.done.now[0] === "Complete" && out.done.now[1] === "4 of 4"
         && out.done.disk.copy === 1 && out.done.disk.boot === 1 && out.done.disk.parts.every((p) => p.done) && out.done.disk.doing === "");
-    expect("the way on is offered quietly, has the keyboard, and is not under the bar along the bottom",
-        out.done.again?.says === "Back to the start" && out.done.again.how === "btn quiet" && out.done.focused === "Back to the start" && out.done.again.clear);
+    expect("installerd offers the restart, which has the keyboard, and the way back quietly beside it, clear of the bar along the bottom",
+        out.done.reboot?.says === "Reboot now" && out.done.reboot.how === "btn go-on" && out.done.focused === "Reboot now"
+        && out.done.again?.says === "Back to the start" && out.done.again.how === "btn quiet" && out.done.again.clear);
     expect("what the job said can now be read through, by a keyboard too", out.done.log.scrolls === true && out.done.log.reachable === "0" && out.done.log.last === "Setting up boot: ok");
-    expect("and the status no longer claims a conversation", out.done.status === "Finished" && out.done.statusIs === "" && out.done.heat === 0);
+    expect("and the status says it finished", out.done.status === "Finished" && out.done.statusIs === "" && out.done.heat === 0);
     out.ended = (await elsewhere());
-    expect("for everyone looking", out.ended.page.kind === "progress" && out.ended.page.ended.outcome === "complete" && out.ended.seq === 0);
+    expect("for everyone looking, installerd's page of what came of it being the one answered",
+        out.ended.page.kind === "progress" && out.ended.page.ended.outcome === "complete" && out.ended.seq > 0
+        && out.ended.page.ended.reboot?.ref === "act.reboot" && out.ended.page.ended.start?.ref === "nav.start");
 
     // What it said, whole, as a file.
     const saved = await fetch(`${site}log.txt`);
@@ -223,10 +230,10 @@ try {
         out.saved.type === "text/plain; charset=utf-8" && out.saved.as === 'attachment; filename="peios-setup.log"'
         && out.saved.lines[0] === "dry run: no bytes will be written to /dev/nvme0n1" && out.saved.lines.includes("Copying the system: ok") && out.saved.lines.at(-1) === "");
 
-    // Back to the start: another conversation.
-    await click("#turn .nav.ends .btn");
+    // Back to the start, which installerd offers after a job that finished.
+    await click('#turn .nav.ends [data-way="again"]');
     out.again = await eventually(seen, onFirstPage);
-    expect("asked to, the installer opens another conversation, at the first page", out.again.after !== null && out.again.status.startsWith("Connected to installerd") && out.again.heat === 0);
+    expect("asked to, installerd goes back to the first page", out.again.after !== null && out.again.status.startsWith("Connected to installerd") && out.again.heat === 0);
     expect("for everyone looking", (await elsewhere()).page.kind === "mode");
     expect("and keeps nothing of the last job", (await (await fetch(`${site}log.txt`)).text()) === "");
 
@@ -269,7 +276,7 @@ try {
     expect("a phone holds the page without scrolling sideways, the disk before the phases", out.phone.wide === false && out.phone.diskBeforePhases === true);
     await send("Emulation.clearDeviceMetricsOverride");
 
-    await click("#turn .nav.ends .btn");
+    await click('#turn .nav.ends [data-way="again"]');
     out.restarted = await eventually(seen, onFirstPage);
     expect("starting again goes back to the first page, and the page cools", out.restarted.after !== null && out.restarted.heat === 0 && out.restarted.statusIs === "");
     out.problemsAfter = chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p));

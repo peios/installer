@@ -47,6 +47,8 @@ export const BACK = icon("0 0 18 18", 1.6, '<path d="M14.5 9h-11M8 4.5 3.5 9 8 1
 export const ONWARD = icon("0 0 18 18", 1.6, '<path d="M3.5 9h11M10 4.5 14.5 9 10 13.5"/>');
 export const AGAIN = icon("0 0 18 18", 1.6, '<path d="M3 9a6 6 0 1 0 1.8-4.3M3 3v3.5h3.5"/>');
 export const SAVE = icon("0 0 16 16", 1.6, '<path d="M8 2v8M4.75 7 8 10.25 11.25 7M2.5 12v1.5h11V12"/>');
+export const POWER = icon("0 0 18 18", 1.6, '<path d="M9 2.5v6"/><path d="M5.2 4.6a6 6 0 1 0 7.6 0"/>');
+export const CLOCK = icon("0 0 18 18", 1.6, '<circle cx="9" cy="9" r="6.5"/><path d="M9 5.5V9l2.5 1.5"/>');
 
 // Where an offset lands on a bar, in percent. Partitions get a floor of room
 // so the small ones can be seen (an EFI system partition is a two-thousandth

@@ -2,9 +2,12 @@
 //
 // The installer says what there is: which job this is and what it is being
 // done to, its phases and how far along each is, the last of what the job has
-// said of itself, and, once the job is over, how it ended. Nothing here is
-// answered: a job asks nothing, and the conversation ends when it does. What
-// is left to ask for then is another conversation.
+// said of itself, and, once the job is over, how it ended. Nothing is
+// answered while it runs: a job asks nothing. A job that finished is
+// followed by installerd's offer to restart the machine, or to go back to the
+// start, and those are drawn here, on the page of the job they follow. One
+// that failed ends the conversation, and what is left to ask for then is
+// another.
 //
 // How it is shown is this page's. The bars glide to what installerd reports
 // rather than jumping to it. One figure is made of all the phases. The disk
@@ -14,7 +17,7 @@
 //
 // What the job and the disk say of themselves is put on the page as text,
 // never as markup.
-import { AGAIN, SAVE, glyph, icon, madeBar, partitionsText, picture, sizeText } from "./bits.js";
+import { AGAIN, POWER, SAVE, glyph, icon, madeBar, partitionsText, picture, sizeText } from "./bits.js";
 
 // How much of the whole each phase is taken to be, for the one figure. The
 // shares are this page's, by the phase's ref: installerd says how far along
@@ -98,19 +101,29 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         });
         const nowName = el("b"), nowCount = el("span");
         const log = el("ol", "log", null, { "aria-label": "What the job has said" });
-        const again = el("button", "btn", [picture(AGAIN), againName], { type: "button" });
+        const busy = (button) => button.getAttribute("aria-disabled") === "true";
+        const again = el("button", "btn", [picture(AGAIN), againName], { type: "button", "data-way": "again" });
         again.addEventListener("click", () => {
-            if (page.ended && again.getAttribute("aria-disabled") !== "true") ask({ again: true });
+            if (!page.ended || busy(again)) return;
+            // Back to the start is installerd's to offer after a job that
+            // finished; after one that failed, it is another conversation.
+            ask(page.ended.start ? { press: page.ended.start.ref } : { again: true });
         });
+        const rebootName = el("span");
+        const reboot = el("button", "btn go-on", [picture(POWER), rebootName], { type: "button", "data-way": "reboot" });
+        reboot.addEventListener("click", () => {
+            if (page.ended?.reboot && !busy(reboot)) ask({ press: page.ended.reboot.ref });
+        });
+        const refused = el("p", "err", "", { role: "alert" });
         parts = {
-            title, num, pct, nowName, nowCount, log, again, againName,
+            title, num, pct, nowName, nowCount, log, again, againName, reboot, rebootName, refused,
             // The heading takes the keyboard when the page arrives: nothing
             // on it can be pressed while the job runs.
             heading: rise(0, "h1", "", [title], { tabindex: "-1" }),
             lede: rise(1, "p", "lede"),
             said: el("code"),
             phases: rise(3, "ol", "phases"),
-            nav: rise(5, "div", "nav ends", [again]),
+            nav: rise(5, "div", "nav ends", [reboot, again, refused]),
             disk: rise(2, "aside", "build"),
             bar: null, made: [],
         };
@@ -265,10 +278,19 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         }
 
         parts.nav.hidden = !ended;
+        const reboot = page.ended?.reboot, start = page.ended?.start;
+        parts.reboot.hidden = !reboot;
+        parts.rebootName.textContent = waiting === reboot?.ref ? "Restarting…" : reboot?.name ?? "";
         parts.again.className = ended === "complete" ? "btn quiet" : "btn go-on";
-        parts.againName.textContent = waiting === "again" ? "Starting again…" : ended === "complete" ? "Back to the start" : "Start again";
-        if (waiting === "again") parts.again.setAttribute("aria-disabled", "true");
-        else parts.again.removeAttribute("aria-disabled");
+        parts.againName.textContent = waiting === "again" || (start && waiting === start.ref) ? "Starting again…"
+            : start?.name ?? (ended === "complete" ? "Back to the start" : "Start again");
+        // One thing at a time: while either is under way, neither is pressed.
+        for (const button of [parts.reboot, parts.again]) {
+            if (waiting) button.setAttribute("aria-disabled", "true");
+            else button.removeAttribute("aria-disabled");
+        }
+        parts.refused.textContent = page.ended?.error ?? "";
+        parts.refused.hidden = !page.ended?.error;
         // Once it is over the list can be scrolled, by a keyboard too.
         if (ended) parts.log.setAttribute("tabindex", "0");
         else parts.log.removeAttribute("tabindex");
@@ -282,8 +304,12 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         say(ended === "complete" ? page.ended.message : [`${headed}.`, parts.lede.textContent, page.ended.message].filter(Boolean).join(" "));
         parts.log.scrollTop = parts.log.scrollHeight;
         const focused = document.activeElement;
-        if (!focused || focused === document.body || focused === parts.heading) parts.again.focus({ preventScroll: true });
+        if (!focused || focused === document.body || focused === parts.heading) wayOn().focus({ preventScroll: true });
     }
+
+    // What the keyboard is taken to once the job is over: the restart, where
+    // there is one, and otherwise the way back.
+    const wayOn = () => (page.ended?.reboot ? parts.reboot : parts.again);
 
     // Where the stars drain to: the whole of the disk's bar, and while the
     // system is being copied, the leading edge of what has been copied.
@@ -400,7 +426,7 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         what to do, since the intro may only now have let them go. */
     function focus() {
         if (!here()) return;
-        (page.ended ? parts.again : parts.heading).focus({ preventScroll: true });
+        (page.ended ? wayOn() : parts.heading).focus({ preventScroll: true });
         mood(false);
     }
 

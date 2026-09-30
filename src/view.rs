@@ -37,6 +37,14 @@ pub struct View {
     pub waiting: Option<String>,
     /// The page installerd is asking for, once it has asked.
     pub page: Option<Page>,
+    /// installerd has taken the request to restart the machine, and this
+    /// process is about to go down with it. A page is a browser elsewhere,
+    /// and outlives it: this is its cue to wait for what comes back.
+    pub restarting: bool,
+    /// Which boot of the machine this is (`/proc/sys/kernel/random/boot_id`),
+    /// so that a page waiting on a restart can tell this installer from the
+    /// same one on the next boot.
+    pub boot: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -111,8 +119,9 @@ pub enum Page {
         lines: Vec<String>,
         /// How many lines it has said in all.
         said: usize,
-        /// How it ended, once it has: the job's end is the conversation's,
-        /// and the page stays to say so.
+        /// How it ended, once it has, and the way on from there. The page
+        /// stays to say so, whether the job's end was the conversation's
+        /// or installerd went on to offer the restart.
         ended: Option<Ended>,
     },
     /// A page of installerd's that is not drawn here yet.
@@ -132,12 +141,20 @@ pub struct Phase {
     pub max: Option<f64>,
 }
 
-/// How a conversation ended: `complete`, `cancelled` or `failed`, and what
-/// installerd had to say of it.
+/// How a job ended: `complete`, `cancelled` or `failed`, and what installerd
+/// had to say of it. A job that failed ends the conversation with it; one
+/// that finished goes on to a page of installerd's that offers the restart.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Ended {
     pub outcome: &'static str,
     pub message: String,
+    /// Restarting the machine, where installerd offers it.
+    pub reboot: Option<Action>,
+    /// Back to the first page, in the same conversation, where installerd
+    /// offers it. Without it the way back is another conversation.
+    pub start: Option<Action>,
+    /// Why installerd could not restart the machine, when it could not.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -190,8 +207,8 @@ const LOG: &str = "out";
 const TAIL: usize = 200;
 
 impl View {
-    pub fn starting(release: Release) -> View {
-        View { release, link: Link::Connecting, trail: Vec::new(), seq: 0, waiting: None, page: None }
+    pub fn starting(release: Release, boot: String) -> View {
+        View { release, link: Link::Connecting, trail: Vec::new(), seq: 0, waiting: None, page: None, restarting: false, boot }
     }
 
     pub fn did(&mut self, what: &str, to: impl Into<String>) {
@@ -220,6 +237,12 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
         _ => false,
     }
+}
+
+/// Whether `turn` is the page a finished job goes on to: `install.done`,
+/// and the upgrade's and the repair's.
+pub fn is_done(turn: &Turn) -> bool {
+    matches!(turn.id.as_deref(), Some("install.done" | "upgrade.done" | "repair.done"))
 }
 
 /// Everything the job on `turn` has said of itself so far, a line each, or
@@ -323,12 +346,48 @@ impl Page {
                 Outcome::Failed => "failed",
             },
             message: end.message.clone().unwrap_or_default(),
+            reboot: None,
+            start: None,
+            error: None,
         };
         match shown {
             Some(Page::Progress { title, job, summary, disk, phases, lines, said, .. }) => {
                 Page::Progress { title, job, summary, disk, phases, lines, said, ended: Some(ended) }
             }
             _ => Page::Ended { outcome: ended.outcome, message: ended.message },
+        }
+    }
+
+    /// What is shown for installerd's page after a job that finished
+    /// (`is_done`), `shown` being what was shown before it. It is drawn as
+    /// the job's page, finished, so that the phases and what the job said
+    /// stay: what the page adds is what the job came to and the way on.
+    ///
+    /// A process that joins on this page never saw the job's, and draws it
+    /// with no phases and nothing said.
+    pub fn done(shown: Option<Page>, turn: &Turn) -> Page {
+        let action = |r#ref: &str| element(turn, r#ref).filter(|e| e.is_action()).map(|e| Action::of(turn, e));
+        let ended = Ended {
+            outcome: "complete",
+            message: text(turn, "done.summary"),
+            reboot: action("act.reboot"),
+            start: action("nav.start"),
+            error: element(turn, "act.reboot").and_then(|e| e.error.clone()),
+        };
+        match shown {
+            Some(Page::Progress { title, job, summary, disk, phases, lines, said, .. }) => {
+                Page::Progress { title, job, summary, disk, phases, lines, said, ended: Some(ended) }
+            }
+            _ => Page::Progress {
+                title: turn.name.clone().unwrap_or_default(),
+                job: turn.id.as_deref().unwrap_or_default().trim_end_matches(".done").to_string(),
+                summary: String::new(),
+                disk: None,
+                phases: Vec::new(),
+                lines: Vec::new(),
+                said: 0,
+                ended: Some(ended),
+            },
         }
     }
 }
@@ -701,6 +760,8 @@ mod tests {
             seq: 1,
             waiting: Some("act.install".into()),
             page: Some(Page::of(&mode(), None)),
+            restarting: false,
+            boot: "8c7c".into(),
         };
         let sent = serde_json::to_value(&view).unwrap();
         assert_eq!(sent["link"], json!({ "state": "connected", "daemon": "installerd/0.1.10" }));
@@ -712,6 +773,7 @@ mod tests {
             "destructive": false, "unbuilt": false,
         }));
         assert_eq!(sent["trail"], json!([["connect", "/run/installerd.sock"]]));
+        assert_eq!((sent["restarting"].clone(), sent["boot"].clone()), (json!(false), json!("8c7c")));
         assert_eq!(sent["release"], json!({ "version": "2026.8", "variant": "Experimental" }));
 
         let sent = serde_json::to_value(Page::of(&disks(), Some("/dev/sda"))).unwrap();
@@ -737,10 +799,63 @@ mod tests {
         };
         // Everything on it is as it was when the job stopped.
         assert_eq!((title.as_str(), phases[2].value, said), ("Installing", 36.0, 300));
-        assert_eq!(ended, Some(Ended { outcome: "failed", message: "copying /boot: cp failed (exit 1)".into() }));
+        assert_eq!(
+            ended,
+            Some(Ended {
+                outcome: "failed",
+                message: "copying /boot: cp failed (exit 1)".into(),
+                reboot: None,
+                start: None,
+                error: None,
+            })
+        );
         let done = End { seq: 9, outcome: Outcome::Complete, message: None };
         let sent = serde_json::to_value(Page::ended(Some(Page::of(&installing(), None)), &done)).unwrap();
         assert_eq!(sent["kind"], "progress");
-        assert_eq!(sent["ended"], json!({ "outcome": "complete", "message": "" }));
+        assert_eq!(sent["ended"], json!({ "outcome": "complete", "message": "", "reboot": null, "start": null, "error": null }));
+    }
+
+    /// installerd's page after an install that finished
+    /// (`installerd/src/flow.rs`, `done_page`).
+    fn finished() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 5, "id": "install.done", "name": "Installation complete", "class": ["done"],
+            "elements": [
+                { "ref": "done.summary", "type": "text", "text": "Installation complete. Reboot to start Peios." },
+                { "ref": "act.reboot", "type": "action", "name": "Reboot now", "primary": true },
+                { "ref": "nav.start", "type": "action", "name": "Back to the start", "validate": false },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_job_that_finished_stays_on_its_page_with_the_way_on() {
+        assert!(is_done(&finished()));
+        assert!(!is_done(&installing()));
+        let Page::Progress { title, phases, said, ended, .. } = Page::done(Some(Page::of(&installing(), None)), &finished()) else {
+            panic!("the job's page gave way")
+        };
+        // Everything on it is as the job left it.
+        assert_eq!((title.as_str(), phases.len(), said), ("Installing", 4, 300));
+        let ended = ended.unwrap();
+        assert_eq!((ended.outcome, ended.message.as_str()), ("complete", "Installation complete. Reboot to start Peios."));
+        let reboot = ended.reboot.unwrap();
+        assert_eq!((reboot.r#ref.as_str(), reboot.name.as_str(), reboot.primary), ("act.reboot", "Reboot now", true));
+        assert_eq!(ended.start.unwrap().r#ref, "nav.start");
+        assert_eq!(ended.error, None);
+
+        // A restart installerd could not make is said with it.
+        let mut refused = finished();
+        refused.elements[1].error = Some("peinit did not take the request".into());
+        let again = Page::done(Some(Page::done(Some(Page::of(&installing(), None)), &finished())), &refused);
+        let Page::Progress { said, ended, .. } = again else { panic!("not the job's page") };
+        assert_eq!(said, 300);
+        assert_eq!(ended.unwrap().error.as_deref(), Some("peinit did not take the request"));
+
+        // Joined on this page, with nothing seen before it.
+        let Page::Progress { title, job, phases, ended, .. } = Page::done(None, &finished()) else { panic!("not the job's page") };
+        assert_eq!((title.as_str(), job.as_str(), phases.len()), ("Installation complete", "install", 0));
+        assert!(ended.unwrap().reboot.is_some());
     }
 }
