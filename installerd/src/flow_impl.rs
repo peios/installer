@@ -63,6 +63,7 @@ impl Flow for Install {
                 let survey = flow::survey(self.executor.as_ref(), mode);
                 Step::Patch(vec![flow::disk_patch(&survey, mode)])
             }
+            Some(Advance::Reject(errors)) => Step::Reject(errors),
             Some(Advance::Begin { kind, target }) => {
                 self.state = FlowState::Running;
                 self.kind = Some(kind);

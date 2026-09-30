@@ -1,12 +1,14 @@
 //! The disk page as it is sent: a row per disk for any surface to list,
 //! and under each row's `detail` what is known of the disk beyond that,
-//! for a surface that draws more than a table.
+//! for a surface that draws more than a table. And the page an install
+//! goes on to from it, which asks whether the disk chosen is to be erased.
 
+use msip::daemon::{TurnSpec, ValidAnswer};
 use serde_json::{Value, json};
 
 use installerd::contents::{Controller, Partition};
 use installerd::executor::{Disk, DryRun, Executor, Inventory, Release};
-use installerd::flow::{Mode, disk_page, disk_patch, survey};
+use installerd::flow::{Advance, FlowState, Mode, advance, disk_page, disk_patch, survey};
 
 const GIB: u64 = 1 << 30;
 const MIB: u64 = 1 << 20;
@@ -127,15 +129,53 @@ fn dry_run(inventory: Inventory) -> DryRun {
 
 /// The `disk.target` table of the disk page for `mode`.
 fn target(executor: &dyn Executor, mode: Mode) -> Value {
-    let page = disk_page(&survey(executor, mode), mode);
+    let page = disk_page(&survey(executor, mode), mode, None);
     assert_eq!(page.id.as_deref(), Some("disk.choose"));
-    serde_json::to_value(
-        page.elements
-            .iter()
-            .find(|e| e.r#ref == "disk.target")
-            .unwrap(),
-    )
-    .unwrap()
+    element(&page, "disk.target")
+}
+
+/// The element `r#ref` of `page`, as it is sent.
+fn element(page: &TurnSpec, r#ref: &str) -> Value {
+    serde_json::to_value(page.elements.iter().find(|e| e.r#ref == r#ref).unwrap()).unwrap()
+}
+
+/// What pressing `action` on the disk page for `mode` leads to, with
+/// `disk` chosen.
+fn pressed(executor: &dyn Executor, mode: Mode, action: &str, disk: &str) -> Advance {
+    let answer = ValidAnswer {
+        action: Some(action.into()),
+        values: [("disk.target".to_string(), json!(disk))]
+            .into_iter()
+            .collect(),
+    };
+    advance(&FlowState::DiskSelect { mode }, &answer, executor).unwrap()
+}
+
+/// The page `advance` went on to, and the state it left the flow in.
+fn page_of(advance: Advance) -> (FlowState, TurnSpec) {
+    match advance {
+        Advance::Page(state, page) => (state, page),
+        _ => panic!("the answer did not lead to a page"),
+    }
+}
+
+/// `desktop()`, with files on the blank disk: a partition that is nobody's
+/// system.
+fn desktop_with_media() -> Inventory {
+    let mut inventory = desktop();
+    inventory.disks[2].partitions = vec![Partition {
+        number: 1,
+        device: "/dev/sdb1".into(),
+        start: MIB,
+        size: 1228 * GIB,
+        kind: "msdata".into(),
+        name: "Basic data partition".into(),
+        fs: "NTFS".into(),
+        label: "Media".into(),
+        used: Some(640 * GIB),
+        ..Partition::default()
+    }];
+    inventory
 }
 
 #[test]
@@ -236,6 +276,168 @@ fn an_install_says_what_the_disk_becomes() {
     assert_eq!(repair["rows"][2]["detail"].get("becomes"), None);
 }
 
+/// A system is missed by its name and other files by their label; what a
+/// machine starts from is not missed in its own right, and nothing is
+/// claimed of a filesystem nobody looked into.
+#[test]
+fn an_install_says_what_would_be_missed_of_what_it_erases() {
+    let table = target(&dry_run(desktop_with_media()), Mode::Install);
+    // Windows, and not the boot manager on its EFI system partition.
+    assert_eq!(table["rows"][0]["detail"]["erases"], json!(["Windows"]));
+    assert_eq!(
+        table["rows"][1]["detail"]["erases"],
+        json!(["Peios 2026.8-7 (experimental)"])
+    );
+    assert_eq!(
+        table["rows"][2]["detail"]["erases"],
+        json!(["“Media” (640.0 GiB in use)"])
+    );
+    // Only where an install is what is being chosen for, and only on a
+    // disk it could be done to.
+    assert_eq!(table["rows"][3]["detail"].get("erases"), None);
+    let repair = target(&dry_run(desktop_with_media()), Mode::Repair);
+    assert_eq!(repair["rows"][0]["detail"].get("erases"), None);
+
+    let blank = target(&dry_run(desktop()), Mode::Install);
+    assert_eq!(blank["rows"][2]["detail"]["erases"], json!([]));
+
+    let mut unread = desktop();
+    unread.disks[0].read = false;
+    for partition in &mut unread.disks[0].partitions {
+        partition.used = None;
+        partition.holds = None;
+    }
+    let table = target(&dry_run(unread), Mode::Install);
+    assert_eq!(table["rows"][0]["detail"]["erases"], json!([]));
+}
+
+#[test]
+fn the_confirmation_says_which_disk_and_what_goes_with_it() {
+    let executor = dry_run(desktop_with_media());
+    let (state, page) = page_of(pressed(
+        &executor,
+        Mode::Install,
+        "nav.next",
+        "/dev/nvme0n1",
+    ));
+    assert_eq!(
+        state,
+        FlowState::Confirm {
+            target: "/dev/nvme0n1".into(),
+            label: "Samsung SSD 980 PRO 1TB, 931.5 GiB".into(),
+        }
+    );
+    assert_eq!(page.id.as_deref(), Some("confirm"));
+    let summary = element(&page, "confirm.summary");
+    assert_eq!(
+        summary["text"],
+        "Peios will be installed onto Samsung SSD 980 PRO 1TB, 931.5 GiB (/dev/nvme0n1). \
+         The whole disk will be erased: partitioned, formatted, and overwritten, \
+         including Windows. This cannot be undone."
+    );
+    // The same, as structure, for a surface that draws the disk.
+    let detail = &summary["detail"];
+    assert_eq!(detail["device"], "/dev/nvme0n1");
+    assert_eq!(detail["model"], "Samsung SSD 980 PRO 1TB");
+    assert_eq!(detail["size"], "931.5 GiB");
+    assert_eq!(detail["bus"], "NVMe");
+    assert_eq!(detail["bytes"], 1000204886016u64);
+    assert_eq!(detail["partitions"].as_array().unwrap().len(), 2);
+    assert_eq!(detail["becomes"][1]["role"], "root");
+    assert_eq!(detail["erases"], json!(["Windows"]));
+    let begin = element(&page, "act.begin");
+    assert_eq!(begin["destructive"], true);
+    assert_eq!(begin["primary"], true);
+
+    // Several things to miss are listed, and none is not mentioned.
+    let (_, page) = page_of(pressed(&executor, Mode::Install, "nav.next", "/dev/sdb"));
+    assert!(
+        element(&page, "confirm.summary")["text"]
+            .as_str()
+            .unwrap()
+            .contains("overwritten, including “Media” (640.0 GiB in use). This")
+    );
+    let blank = dry_run(desktop());
+    let (_, page) = page_of(pressed(&blank, Mode::Install, "nav.next", "/dev/sdb"));
+    assert!(
+        element(&page, "confirm.summary")["text"]
+            .as_str()
+            .unwrap()
+            .contains("formatted, and overwritten. This cannot be undone.")
+    );
+}
+
+/// The answer names a disk, and any string is a well-formed answer: what
+/// may be gone on with is a disk of this machine's that is not the medium.
+#[test]
+fn only_a_disk_that_may_be_chosen_is_gone_on_with() {
+    let executor = dry_run(desktop());
+    for mode in [Mode::Install, Mode::Upgrade, Mode::Repair] {
+        let Advance::Reject(errors) = pressed(&executor, mode, "nav.next", "/dev/sdc") else {
+            panic!("the medium was gone on with");
+        };
+        assert_eq!(
+            errors,
+            [(
+                "disk.target".to_string(),
+                "/dev/sdc is the medium this is running from.".to_string()
+            )]
+        );
+        let Advance::Reject(errors) = pressed(&executor, mode, "nav.next", "/dev/sdz") else {
+            panic!("a disk that is not there was gone on with");
+        };
+        assert_eq!(
+            errors[0].1,
+            "/dev/sdz is no longer there. Rescan and choose again."
+        );
+    }
+}
+
+/// Back from the page after the disk page returns to it with the disk
+/// still chosen, as the table's default.
+#[test]
+fn going_back_to_the_disks_leaves_the_disk_chosen() {
+    let executor = dry_run(desktop());
+    let back = ValidAnswer {
+        action: Some("nav.back".into()),
+        values: Default::default(),
+    };
+    let states = [
+        (
+            Mode::Install,
+            FlowState::Confirm {
+                target: "/dev/sda".into(),
+                label: "CT500MX500SSD1, 465.8 GiB".into(),
+            },
+        ),
+        (
+            Mode::Upgrade,
+            FlowState::UpgradeConfirm {
+                target: "/dev/sda".into(),
+            },
+        ),
+        (
+            Mode::Repair,
+            FlowState::RepairMenu {
+                target: "/dev/sda".into(),
+            },
+        ),
+    ];
+    for (mode, state) in states {
+        let (state, page) = page_of(advance(&state, &back, &executor).unwrap());
+        assert_eq!(state, FlowState::DiskSelect { mode });
+        assert_eq!(element(&page, "disk.target")["default"], "/dev/sda");
+    }
+    // Arriving at the page the first time, nothing is.
+    assert_eq!(target(&executor, Mode::Install).get("default"), None);
+    // Nor is a disk that has gone, or the medium.
+    let survey = survey(&executor, Mode::Install);
+    for gone in ["/dev/sdz", "/dev/sdc"] {
+        let page = disk_page(&survey, Mode::Install, Some(gone));
+        assert_eq!(element(&page, "disk.target").get("default"), None);
+    }
+}
+
 #[test]
 fn an_upgrade_says_what_the_medium_would_move_each_system_to() {
     let table = target(&dry_run(desktop()), Mode::Upgrade);
@@ -268,7 +470,7 @@ fn the_page_says_what_it_is_choosing_a_disk_for() {
         (Mode::Upgrade, "upgrade"),
         (Mode::Repair, "repair"),
     ] {
-        let page = disk_page(&survey(&executor, mode), mode);
+        let page = disk_page(&survey(&executor, mode), mode, None);
         assert_eq!(page.class, vec![purpose.to_string()]);
     }
 }
