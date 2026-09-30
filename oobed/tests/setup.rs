@@ -335,6 +335,41 @@ fn a_mistyped_password_keeps_the_page_open() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// The account setup in a browser runs as exists while setup does, and
+/// setup keeps an account that exists: taken as the person's own, setup
+/// would finish with no account they can use.
+#[test]
+fn the_name_setup_runs_as_cannot_be_taken() {
+    let dir = scratch("visitor");
+    let setup = Arc::new(Recorder::default());
+    let mut s = Surface::open(&dir, Arc::clone(&setup));
+
+    s.advance_to_account();
+    for name in [
+        oobed::setup::VISITOR,
+        "PEIOS-OOBE-SETUP",
+        " peios-oobe-setup ",
+    ] {
+        s.press(
+            "nav.next",
+            &[
+                ("account.name", name),
+                ("account.password", "x"),
+                ("account.confirm", "x"),
+            ],
+        );
+        assert!(matches!(s.recv(), Event::Updated));
+        assert_eq!(s.id(), "oobe.account");
+        let field = s.session.page().unwrap().element("account.name").unwrap();
+        assert_eq!(
+            field.error.as_deref(),
+            Some("That name is used by setup itself. Choose another.")
+        );
+    }
+    assert!(setup.done.lock().unwrap().is_empty(), "nothing applied");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn a_rerun_keeps_an_account_that_already_exists() {
     // The failure this guards against is lpsd-first-account's: a

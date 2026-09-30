@@ -4,6 +4,7 @@ oobed \- Peios first-boot setup service
 .SH SYNOPSIS
 .B oobed
 .RB [ --socket " " PATH ]
+.RB [ --browser " " PATH " | " --no-browser ]
 .RB [ --dry-run ]
 .SH DESCRIPTION
 .B oobed
@@ -14,14 +15,41 @@ its own service definitions only after setup completes.
 The terminal presentation is provided by
 .BR oobe-tui (1)
 so that user-interface code does not own account or registry privilege.
+.PP
+Where the browser program is installed, setup can also be done in a browser,
+as the GXWI overlay: before it accepts connections,
+.B oobed
+creates the passwordless account
+.B peios-oobe-setup
+(or keeps it, from an earlier boot whose setup did not finish), admits it to
+its socket, and sets
+.I OverlayUsername
+and
+.I OverlaySession
+under
+.IR Machine\eSoftware\eGXWI .
+Both surfaces draw the same conversation.  When setup completes it removes
+the two values, the account and its home directory before retiring.  The
+account page refuses the name
+.BR peios-oobe-setup .
 .SH OPTIONS
 .TP
 .BI --socket " PATH"
 Listen on PATH instead of
 .IR /run/oobed.sock .
 .TP
+.BI --browser " PATH"
+The program GXWI runs to draw setup in a browser.  The default is
+.IR /bin/oobe-gxwi ;
+if it is not installed, setup is on the console only.
+.TP
+.B --no-browser
+Setup on the console only.
+.TP
 .B --dry-run
-Exercise the setup conversation without changing the machine.
+Exercise the setup conversation without changing the machine.  No account is
+created and no overlay is set, so a browser program is pointed at the socket
+by hand.
 .TP
 .BR -h , " --help"
 Show command help.
@@ -29,8 +57,13 @@ Show command help.
 .BR -V , " --version"
 Show the program version.
 .SH SECURITY
-The service runs as SYSTEM and accepts MSIP connections only from SYSTEM and
-Administrators.  Passwords are sent to
+The service runs as SYSTEM and accepts MSIP connections only from SYSTEM,
+Administrators and, while setup is offered in a browser,
+.BR peios-oobe-setup .
+That account has no password, so while it exists anything that logs on
+without a credential can log on as it; it holds no groups, and what it can
+reach is this socket, which the browser offers anyone who can open the
+machine's address.  Passwords are sent to
 .B lps
 over standard input, never as process arguments, and are not written to the
 MSIP log.

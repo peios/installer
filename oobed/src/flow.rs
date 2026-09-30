@@ -232,6 +232,15 @@ pub fn advance(page: &Page, answer: &ValidAnswer, setup: &dyn Setup) -> Option<A
         (Page::Account { .. }, "nav.next") => {
             let account = value(answer, "account.name");
             let password = value(answer, "account.password");
+            // Setup keeps an account that already exists, and this one does
+            // while setup runs: taking its name would finish setup with no
+            // account the person can use, and remove it besides.
+            if account.trim().eq_ignore_ascii_case(crate::setup::VISITOR) {
+                return Some(Advance::Reject(vec![(
+                    "account.name".into(),
+                    "That name is used by setup itself. Choose another.".into(),
+                )]));
+            }
             if password != value(answer, "account.confirm") {
                 // On confirm, not on password: the person retypes the
                 // one they got wrong, and the first field keeps what
