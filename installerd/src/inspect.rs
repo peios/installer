@@ -229,6 +229,12 @@ pub fn mount_point_of(mounts: &str, device: &str) -> Option<String> {
 
 /// Bytes in use on the filesystem at `path`.
 pub fn used_bytes(path: &Path) -> Option<u64> {
+    room(path).map(|(used, _)| used)
+}
+
+/// Bytes in use on the filesystem at `path`, and the size of the blocks
+/// it hands out.
+pub fn room(path: &Path) -> Option<(u64, u64)> {
     let path = CString::new(path.as_os_str().as_bytes()).ok()?;
     let mut stat = std::mem::MaybeUninit::<libc::statvfs>::zeroed();
     // SAFETY: `path` is a NUL-terminated string and `stat` is room for
@@ -239,7 +245,11 @@ pub fn used_bytes(path: &Path) -> Option<u64> {
         }
         stat.assume_init()
     };
-    Some((stat.f_blocks as u64).saturating_sub(stat.f_bfree as u64) * stat.f_frsize as u64)
+    let block = stat.f_frsize as u64;
+    Some((
+        (stat.f_blocks as u64).saturating_sub(stat.f_bfree as u64) * block,
+        block,
+    ))
 }
 
 /// `relative` under `root`, if every step of the way is really there.

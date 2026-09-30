@@ -32,14 +32,20 @@
 //! medium's queue from the target and promote the installed machine's.
 //! See [`Real::settle_seed_queues`].
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
-use crate::executor::{Disk, ESP_MIB, Executor, JobKind, Phase, Progress, Release};
+use crate::copying;
+use crate::executor::{Disk, ESP_MIB, Executor, JobKind, Phase, Progress, Release, size_text};
 use crate::executor::{
     INSTALL_PHASES, REPAIR_BOOT_PHASES, REPAIR_FSCK_PHASES, REPAIR_SD_PHASES, UPGRADE_PHASES,
 };
 use crate::inspect;
+
+/// How often a command that is being watched is looked in on.
+const WATCH_EVERY: Duration = Duration::from_millis(200);
 
 /// Written to the root inode at format time, and seeded onto the ESP's
 /// mount. Kept identical to the script's and to live-boot's, because a
@@ -124,6 +130,82 @@ impl Real {
         out.status
             .code()
             .ok_or_else(|| format!("{program} was killed"))
+    }
+
+    /// Run a command as [`Real::run`] does, calling `watch` every so often
+    /// while it runs and once more when it is over. For a command that
+    /// takes long enough to be worth saying how far along it is, and does
+    /// not say so itself.
+    fn run_watched(
+        &self,
+        p: &dyn Progress,
+        program: &str,
+        args: &[&str],
+        watch: &mut dyn FnMut(),
+    ) -> Result<(), String> {
+        p.log(format!("$ {program} {}", args.join(" ")));
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("could not run {program}: {e}"))?;
+        // Both streams are read as they come. Left until the command is
+        // over, one that said more than a pipe holds would wait for ever
+        // to be read, and this would wait for ever for it to finish.
+        let said: Vec<_> = [
+            child
+                .stdout
+                .take()
+                .map(|s| Box::new(s) as Box<dyn Read + Send>),
+            child
+                .stderr
+                .take()
+                .map(|s| Box::new(s) as Box<dyn Read + Send>),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|mut stream| {
+            std::thread::spawn(move || {
+                let mut all = Vec::new();
+                let _ = stream.read_to_end(&mut all);
+                all
+            })
+        })
+        .collect();
+        // The wait is another thread's, so that the end is heard the
+        // moment it comes and not at the next look.
+        let (ended, end) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = ended.send(child.wait());
+        });
+        let status = loop {
+            match end.recv_timeout(WATCH_EVERY) {
+                Ok(status) => break status,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => watch(),
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(format!("lost track of {program}"));
+                }
+            }
+        };
+        watch();
+        for stream in said {
+            let stream = stream.join().unwrap_or_default();
+            for line in String::from_utf8_lossy(&stream).lines() {
+                if !line.trim().is_empty() {
+                    p.log(format!("  {line}"));
+                }
+            }
+        }
+        match status
+            .map_err(|e| format!("could not wait for {program}: {e}"))?
+            .code()
+        {
+            Some(0) => Ok(()),
+            Some(c) => Err(format!("{program} failed (exit {c})")),
+            None => Err(format!("{program} was killed")),
+        }
     }
 
     /// Whether `name` is installed in the peipkg root at `root`.
@@ -423,23 +505,55 @@ impl Real {
         // downgrade. -x for nested mounts, though a freshly-mounted
         // squashfs has none: the image ships /proc, /sys, /dev and /run
         // as the empty directories the boot will mount over.
-        let total = entries.len();
+        //
+        // The phase follows how much has been written, not which entry
+        // is being copied: /usr is nearly all of it and comes almost
+        // last (see `copying`). What the image will come to is worked
+        // out first, and the target says how much of that it holds.
+        let target = self.root_mnt();
+        let measured = inspect::room(&target).and_then(|(before, block)| {
+            let total = copying::room_for(&self.lower_mnt(), block);
+            (total > 0).then_some((before, total))
+        });
+        match measured {
+            Some((_, total)) => p.log(format!("{} to copy", size_text(total))),
+            None => p.log("could not measure the image; the copy is reported by entry".into()),
+        }
+        let count = entries.len();
+        let mut reached = 0;
         for (i, entry) in entries.iter().enumerate() {
-            p.phase("phase.copy", ((i * 100) / total) as u8);
+            if measured.is_none() {
+                p.phase("phase.copy", ((i * 100) / count) as u8);
+            }
             let name = entry
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
             p.log(format!("copying /{name}"));
-            self.run(
+            self.run_watched(
                 p,
                 "cp",
                 &[
                     "-ax",
                     entry.to_string_lossy().as_ref(),
-                    &format!("{}/", self.root_mnt().display()),
+                    &format!("{}/", target.display()),
                 ],
+                &mut || {
+                    let Some((before, total)) = measured else {
+                        return;
+                    };
+                    let Some(now) = inspect::used_bytes(&target) else {
+                        return;
+                    };
+                    // Only ever onward, and only when it has moved: each
+                    // report goes to every surface watching.
+                    let at = copying::percent(now.saturating_sub(before), total);
+                    if at > reached {
+                        reached = at;
+                        p.phase("phase.copy", at);
+                    }
+                },
             )
             .map_err(|e| format!("copying /{name}: {e}"))?;
         }
@@ -1170,5 +1284,51 @@ mod tests {
         let nvme = "/dev/nvme0n1p2 / ext4 rw 0 0\n";
         assert!(Real::mounted_in(nvme, "/dev/nvme0n1").is_some());
         assert!(Real::mounted_in(nvme, "/dev/nvme1n1").is_none());
+    }
+
+    /// What a watched command is for: it is looked in on while it runs,
+    /// and once more at its end, and everything else about it is as
+    /// `run` has it -- what it said is logged, and how it ended decides.
+    #[test]
+    fn a_watched_command_is_looked_in_on_while_it_runs() {
+        struct Heard(std::sync::Mutex<Vec<String>>);
+        impl Progress for Heard {
+            fn phase(&self, _: &str, _: u8) {}
+            fn log(&self, line: String) {
+                self.0.lock().unwrap().push(line);
+            }
+        }
+        let real = Real::default();
+
+        let heard = Heard(Default::default());
+        let mut looks = 0;
+        let script = "echo said; echo complained >&2; sleep 0.7";
+        real.run_watched(&heard, "sh", &["-c", script], &mut || looks += 1)
+            .unwrap();
+        assert!(
+            looks >= 3,
+            "looked in {looks} times in 0.7s, every 0.2s and once at the end"
+        );
+        assert_eq!(
+            *heard.0.lock().unwrap(),
+            [
+                format!("$ sh -c {script}"),
+                "  said".into(),
+                "  complained".into()
+            ]
+        );
+
+        // One that is over at once is still looked in on, at its end.
+        let mut looks = 0;
+        let failed = real.run_watched(&heard, "sh", &["-c", "exit 3"], &mut || looks += 1);
+        assert_eq!(failed, Err("sh failed (exit 3)".into()));
+        assert!(looks >= 1);
+
+        // More than a pipe holds, which would hang if it were not read
+        // until the command had ended.
+        let quiet = Heard(Default::default());
+        real.run_watched(&quiet, "sh", &["-c", "yes | head -c 300000"], &mut || {})
+            .unwrap();
+        assert!(quiet.0.lock().unwrap().len() > 1000);
     }
 }
