@@ -7,7 +7,17 @@ pub use msip_serve::Progress;
 use std::thread::sleep;
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+use crate::contents::{self, Controller, Partition};
+
+/// How big an install makes the EFI system partition, in MiB. One
+/// number for the partitioning and for the page that says beforehand
+/// what the disk will become, so the two cannot disagree.
+pub const ESP_MIB: u64 = 512;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Disk {
     /// Stable device path -- the answer value.
     pub device: String,
@@ -22,12 +32,42 @@ pub struct Disk {
     /// where it went; not offered, because installing onto the medium
     /// you are running from is a mistake rather than a choice.
     pub medium: bool,
+    /// Its partitions as they are, in disk order. Empty for the medium,
+    /// which is not a disk anybody is choosing.
+    pub partitions: Vec<Partition>,
+    /// Whether the filesystems on it were looked into. Until they were,
+    /// a partition with nothing said of what it holds is one nobody
+    /// looked at, not one known to be empty.
+    pub read: bool,
 }
 
 impl Disk {
     /// For prose: "Virtio disk, 8.0 GiB".
     pub fn label(&self) -> String {
         format!("{}, {}", self.model, size_text(self.size))
+    }
+
+    /// The Peios system on it, and the partition that holds it.
+    pub fn system(&self) -> Option<(&Partition, &Release)> {
+        self.partitions
+            .iter()
+            .find_map(|p| p.peios.as_ref().map(|release| (p, release)))
+    }
+
+    /// Why there is no Peios system here to upgrade or repair, once the
+    /// disk has been looked into and none was found. A Peios system
+    /// that will not say which release it is is not none: nothing is
+    /// claimed of that disk either way.
+    pub fn no_system(&self) -> Option<&'static str> {
+        let unversioned = |p: &Partition| p.holds.as_deref() == Some(contents::UNVERSIONED_PEIOS);
+        if !self.read || self.system().is_some() || self.partitions.iter().any(unversioned) {
+            return None;
+        }
+        Some(if self.partitions.is_empty() {
+            "it has no partitions"
+        } else {
+            "no partition on it holds a Peios system"
+        })
     }
 }
 
@@ -60,9 +100,16 @@ pub fn probe_sys_block() -> Vec<Disk> {
     let Ok(entries) = std::fs::read_dir("/sys/block") else {
         return disks;
     };
+    let probed = contents::lsblk();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with("loop") || name.starts_with("ram") || name.starts_with("sr") {
+        // Not disks anybody installs onto: loop and RAM devices, optical
+        // drives, and a floppy drive, which a machine old enough (or a
+        // virtual one) still reports, with or without a floppy in it.
+        if ["loop", "ram", "sr", "fd"]
+            .iter()
+            .any(|kind| name.starts_with(kind))
+        {
             continue;
         }
         let read = |f: &str| {
@@ -84,13 +131,20 @@ pub fn probe_sys_block() -> Vec<Disk> {
             "" => "Disk".to_string(),
             m => m.to_string(),
         };
+        let is_medium = medium.as_deref() == Some(name.as_str());
         disks.push(Disk {
             device: format!("/dev/{name}"),
             model,
             size: sectors * 512,
             bus,
             removable: read("removable") == "1",
-            medium: medium.as_deref() == Some(name.as_str()),
+            medium: is_medium,
+            partitions: if is_medium {
+                Vec::new()
+            } else {
+                contents::partitions_under(&entry.path(), &probed, &contents::gpt_of(&entry.path()))
+            },
+            read: false,
         });
     }
     disks.sort_by(|a, b| a.device.cmp(&b.device));
@@ -160,7 +214,8 @@ pub struct Phase {
 /// full version, revision included, because a rebuilt edition with the
 /// same upstream version is a different release to peipkg and must be
 /// to the upgrade page too.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Release {
     /// `dev.peios.peios-experimental`: the qualified edition package.
     pub edition: String,
@@ -180,7 +235,21 @@ impl Release {
 }
 
 pub trait Executor: Send + Sync + 'static {
+    /// The machine's disks and their partition tables. Quick, and
+    /// touches nothing.
     fn probe_disks(&self) -> Vec<Disk>;
+    /// Look into the filesystems on `disks` and say what each holds,
+    /// changing nothing on any of them. Slower than the probe, since it
+    /// is a mount for every filesystem, so it is asked for only by the
+    /// page that shows what it finds.
+    fn read_contents(&self, disks: &mut [Disk]) {
+        let _ = disks;
+    }
+    /// Storage controllers no driver has claimed: where the disks that
+    /// are missing from the probe may be.
+    fn unclaimed_controllers(&self) -> Vec<Controller> {
+        contents::unclaimed_controllers()
+    }
     fn phases(&self, kind: JobKind) -> &'static [Phase];
     /// The release this medium carries -- what an upgrade would move a
     /// disk to.
@@ -248,19 +317,55 @@ pub const REPAIR_SD_PHASES: &[Phase] = &[Phase {
     name: "Reseeding security descriptors",
 }];
 
+/// A machine described rather than probed: the disks it has and what
+/// is on them, the controllers nothing drives, and the release the
+/// medium carries. What `installerd --dry-run --inventory` reads, so
+/// that a surface can be shown a machine other than the one it is
+/// being worked on, and what tests supply so their result does not
+/// depend on the build host's devices.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Inventory {
+    pub disks: Vec<Disk>,
+    pub controllers: Vec<Controller>,
+    pub medium: Option<Release>,
+}
+
 /// Touches nothing. By default it probes real block devices read-only so the
-/// interactive dry run is honest. Tests can supply a fixed inventory so their
-/// result does not depend on the build host's devices or `/sys` visibility.
+/// interactive dry run is honest, and says nothing of what their filesystems
+/// hold, which it has no privilege to look at.
 pub struct DryRun {
     /// Milliseconds per simulated step; tests set this low.
     pub step_ms: u64,
-    /// A deterministic disk inventory, or `None` to probe this machine.
-    pub disks: Option<Vec<Disk>>,
+    /// A machine to pretend to be, or `None` to probe this one.
+    pub inventory: Option<Inventory>,
+}
+
+impl DryRun {
+    /// What the dry run claims a disk holds when nothing says otherwise:
+    /// one revision behind what it claims the medium carries, so the
+    /// upgrade page can be walked.
+    fn pretend(version: &str) -> Release {
+        Release {
+            edition: "dev.peios.peios-experimental".into(),
+            version: version.into(),
+        }
+    }
 }
 
 impl Executor for DryRun {
     fn probe_disks(&self) -> Vec<Disk> {
-        self.disks.clone().unwrap_or_else(probe_sys_block)
+        match &self.inventory {
+            Some(inventory) => inventory.disks.clone(),
+            None => probe_sys_block(),
+        }
+    }
+
+    fn unclaimed_controllers(&self) -> Vec<Controller> {
+        match &self.inventory {
+            Some(inventory) => inventory.controllers.clone(),
+            None => contents::unclaimed_controllers(),
+        }
     }
 
     fn phases(&self, kind: JobKind) -> &'static [Phase] {
@@ -273,20 +378,29 @@ impl Executor for DryRun {
         }
     }
 
-    /// One revision ahead of what it claims every disk holds, so the
-    /// upgrade page can be walked.
     fn medium_release(&self) -> Result<Release, String> {
-        Ok(Release {
-            edition: "dev.peios.peios-experimental".into(),
-            version: "2026.8-2".into(),
-        })
+        Ok(self
+            .inventory
+            .as_ref()
+            .and_then(|inventory| inventory.medium.clone())
+            .unwrap_or_else(|| Self::pretend("2026.8-2")))
     }
 
-    fn installed_release(&self, _target: &str) -> Result<Release, String> {
-        Ok(Release {
-            edition: "dev.peios.peios-experimental".into(),
-            version: "2026.8-1".into(),
-        })
+    /// What the inventory says the disk holds, where it says what is on
+    /// the disk at all; the pretence otherwise.
+    fn installed_release(&self, target: &str) -> Result<Release, String> {
+        let described = self
+            .inventory
+            .iter()
+            .flat_map(|inventory| &inventory.disks)
+            .find(|d| d.device == target && d.read);
+        match described {
+            Some(disk) => match disk.system() {
+                Some((_, release)) => Ok(release.clone()),
+                None => Err(disk.no_system().unwrap_or("no Peios system here").into()),
+            },
+            None => Ok(Self::pretend("2026.8-1")),
+        }
     }
 
     fn run(

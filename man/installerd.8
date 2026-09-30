@@ -6,7 +6,10 @@ installerd \- Peios installation and repair service
 .RB [ --socket " " PATH ]
 .RB [ --medium " " PATH ]
 .RB [ --force ]
-.RB [ --dry-run ]
+.br
+.B installerd --dry-run
+.RB [ --socket " " PATH ]
+.RB [ --inventory " " FILE ]
 .SH DESCRIPTION
 .B installerd
 owns the privileged installation, repair, and upgrade flow.  It exposes that
@@ -33,7 +36,22 @@ Allow the partitioning tool to replace a table it did not create.  This never
 suppresses the mounted-device guard or the confirmation in the MSIP flow.
 .TP
 .B --dry-run
-Exercise the complete conversation without changing disks.
+Exercise the complete conversation without changing disks.  The machine's
+disks and their partitions are listed as they are; what is on them is not
+looked into, which takes a mount.
+.TP
+.BI --inventory " FILE"
+With
+.BR --dry-run ,
+pretend to be the machine the JSON in FILE describes instead of probing this
+one: its
+.I disks
+and what each holds, the storage
+.I controllers
+nothing drives, and the release its
+.I medium
+carries.  For showing a surface a machine other than the one it is being
+worked on.  A key that is not recognised is an error.
 .TP
 .BR -h , " --help"
 Show command help.

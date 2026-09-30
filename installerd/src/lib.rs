@@ -1,6 +1,8 @@
+pub mod contents;
 pub mod executor;
 pub mod flow;
 pub mod flow_impl;
+pub mod inspect;
 pub mod loopdev;
 pub mod real;
 pub mod version;

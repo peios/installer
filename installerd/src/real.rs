@@ -35,10 +35,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::executor::{Disk, Executor, JobKind, Phase, Progress, Release};
+use crate::executor::{Disk, ESP_MIB, Executor, JobKind, Phase, Progress, Release};
 use crate::executor::{
     INSTALL_PHASES, REPAIR_BOOT_PHASES, REPAIR_FSCK_PHASES, REPAIR_SD_PHASES, UPGRADE_PHASES,
 };
+use crate::inspect;
 
 /// Written to the root inode at format time, and seeded onto the ESP's
 /// mount. Kept identical to the script's and to live-boot's, because a
@@ -47,7 +48,6 @@ use crate::executor::{
 const ROOT_SDDL: &str =
     "O:SYG:SYD:(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;WD)(A;OICIIO;GA;;;S-1-3-0)";
 
-const ESP_SIZE: &str = "512M";
 const MEDIUM_REPO: &str = "peios-medium";
 const CMDLINE_TEMPLATE_REL: &str = "usr/share/disk-boot/cmdline";
 const LIVE_BOOT_PACKAGE: &str = "dev.peios.live-boot";
@@ -88,6 +88,11 @@ impl Real {
     /// an inspection can never be mistaken for the start of a job.
     fn inspect_mnt(&self) -> PathBuf {
         self.work.join("inspect")
+    }
+    /// Where what has to be copied off a disk to be read is copied to:
+    /// under the scratch, so on the tmpfs and never on a disk.
+    fn inspect_scratch(&self) -> PathBuf {
+        self.work.join("inspect-scratch")
     }
 
     /// Run a command, sending each line of its output to the log and
@@ -278,7 +283,7 @@ impl Real {
                 "add",
                 disk,
                 "--size",
-                ESP_SIZE,
+                &format!("{ESP_MIB}M"),
                 "--type",
                 "esp",
                 "--name",
@@ -768,6 +773,19 @@ impl Executor for Real {
         crate::executor::probe_sys_block()
     }
 
+    /// Every filesystem on every disk but the medium, read through a
+    /// read-only loop device so that none of them is written to (see
+    /// [`crate::inspect`]). The medium is left out: it is what this is
+    /// running from, and nobody is choosing it.
+    fn read_contents(&self, disks: &mut [Disk]) {
+        let (mnt, scratch) = (self.inspect_mnt(), self.inspect_scratch());
+        for disk in disks.iter_mut().filter(|d| !d.medium) {
+            if !inspect::read_disk(disk, &mnt, &|root| inspect::release_at(root, &scratch)) {
+                break;
+            }
+        }
+    }
+
     fn phases(&self, kind: JobKind) -> &'static [Phase] {
         match kind {
             JobKind::Install => INSTALL_PHASES,
@@ -784,31 +802,23 @@ impl Executor for Real {
         Self::release_in(Path::new("/"))
     }
 
-    /// Mount the disk's root read-only, read it, unmount it. Read-only
-    /// so that looking at a disk changes nothing on it -- not even a
-    /// journal replay -- and so that the page can be reached, and
-    /// backed out of, without the disk having been touched.
+    /// Mount the disk's root where nothing can write to it, read which
+    /// release it holds, unmount it. Looking at a disk changes nothing
+    /// on it -- not even a journal replay -- so the page can be reached,
+    /// and backed out of, without the disk having been touched. It is
+    /// the reading the disk page makes of every disk, so the two cannot
+    /// say different things of one ([`crate::inspect`]).
     fn installed_release(&self, target: &str) -> Result<Release, String> {
         let (_esp, root) = Self::partitions(target)?;
         if let Some(what) = Self::anything_mounted_on(target) {
             return Err(format!("{what}; unmount it first"));
         }
-        let mnt = self.inspect_mnt();
-        std::fs::create_dir_all(&mnt).map_err(|e| e.to_string())?;
-        let mnt_s = mnt.to_string_lossy().into_owned();
-        let mounted = Command::new("mount")
-            .args(["--read-only", "-o", "policy=deny-missing", &root, &mnt_s])
-            .output()
-            .map_err(|e| format!("could not run mount: {e}"))?;
-        if !mounted.status.success() {
-            return Err(format!(
-                "could not read {root}: {}",
-                String::from_utf8_lossy(&mounted.stderr).trim()
-            ));
-        }
-        let release = Self::release_in(&mnt);
-        let _ = Command::new("umount").arg(&mnt_s).output();
-        release
+        let scratch = self.inspect_scratch();
+        // The root an install makes is ext4, whose journal is left alone.
+        inspect::mounted(Path::new(&root), "noload,", &self.inspect_mnt(), |mnt| {
+            inspect::release_at(mnt, &scratch)
+        })
+        .map_err(|failure| format!("could not read {root}: {}", failure.why()))?
     }
 
     fn run(&self, kind: JobKind, target: &str, p: &dyn Progress) -> Result<Option<String>, String> {
