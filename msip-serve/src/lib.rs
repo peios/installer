@@ -486,11 +486,7 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                     Disposition::Protocol(e) => {
                         let _ = write_msg(&mut stream, MsgType::Error, &e);
                     }
-                    Disposition::Invalid(errors) => {
-                        if let Ok(upd) = live.conversation.reject(&errors) {
-                            live.broadcast(MsgType::Update, &upd);
-                        }
-                    }
+                    Disposition::Invalid(errors) => reject(live, &errors),
                     Disposition::Valid(valid) => match apply(live, valid, &mut stream) {
                         After::Nothing => {}
                         After::Finished => *guard = None,
@@ -521,6 +517,37 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
     }
 }
 
+/// Turn the latest answer down: `errors` on the elements it names, and the
+/// error taken off any other that still says one. A rejection is a verdict
+/// on the whole answer, so what an earlier answer got wrong and this one
+/// got right is not left saying it is wrong.
+fn reject(live: &mut Live, errors: &[(String, String)]) {
+    let named = |r: &str| errors.iter().any(|(e, _)| e == r);
+    let mut patches: Vec<Map<String, Value>> = live
+        .conversation
+        .current_turn()
+        .map(|turn| turn.elements.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .filter(|e| e.error.is_some() && !named(&e.r#ref))
+        .map(|e| {
+            let mut p = Map::new();
+            p.insert("ref".into(), Value::String(e.r#ref.clone()));
+            p.insert("error".into(), Value::Null);
+            p
+        })
+        .collect();
+    patches.extend(errors.iter().map(|(r, msg)| {
+        let mut p = Map::new();
+        p.insert("ref".into(), Value::String(r.clone()));
+        p.insert("error".into(), Value::String(msg.clone()));
+        p
+    }));
+    if let Ok(upd) = live.conversation.update(patches) {
+        live.broadcast(MsgType::Update, &upd);
+    }
+}
+
 /// What the caller must do after the flow decided, once it can let go
 /// of the lock. Returned rather than done here because starting a job
 /// means releasing the lock the job itself takes to report progress.
@@ -545,9 +572,7 @@ fn apply(live: &mut Live, valid: ValidAnswer, stream: &mut UnixStream) -> After 
             After::Nothing
         }
         Step::Reject(errors) => {
-            if let Ok(upd) = live.conversation.reject(&errors) {
-                live.broadcast(MsgType::Update, &upd);
-            }
+            reject(live, &errors);
             After::Nothing
         }
         Step::End(outcome, message) => {
