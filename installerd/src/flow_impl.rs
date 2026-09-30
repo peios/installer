@@ -6,15 +6,16 @@ use std::sync::{Arc, Mutex};
 use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::types;
 use msip_serve::{Flow, Step};
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 
 use crate::executor::{Executor, JobKind};
 use crate::flow::{self, Advance, FlowState};
 
-/// Element types the install flow needs a surface to render.
+/// Element types the install flow needs a surface to render. `table`
+/// is the disk page, which every path through the flow crosses.
 const NEEDED: &[&str] = &[
     types::TEXT,
-    types::SELECT,
+    types::TABLE,
     types::PROGRESS,
     types::LOG,
     types::ACTION,
@@ -58,12 +59,9 @@ impl Flow for Install {
                 self.state = next;
                 Step::Page(spec)
             }
-            Some(Advance::Rescan) => {
-                let disks = self.executor.probe_disks();
-                let mut patch = Map::new();
-                patch.insert("ref".into(), json!("disk.target"));
-                patch.insert("rows".into(), flow::disk_rows(&disks));
-                Step::Patch(vec![patch])
+            Some(Advance::Rescan(mode)) => {
+                let survey = flow::survey(self.executor.as_ref(), mode);
+                Step::Patch(vec![flow::disk_patch(&survey, mode)])
             }
             Some(Advance::Begin { kind, target }) => {
                 self.state = FlowState::Running;

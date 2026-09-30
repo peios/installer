@@ -5,9 +5,10 @@
 
 use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::{Element, types};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-use crate::executor::{Disk, Executor, JobKind, Release};
+use crate::contents::{self, Controller};
+use crate::executor::{Disk, ESP_MIB, Executor, JobKind, Release};
 use crate::version;
 
 /// What the disk is being chosen for. Decides the disk page's wording
@@ -33,8 +34,9 @@ pub enum FlowState {
 pub enum Advance {
     /// Broadcast this page and move to this state.
     Page(FlowState, TurnSpec),
-    /// Re-probe disks and refresh the open page's choices in place.
-    Rescan,
+    /// Look at the machine again and refresh the open disk page in
+    /// place, for the purpose it was opened for.
+    Rescan(Mode),
     /// Start a job; the server issues the progress page and runs it.
     Begin { kind: JobKind, target: String },
 }
@@ -84,7 +86,32 @@ pub fn mode_page() -> TurnSpec {
     }
 }
 
-pub fn disk_page(disks: &[Disk], mode: Mode) -> TurnSpec {
+/// What the disk page is made from: the machine's disks with what is
+/// on them, the controllers no disk showed up for, and -- when the
+/// page is choosing a system to upgrade -- what the medium carries.
+#[derive(Debug, Clone, Default)]
+pub struct Survey {
+    pub disks: Vec<Disk>,
+    pub controllers: Vec<Controller>,
+    pub medium: Option<Release>,
+}
+
+/// Look at the machine for the disk page. The one place the flow reads
+/// disks' contents, because it is the one page that shows them.
+pub fn survey(executor: &dyn Executor, mode: Mode) -> Survey {
+    let mut disks = executor.probe_disks();
+    executor.read_contents(&mut disks);
+    Survey {
+        disks,
+        controllers: executor.unclaimed_controllers(),
+        medium: match mode {
+            Mode::Upgrade => executor.medium_release().ok(),
+            _ => None,
+        },
+    }
+}
+
+pub fn disk_page(survey: &Survey, mode: Mode) -> TurnSpec {
     let intro = match mode {
         Mode::Install => "Choose the disk to install onto. Everything on it will be erased.",
         Mode::Upgrade => "Choose the disk holding the system to upgrade.",
@@ -95,11 +122,19 @@ pub fn disk_page(disks: &[Disk], mode: Mode) -> TurnSpec {
         Mode::Upgrade => "Upgrade: choose a disk",
         Mode::Repair => "Repair: choose a disk",
     };
+    // What the disk is being chosen for, as a hint: the same page serves
+    // all three, and a surface may want to dress it differently for each.
+    let purpose = match mode {
+        Mode::Install => "install",
+        Mode::Upgrade => "upgrade",
+        Mode::Repair => "repair",
+    };
     let mut target = Element::new("disk.target", types::TABLE);
     target.name = Some("Target disk".into());
     target.required = true;
+    target.help = contents::unclaimed_sentence(&survey.controllers);
     target.state.insert("columns".into(), disk_columns());
-    target.state.insert("rows".into(), disk_rows(disks));
+    target.state.insert("rows".into(), disk_rows(survey, mode));
     target.state.insert(
         "empty".into(),
         json!("No disks found. Attach one and rescan."),
@@ -118,8 +153,26 @@ pub fn disk_page(disks: &[Disk], mode: Mode) -> TurnSpec {
             no_validate(action("nav.back", "Back")),
             primary(action("nav.next", "Next")),
         ],
-        ..Default::default()
+        class: vec![purpose.into()],
     }
+}
+
+/// What a rescan changes on the open disk page: the rows, and what it
+/// says about controllers nothing drives, which a disk turning up (or
+/// a driver loading) can make untrue.
+pub fn disk_patch(survey: &Survey, mode: Mode) -> Map<String, Value> {
+    let mut patch = Map::new();
+    patch.insert("ref".into(), json!("disk.target"));
+    patch.insert("rows".into(), disk_rows(survey, mode));
+    patch.insert(
+        "help".into(),
+        match contents::unclaimed_sentence(&survey.controllers) {
+            Some(sentence) => json!(sentence),
+            // Null takes the field away (§3.10).
+            None => Value::Null,
+        },
+    );
+    patch
 }
 
 /// In priority order (a2): a surface too narrow for all of them drops
@@ -133,9 +186,10 @@ pub fn disk_columns() -> Value {
     ])
 }
 
-pub fn disk_rows(disks: &[Disk]) -> Value {
+pub fn disk_rows(survey: &Survey, mode: Mode) -> Value {
     Value::Array(
-        disks
+        survey
+            .disks
             .iter()
             .map(|d| {
                 let mut row = json!({
@@ -146,6 +200,7 @@ pub fn disk_rows(disks: &[Disk]) -> Value {
                         "size": crate::executor::size_text(d.size),
                         "bus": d.bus,
                     },
+                    "detail": disk_detail(d, mode, survey.medium.as_ref()),
                 });
                 if d.medium {
                     row["enabled"] = json!(false);
@@ -157,6 +212,125 @@ pub fn disk_rows(disks: &[Disk]) -> Value {
             })
             .collect(),
     )
+}
+
+/// A row's `detail` (§3.B): what is known of a disk beyond its cells,
+/// for a surface that knows this page and can draw more than a table.
+///
+/// Its keys, all but `bytes` and `partitions` present only when there
+/// is something to say:
+///
+/// - `bytes` -- the disk's size.
+/// - `partitions` -- what is on it now, in disk order: each `number`,
+///   `device`, `start` and `bytes`, `type` (`esp`, `msr`, `msdata`,
+///   `winre`, `linux`, `swap` or empty), `title`, `fs` and `label`,
+///   and, where the filesystem was looked into, `used` bytes and what
+///   it `holds` by name.
+/// - `becomes` -- the partitions an install makes of it, each `role`
+///   (`esp`, `root`), `title`, `start`, `bytes` and `fs`. Only when
+///   the page is choosing a disk to install onto, and only on a disk
+///   that can be chosen.
+/// - `system` -- the Peios system on it: the partition it is `on`, its
+///   `edition` and `version`, and both as `text`.
+/// - `no_system` -- why there is none, when the disk was looked into
+///   and none was found.
+/// - `upgrade` -- when the page is choosing a system to upgrade and
+///   the disk holds one: the release the medium carries as `version`
+///   and `text`, and, when it cannot upgrade this disk, why as
+///   `blocked`.
+pub fn disk_detail(d: &Disk, mode: Mode, medium: Option<&Release>) -> Value {
+    let mut detail = Map::new();
+    detail.insert("bytes".into(), json!(d.size));
+    detail.insert(
+        "partitions".into(),
+        Value::Array(
+            d.partitions
+                .iter()
+                .map(|p| {
+                    let mut part = json!({
+                        "number": p.number,
+                        "device": p.device,
+                        "start": p.start,
+                        "bytes": p.size,
+                        "type": p.kind,
+                        "title": p.title(),
+                        "fs": p.fs,
+                        "label": p.label,
+                    });
+                    if let Some(used) = p.used {
+                        part["used"] = json!(used);
+                    }
+                    if let Some(holds) = &p.holds {
+                        part["holds"] = json!(holds);
+                    }
+                    part
+                })
+                .collect(),
+        ),
+    );
+    if mode == Mode::Install
+        && !d.medium
+        && let Some(becomes) = becomes(d.size)
+    {
+        detail.insert("becomes".into(), becomes);
+    }
+    if let Some((on, release)) = d.system() {
+        detail.insert(
+            "system".into(),
+            json!({
+                "on": on.device,
+                "edition": release.edition,
+                "version": release.version,
+                "text": release.text(),
+            }),
+        );
+        if let (Mode::Upgrade, Some(carry)) = (mode, medium) {
+            let mut upgrade = json!({ "version": carry.version, "text": carry.text() });
+            if let Some(why) = upgrade_blocked(release, carry) {
+                upgrade["blocked"] = json!(why);
+            }
+            detail.insert("upgrade".into(), upgrade);
+        }
+    } else if let Some(why) = d.no_system() {
+        detail.insert("no_system".into(), json!(why));
+    }
+    Value::Object(detail)
+}
+
+/// The layout an install gives a disk of `size` bytes: what
+/// `Real::partition` asks `part` for, said beforehand. `part` keeps the
+/// first MiB and aligns to one, so the ESP starts there and the root
+/// follows it; the root runs to the last sector the backup table leaves
+/// (33 of them, at 512 bytes). `None` for a disk too small to hold it.
+pub fn becomes(size: u64) -> Option<Value> {
+    const MIB: u64 = 1 << 20;
+    let esp = ESP_MIB * MIB;
+    let root_start = MIB + esp;
+    let root = size.checked_sub(root_start + 33 * 512).filter(|r| *r > 0)?;
+    Some(json!([
+        { "role": "esp", "title": "EFI system partition", "start": MIB, "bytes": esp, "fs": "FAT32" },
+        { "role": "root", "title": "Peios", "start": root_start, "bytes": root, "fs": "ext4" },
+    ]))
+}
+
+/// Why this medium, carrying `carry`, cannot upgrade a disk holding
+/// `have`; `None` when it can. The one ordering the disk page and the
+/// confirmation both go by.
+pub fn upgrade_blocked(have: &Release, carry: &Release) -> Option<String> {
+    if have.edition != carry.edition {
+        return Some(format!(
+            "A different edition: this medium cannot move {} to {}.",
+            have.edition, carry.edition
+        ));
+    }
+    match version::is_newer(&carry.version, &have.version) {
+        Ok(true) => None,
+        Ok(false) if have.version == carry.version => {
+            Some("Already current: the disk holds the release this medium carries.".into())
+        }
+        Ok(false) => Some("The disk holds a newer release than this medium carries.".into()),
+        Err(e) => Some(format!("Cannot order the two versions: {e}")),
+    }
 }
 
 pub fn confirm_page(target: &str, label: &str) -> TurnSpec {
@@ -198,19 +372,8 @@ pub fn upgrade_confirm_page(
     medium: Result<Release, String>,
 ) -> TurnSpec {
     let (summary, blocked): (String, Option<String>) = match (&installed, &medium) {
-        (Ok(have), Ok(carry)) if have.edition != carry.edition => (
-            format!(
-                "{label} ({target}) holds {}. This medium carries {}.",
-                have.text(),
-                carry.text()
-            ),
-            Some(format!(
-                "A different edition: this medium cannot move {} to {}.",
-                have.edition, carry.edition
-            )),
-        ),
-        (Ok(have), Ok(carry)) => match version::is_newer(&carry.version, &have.version) {
-            Ok(true) => (
+        (Ok(have), Ok(carry)) => match upgrade_blocked(have, carry) {
+            None => (
                 format!(
                     "{label} ({target}) holds {}. It will be upgraded to {}: the system's \
                      packages are replaced with this medium's, its boot files are rewritten, \
@@ -221,25 +384,13 @@ pub fn upgrade_confirm_page(
                 ),
                 None,
             ),
-            Ok(false) => (
+            blocked => (
                 format!(
                     "{label} ({target}) holds {}. This medium carries {}.",
                     have.text(),
                     carry.text()
                 ),
-                Some(if have.version == carry.version {
-                    "Already current: the disk holds the release this medium carries.".into()
-                } else {
-                    "The disk holds a newer release than this medium carries.".into()
-                }),
-            ),
-            Err(e) => (
-                format!(
-                    "{label} ({target}) holds {}. This medium carries {}.",
-                    have.text(),
-                    carry.text()
-                ),
-                Some(format!("Cannot order the two versions: {e}")),
+                blocked,
             ),
         },
         (Err(why), _) => (
@@ -344,14 +495,14 @@ pub fn advance(
     let choose = |mode: Mode| {
         Some(Advance::Page(
             FlowState::DiskSelect { mode },
-            disk_page(&executor.probe_disks(), mode),
+            disk_page(&survey(executor, mode), mode),
         ))
     };
     match (state, act) {
         (FlowState::Mode, "act.install") => choose(Mode::Install),
         (FlowState::Mode, "act.upgrade") => choose(Mode::Upgrade),
         (FlowState::Mode, "act.repair") => choose(Mode::Repair),
-        (FlowState::DiskSelect { .. }, "act.rescan") => Some(Advance::Rescan),
+        (FlowState::DiskSelect { mode }, "act.rescan") => Some(Advance::Rescan(*mode)),
         (FlowState::DiskSelect { .. }, "nav.back") => {
             Some(Advance::Page(FlowState::Mode, mode_page()))
         }

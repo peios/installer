@@ -9,7 +9,7 @@ use std::thread;
 
 use serde_json::{Value, json};
 
-use installerd::executor::{Disk, DryRun};
+use installerd::executor::{Disk, DryRun, Inventory};
 use installerd::flow_impl::Install;
 use msip::element::types;
 use msip::frame::{MsgType, read_msg, write_msg};
@@ -18,18 +18,27 @@ use msip::surface::{Event, Session};
 use msip_serve::{Server, serve};
 
 fn start_daemon(dir: &std::path::Path) -> std::path::PathBuf {
+    start_daemon_with(
+        dir,
+        Inventory {
+            disks: vec![Disk {
+                device: "/dev/vdb".into(),
+                model: "Virtio disk".into(),
+                size: 8 * 1024 * 1024 * 1024,
+                bus: "virtio".into(),
+                ..Disk::default()
+            }],
+            ..Inventory::default()
+        },
+    )
+}
+
+fn start_daemon_with(dir: &std::path::Path, inventory: Inventory) -> std::path::PathBuf {
     let socket = dir.join("installerd.sock");
     let listener = UnixListener::bind(&socket).unwrap();
     let executor: Arc<dyn installerd::executor::Executor> = Arc::new(DryRun {
         step_ms: 1,
-        disks: Some(vec![Disk {
-            device: "/dev/vdb".into(),
-            model: "Virtio disk".into(),
-            size: 8 * 1024 * 1024 * 1024,
-            bus: "virtio".into(),
-            removable: false,
-            medium: false,
-        }]),
+        inventory: Some(inventory),
     });
     let server = Server::new("install", "installerd/test", move || {
         Box::new(Install::new(Arc::clone(&executor)))
