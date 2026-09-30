@@ -339,6 +339,10 @@ pub struct DryRun {
     pub step_ms: u64,
     /// A machine to pretend to be, or `None` to probe this one.
     pub inventory: Option<Inventory>,
+    /// The phase a job is to fail part way through, by the end of its ref
+    /// (`copy` for `phase.copy`), so that a surface can be shown a job
+    /// going wrong. `None` for one that finishes.
+    pub fail_at: Option<String>,
 }
 
 impl DryRun {
@@ -412,9 +416,23 @@ impl Executor for DryRun {
         progress.log(format!("dry run: no bytes will be written to {target}"));
         for phase in self.phases(kind) {
             progress.log(format!("{} ({target})…", phase.name));
-            for pct in [0u8, 25, 50, 75, 100] {
+            let fails = self
+                .fail_at
+                .as_deref()
+                .is_some_and(|at| phase.r#ref.strip_prefix("phase.") == Some(at));
+            // The copy is the long one of a real install, and says how far
+            // it has got many times over; the rest are soon done.
+            let step = if phase.r#ref == "phase.copy" { 4 } else { 25 };
+            for pct in (0..=100u8).step_by(step) {
                 progress.phase(phase.r#ref, pct);
                 sleep(Duration::from_millis(self.step_ms));
+                if fails && pct >= 50 {
+                    progress.log(format!("  dry run: told to fail at {}", phase.r#ref));
+                    return Err(format!(
+                        "dry run: stopped part way through {}, as it was told to",
+                        phase.name.to_lowercase()
+                    ));
+                }
             }
             progress.log(format!("{}: ok", phase.name));
         }

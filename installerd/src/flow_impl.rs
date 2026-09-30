@@ -64,10 +64,9 @@ impl Flow for Install {
                 Step::Patch(vec![flow::disk_patch(&survey, mode)])
             }
             Some(Advance::Reject(errors)) => Step::Reject(errors),
-            Some(Advance::Begin { kind, target }) => {
+            Some(Advance::Begin { kind, target, page }) => {
                 self.state = FlowState::Running;
                 self.kind = Some(kind);
-                let page = flow::progress_page(kind, self.executor.as_ref());
                 let executor = Arc::clone(&self.executor);
                 let found = Arc::clone(&self.found);
                 Step::Work {
