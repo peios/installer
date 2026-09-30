@@ -1,5 +1,6 @@
 pub mod flow;
 pub mod flow_impl;
+pub mod network;
 pub mod setup;
 
 /// What oobed calls itself in operational messages.

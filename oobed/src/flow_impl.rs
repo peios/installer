@@ -52,6 +52,7 @@ impl Flow for Oobe {
                 self.page = next;
                 Step::Page(spec)
             }
+            Some(Advance::Patch(patch)) => Step::Patch(vec![patch]),
             Some(Advance::Reject(errors)) => Step::Reject(errors),
             Some(Advance::Apply {
                 account,

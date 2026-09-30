@@ -5,7 +5,8 @@ oobed \- Peios first-boot setup service
 .B oobed
 .RB [ --socket " " PATH ]
 .RB [ --browser " " PATH " | " --no-browser ]
-.RB [ --dry-run ]
+.RB [ --dry-run
+.RB [ --net-status " " FILE ]]
 .SH DESCRIPTION
 .B oobed
 owns the privileged first-boot conversation.  It creates the first
@@ -15,6 +16,11 @@ its own service definitions only after setup completes.
 The terminal presentation is provided by
 .BR oobe-tui (1)
 so that user-interface code does not own account or registry privilege.
+.PP
+The network page says what
+.B net status
+prints of the machine's network, an interface to a line, and checks again when
+asked; it changes nothing, and nothing on it has to be answered.
 .PP
 Where the browser program is installed, setup can also be done in a browser,
 as the GXWI overlay: before it accepts connections,
@@ -51,6 +57,14 @@ Exercise the setup conversation without changing the machine.  No account is
 created and no overlay is set, so a browser program is pointed at the socket
 by hand.
 .TP
+.BI --net-status " FILE"
+With
+.BR --dry-run ,
+take FILE to be what
+.B net status
+prints, read afresh each time the network page asks.  Without it, a dry run
+cannot say anything of the network.
+.TP
 .BR -h , " --help"
 Show command help.
 .TP
@@ -74,4 +88,5 @@ Default MSIP socket.
 .SH SEE ALSO
 .BR oobe-tui (1),
 .BR lps (1),
+.BR net (1),
 .BR reg (1)

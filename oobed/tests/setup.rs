@@ -26,6 +26,8 @@ struct Recorder {
     /// Make account creation fail, to exercise the path where setup
     /// must NOT retire itself.
     account_fails: bool,
+    /// What `net status` prints, or nothing for a netd that cannot be asked.
+    net: Mutex<Option<String>>,
 }
 
 /// What `Setup::retire` records instead of ending the process. The real
@@ -35,8 +37,8 @@ struct Recorder {
 const RETIRED: &str = "retire";
 
 impl Setup for Recorder {
-    fn network_status(&self) -> String {
-        "test network".into()
+    fn net_status(&self) -> Option<String> {
+        self.net.lock().unwrap().clone()
     }
     fn suggested_hostname(&self) -> String {
         "peios-test".into()
@@ -367,6 +369,69 @@ fn the_name_setup_runs_as_cannot_be_taken() {
         );
     }
     assert!(setup.done.lock().unwrap().is_empty(), "nothing applied");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A cable plugged in while the network page is open is seen by checking
+/// again, which changes the page for every surface without leaving it.
+#[test]
+fn checking_the_network_again_changes_the_page_in_place() {
+    let dir = scratch("network");
+    let setup = Arc::new(Recorder::default());
+    let unplugged = "readiness  link\n\neth0  [x]\n  verdict    JOIN(default) by wired\n  \
+                     state      up, no-carrier\n  readiness  absent\n";
+    *setup.net.lock().unwrap() = Some(unplugged.into());
+    let mut s = Surface::open(&dir, Arc::clone(&setup));
+    s.press("nav.next", &[]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.id(), "oobe.network");
+    let status = |s: &Surface| {
+        s.session
+            .page()
+            .unwrap()
+            .element("network.status")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        status(&s).state["text"],
+        "This machine is not connected to a network.\neth0: not connected."
+    );
+    assert_eq!(
+        status(&s).state["detail"]["interfaces"][0]["state"],
+        "unplugged"
+    );
+    let seq = s.seq();
+
+    *setup.net.lock().unwrap() = Some(
+        "readiness  routed\n\neth0  [x]\n  verdict    JOIN(default) by wired\n  \
+         state      up, carrier\n  readiness  routed\n  address    192.168.1.20/24\n  \
+         gateway    192.168.1.1\n"
+            .into(),
+    );
+    s.press("network.refresh", &[]);
+    assert!(matches!(s.recv(), Event::Updated));
+    assert_eq!(
+        (s.id(), s.seq()),
+        ("oobe.network".into(), seq),
+        "the same page"
+    );
+    assert_eq!(
+        status(&s).state["text"],
+        "This machine is connected to a network.\n\
+         eth0: connected, as 192.168.1.20/24, through 192.168.1.1."
+    );
+    assert_eq!(status(&s).state["detail"]["readiness"], "routed");
+
+    // netd gone: what it said of the interfaces goes with it.
+    *setup.net.lock().unwrap() = None;
+    s.press("network.refresh", &[]);
+    assert!(matches!(s.recv(), Event::Updated));
+    assert_eq!(
+        status(&s).state["text"],
+        "Could not ask netd about the network."
+    );
+    assert!(!status(&s).state.contains_key("detail"));
     std::fs::remove_dir_all(&dir).ok();
 }
 
