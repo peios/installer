@@ -1,0 +1,378 @@
+/* One full-bleed stage. The intro plays centre stage on a field of stars,
+   then the lockup glides to the corner and the first page rises in a
+   left-aligned column. One deliberate dark look: Fenestra's dark tokens and
+   the three glows of the fenesh wallpaper. */
+
+@font-face {
+    font-family: "Schibsted Grotesk";
+    font-weight: 400 900;
+    font-display: swap;
+    src: url("fonts/schibsted-grotesk.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Manrope";
+    font-weight: 200 800;
+    font-display: swap;
+    src: url("fonts/manrope.woff2") format("woff2");
+}
+
+:root {
+    color-scheme: dark;
+    --void: #06080c;
+    --surface-1: rgb(255 255 255 / 6%);
+    --surface-2: rgb(255 255 255 / 10%);
+    --border-default: rgb(255 255 255 / 10%);
+    --border-strong: rgb(255 255 255 / 16%);
+    --text-primary: #f3f6fb;
+    --text-body: #e8ecf3;
+    --text-secondary: #b9c2cf;
+    --text-muted: #a3adbc;
+    --accent: #62d2ff;
+    --accent-quiet: #9be4ff;
+    --accent-glow: rgb(98 210 255 / 55%);
+    --glow-blue: rgb(29 74 134 / 85%);
+    --glow-violet: rgb(59 42 99 / 90%);
+    --glow-teal: rgb(15 90 90 / 85%);
+    --ok: #5fe0a8;
+    --wait: #f0b86e;
+    --danger: #ff9e92;
+
+    --font-display: "Schibsted Grotesk", system-ui, sans-serif;
+    --font-text: "Manrope", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+    --gutter: clamp(16px, 8vw, 128px);
+    --ease-swift: cubic-bezier(.76, 0, .24, 1);
+    --ease-out: cubic-bezier(.2, .7, .2, 1);
+}
+
+html, body { height: 100%; margin: 0; }
+body {
+    background: var(--void);
+    color: var(--text-body);
+    font: 400 15px/1.55 var(--font-text);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+.stage { position: relative; min-height: 100%; }
+
+/* ---- backdrop: three glows, the stars, a vignette ---- */
+.aurora { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+.aurora i {
+    position: absolute;
+    width: 95vmax; height: 95vmax;
+    border-radius: 50%;
+    translate: -50% -50%;
+    opacity: 0;
+    transition: opacity 2.6s ease;
+}
+.aurora .blue   { left: 12%; top: 28%;  background: radial-gradient(closest-side, var(--glow-blue), transparent); animation: drift-a 38s ease-in-out infinite alternate; }
+.aurora .violet { left: 92%; top: 42%;  background: radial-gradient(closest-side, var(--glow-violet), transparent); animation: drift-b 44s ease-in-out infinite alternate; }
+.aurora .teal   { left: 62%; top: 105%; background: radial-gradient(closest-side, var(--glow-teal), transparent); animation: drift-c 50s ease-in-out infinite alternate; }
+.aurora-on .aurora i { opacity: .8; }
+@keyframes drift-a { to { transform: translate(8vmax, 6vmax) scale(1.12); } }
+@keyframes drift-b { to { transform: translate(-10vmax, -4vmax) scale(.9); } }
+@keyframes drift-c { to { transform: translate(-6vmax, -8vmax) scale(1.15); } }
+
+#field { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.vignette {
+    position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 50%, transparent 45%, rgb(0 0 0 / 55%) 100%);
+}
+
+/* ---- the lockup: mark and wordmark, the same proportions at both sizes ---- */
+.lockup {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    color: var(--text-primary);
+}
+.mark-wrap { position: relative; display: block; flex: none; width: 1.35em; height: 1.35em; }
+.mark { display: block; width: 100%; height: 100%; overflow: visible; color: var(--accent); }
+/* The dash is a hair longer than the path so its ends overlap: exactly 1
+   leaves a rounding gap where the outline closes. */
+.mark .frame { fill: none; stroke: currentColor; stroke-width: 2; stroke-dasharray: 1.02 2; stroke-dashoffset: 0; }
+.mark .core { fill: currentColor; transform-box: fill-box; transform-origin: 50% 100%; }
+.word {
+    display: flex;
+    margin-left: .32em;
+    padding-block: .12em;
+    font: 700 1em/1 var(--font-display);
+    letter-spacing: -.025em;
+    white-space: nowrap;
+}
+.word span { display: inline-block; }
+.word span:nth-child(1) { --i: 0; }
+.word span:nth-child(2) { --i: 1; }
+.word span:nth-child(3) { --i: 2; }
+.word span:nth-child(4) { --i: 3; }
+.word span:nth-child(5) { --i: 4; }
+
+/* the intro's copy of the lockup, centre stage */
+.intro {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    pointer-events: none;
+    z-index: 3;
+}
+.intro .lockup {
+    font-size: clamp(44px, 10vw, 118px);
+    transition: transform 1.05s var(--ease-swift);
+}
+.intro .mark { filter: drop-shadow(0 0 .1em var(--accent-glow)); transition: filter 1s ease; }
+/* dash 1, gap 2: an offset of 1.05 leaves the whole outline in the gap */
+.intro .mark .frame { stroke-dashoffset: 1.05; transition: stroke-dashoffset .8s cubic-bezier(.65, 0, .35, 1); }
+/* the stars make the core; the solid one fades in beneath them as they land */
+.intro .mark .core { opacity: 0; transition: opacity .45s ease; }
+.intro .formed .mark .core { opacity: 1; }
+.intro .drawn .mark .frame { stroke-dashoffset: 0; }
+.intro .mark-wrap::after {
+    content: ""; position: absolute; inset: 0;
+    border: 2px solid var(--accent); border-radius: 30%;
+    opacity: 0; pointer-events: none;
+}
+.intro .popped .mark-wrap::after { animation: ring 1.2s var(--ease-out); }
+.intro .popped .mark { animation: flash .9s ease-out; }
+@keyframes ring {
+    from { transform: scale(.9); opacity: .9; border-radius: 26%; }
+    to { transform: scale(3.4); opacity: 0; border-radius: 50%; }
+}
+@keyframes flash {
+    30% { filter: drop-shadow(0 0 .45em var(--accent)) brightness(1.6); }
+}
+.intro .word { max-width: 0; margin-left: 0; overflow: hidden; transition: max-width 1s var(--ease-swift), margin-left 1s var(--ease-swift); }
+.intro .word span { opacity: 0; transform: translateY(.55em); filter: blur(.08em); transition: opacity .6s, transform .7s var(--ease-out), filter .6s; transition-delay: calc(var(--i) * 70ms + 180ms); }
+.intro .word-in .word { max-width: 4.4em; margin-left: .32em; }
+.intro .word-in .word span { opacity: 1; transform: none; filter: none; }
+.settled .intro .mark { filter: none; }
+
+/* the release this medium carries, under the intro's lockup */
+.intro-stack { position: relative; }
+.release {
+    position: absolute; left: 50%; top: 100%;
+    translate: -50% 0;
+    margin-top: clamp(12px, 2vw, 22px);
+    display: flex; align-items: baseline; gap: .55em;
+    font: 500 clamp(16px, 2.2vw, 26px)/1 var(--font-display);
+    letter-spacing: .22em;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    opacity: 0;
+    transition: opacity 1s ease, letter-spacing 1.6s var(--ease-out);
+}
+.release span { font: 400 .72em/1 var(--font-text); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.named .release { opacity: 1; letter-spacing: -.005em; }
+.settled .release { opacity: 0; transition: opacity .35s ease; }
+.intro .gone { visibility: hidden; }
+
+/* the header's copy, where the intro's lands */
+.top {
+    position: absolute;
+    top: 28px; left: var(--gutter);
+    z-index: 2;
+    display: flex; align-items: center; gap: 14px;
+}
+.top .lockup { font-size: 22px; opacity: 0; }
+.top .lockup.shown { opacity: 1; }
+/* the release, beside the name and set apart by a hairline */
+.edition {
+    display: flex; align-items: baseline; gap: 7px;
+    padding: 3px 0 3px 14px;
+    border-left: 1px solid var(--border-strong);
+    font: 500 14px/1 var(--font-text);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity .7s ease .15s;
+}
+.edition span { font-weight: 400; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.edition.shown { opacity: 1; }
+.edition:empty, .release:empty { display: none; }
+
+/* ---- the page: one at a time ---- */
+.page {
+    --dir: 1;
+    position: relative; z-index: 2;
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding-inline: var(--gutter);
+    padding-block: 96px 84px;
+    box-sizing: border-box;
+}
+.page:not(.live) { pointer-events: none; }
+
+/* A page arrives from the side it is heading and leaves the other way; the
+   very first one rises from below as the intro settles. Each part of a page
+   carries its place in the order as --i, and follows the one before. */
+.turn { display: flex; flex-direction: column; gap: 22px; max-width: 640px; }
+.turn .rise {
+    opacity: 0; transform: translateX(calc(var(--dir) * 32px));
+    transition: opacity .55s ease, transform .8s var(--ease-out);
+    transition-delay: calc(var(--i) * 70ms + 80ms);
+}
+.turn.first .rise { transform: translateY(18px); transition-duration: .7s, .9s; transition-delay: calc(var(--i) * 90ms + 520ms); }
+.turn.in .rise { opacity: 1; transform: none; }
+.turn.out .rise {
+    opacity: 0; transform: translateX(calc(var(--dir) * -32px));
+    transition-duration: .25s, .35s;
+    transition-timing-function: ease-in;
+    transition-delay: calc(var(--i) * 25ms);
+}
+
+h1 {
+    margin: 0;
+    font: 700 clamp(2.3rem, 5.6vw, 4.1rem)/1.02 var(--font-display);
+    letter-spacing: -.03em;
+    color: var(--text-primary);
+    text-wrap: balance;
+}
+.lede { margin: 0; max-width: 44ch; font-size: 1.06rem; color: var(--text-secondary); }
+.lede.why { font: 400 13px/1.6 var(--font-mono); color: var(--text-muted); max-width: 60ch; overflow-wrap: anywhere; }
+
+/* ---- the first page: what to do ---- */
+.menu { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.act {
+    --mx: 50%; --my: 50%;
+    width: 100%;
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px;
+    padding: 15px 18px;
+    border: 1px solid transparent; border-radius: 14px;
+    background: transparent;
+    color: var(--text-body);
+    font: inherit; text-align: left;
+    cursor: pointer;
+    position: relative; overflow: hidden;
+    transition: background-color .25s, border-color .25s;
+}
+.act::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(220px circle at var(--mx) var(--my), rgb(98 210 255 / 13%), transparent 70%);
+    opacity: 0; transition: opacity .3s;
+}
+.act.hl { background: var(--surface-1); border-color: var(--border-default); }
+.act.hl::before { opacity: 1; }
+.act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.act .key {
+    display: grid; place-items: center;
+    width: 26px; height: 26px;
+    border: 1px solid var(--border-strong); border-radius: 7px;
+    font: 500 12px/1 var(--font-mono);
+    color: var(--text-muted);
+}
+.act .name { font: 600 1.28rem/1.2 var(--font-display); letter-spacing: -.01em; color: var(--text-primary); min-width: 0; }
+.act .go { width: 18px; height: 18px; color: var(--text-muted); opacity: .35; transition: transform .35s var(--ease-out), opacity .25s, color .25s; }
+.act.hl .go { opacity: 1; transform: translateX(4px); color: var(--text-primary); }
+.act.primary .key { border-color: var(--accent); color: var(--accent); }
+.act.primary .name { color: var(--accent-quiet); }
+.act.primary.hl .go { color: var(--accent); }
+/* One that cannot be chosen can still be reached, and says why. */
+.act[aria-disabled="true"] { cursor: not-allowed; }
+.act[aria-disabled="true"] .name, .act[aria-disabled="true"] .key { color: var(--text-muted); opacity: .6; border-color: var(--border-default); }
+.act[aria-disabled="true"] .go { visibility: hidden; }
+.menu-help { margin: 0; min-height: 1.55em; padding-left: 18px; font-size: 13.5px; color: var(--text-muted); }
+
+/* ---- the bottom bar: what the installer is doing, then how it stands ---- */
+.bar {
+    position: fixed; z-index: 4;
+    left: var(--gutter); right: var(--gutter);
+    bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;
+    pointer-events: none;
+    font: 400 11.5px/1.6 var(--font-mono);
+    color: var(--text-muted);
+}
+.bar > * { pointer-events: auto; }
+/* a longer page scrolls under the bar; this keeps the bar readable over it */
+.bar::before {
+    content: ""; position: fixed; left: 0; right: 0; bottom: 0; z-index: -1;
+    height: calc(84px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, rgb(6 8 12 / 92%) 35%, transparent);
+    pointer-events: none;
+}
+.left { position: relative; min-width: 0; flex: 1; }
+.ticker { list-style: none; margin: 0; padding: 0; transition: opacity .5s; }
+.ticker li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: type .5s steps(24, end) both; }
+.ticker .k { color: var(--accent-quiet); display: inline-block; min-width: 8ch; }
+.ticker li:not(:last-child) { opacity: .45; }
+@keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.settled .ticker { opacity: 0; }
+.status {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; gap: 8px;
+    opacity: 0; transition: opacity .6s 1.3s;
+    white-space: nowrap;
+}
+.status span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.settled .status { opacity: 1; }
+.dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 rgb(95 224 168 / 50%); animation: pulse 2.4s ease-out infinite; transition: background-color .4s; }
+.status.bad .dot { background: var(--danger); animation: none; }
+.status.wait .dot { background: var(--wait); animation: none; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 7px rgb(95 224 168 / 0%); } 100% { box-shadow: 0 0 0 0 rgb(95 224 168 / 0%); } }
+
+.ghost {
+    font: inherit; color: var(--text-muted);
+    border: 1px solid var(--border-default); border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+    white-space: nowrap;
+    transition: color .2s, border-color .2s, opacity .4s;
+    /* legible over whatever the page scrolls beneath the bar */
+    background: rgb(6 8 12 / 72%);
+    backdrop-filter: blur(8px);
+}
+.ghost:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ghost svg { width: 13px; height: 13px; }
+.right { display: flex; align-items: flex-end; gap: 8px; }
+.intro-btns { display: grid; justify-items: end; }
+.intro-btns > * { grid-area: 1 / 1; }
+#replay { opacity: 0; visibility: hidden; }
+.settled #replay { opacity: 1; visibility: visible; transition-delay: 1.4s; }
+.settled #skip { opacity: 0; visibility: hidden; position: absolute; right: 0; }
+
+.toast {
+    position: fixed; z-index: 5;
+    left: 50%; bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+    translate: -50% 0;
+    max-width: calc(100% - 32px); box-sizing: border-box;
+    padding: 10px 16px;
+    border: 1px solid var(--border-default); border-radius: 12px;
+    background: rgb(14 17 22 / 82%);
+    backdrop-filter: blur(12px);
+    color: var(--text-secondary);
+    font-size: 13.5px;
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .3s, transform .4s var(--ease-out);
+    pointer-events: none;
+}
+.toast.on { opacity: 1; transform: none; }
+.toast b { color: var(--text-primary); font-weight: 600; }
+
+/* read out, not shown */
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.noscript { position: fixed; inset: auto 0 40% 0; margin: 0; text-align: center; color: var(--text-secondary); }
+
+/* forced colours (Windows High Contrast and the like): the backdrop goes,
+   and every choice keeps an edge the system colours draw */
+@media (forced-colors: active) {
+    #field, .aurora, .vignette { display: none; }
+    .act, .toast { border: 1px solid CanvasText; }
+    .act.hl { outline: 3px solid Highlight; outline-offset: 1px; }
+}
+
+/* skip and replay put everything where it goes without playing transitions */
+.instant, .instant * { transition: none !important; animation: none !important; }
+
+@media (max-width: 520px) {
+    .page { padding-block: 92px 88px; }
+    .act { padding: 13px 14px; gap: 12px; }
+    .act .name { font-size: 1.12rem; }
+    .rp-label { display: none; }
+    .ghost { padding: 8px 11px; }
+    .menu-help { padding-left: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-delay: 0s !important; }
+}
