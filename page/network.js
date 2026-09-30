@@ -37,6 +37,9 @@ const STATES = {
 /** An address without the length of its prefix, and without the brackets
     an IPv6 address has in a location. */
 const bare = (address) => address.replace(/\/\d+$/, "").replace(/^\[(.*)\]$/, "$1").toLowerCase();
+/** An IPv6 link-local address (fe80::/10), which every interface has and
+    nothing beyond the link it is on can reach: not worth a person's reading. */
+const linkLocal = (address) => /^fe[89ab][0-9a-f]:/i.test(bare(address));
 
 /**
  * The network page. `turn` is where a page is drawn; `el` and `rise` make its
@@ -113,7 +116,8 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
         const [said, how] = STATES[net.state] ?? [net.state, ""];
         const wireless = /^wl/.test(net.name);
         const facts = [];
-        if (net.addresses?.length) facts.push(el("span", "", net.addresses.join(" · ")));
+        const addresses = (net.addresses ?? []).filter((a) => !linkLocal(a));
+        if (addresses.length) facts.push(el("span", "", addresses.join(" · ")));
         if (net.gateway) facts.push(el("span", "", `via ${net.gateway}`));
         if (net.dns?.length) facts.push(el("span", "", `DNS ${net.dns.join(", ")}`));
         const hardware = [net.hardware, net.driver].filter(Boolean).join(" · ");
