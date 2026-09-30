@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::types;
+use msip::msg::Outcome;
 use msip_serve::{Flow, Step};
 use serde_json::Value;
 
@@ -20,6 +21,9 @@ const NEEDED: &[&str] = &[
     types::LOG,
     types::ACTION,
 ];
+
+/// What the conversation ends with once the machine is on its way down.
+pub const RESTARTING: &str = "Restarting the machine.";
 
 pub struct Install {
     executor: Arc<dyn Executor>,
@@ -78,8 +82,22 @@ impl Flow for Install {
                     }),
                 }
             }
+            // Asked first and ended after: a restart peinit will not take is
+            // said on the page, which stays, and one it takes is said to
+            // every surface before the machine goes down.
+            Some(Advance::Restart) => match self.executor.restart() {
+                Ok(()) => Step::End(Outcome::Complete, Some(RESTARTING.into())),
+                Err(why) => Step::Reject(vec![("act.reboot".into(), why)]),
+            },
             None => Step::Refuse("answer does not advance the flow"),
         }
+    }
+
+    fn after_job(&mut self) -> Option<TurnSpec> {
+        let kind = self.kind?;
+        let message = self.completion_message()?;
+        self.state = FlowState::Done;
+        Some(flow::done_page(kind, &message))
     }
 
     fn completion_message(&self) -> Option<String> {

@@ -42,6 +42,8 @@ pub enum FlowState {
         target: String,
     },
     Running,
+    /// A job has finished, and the page says what it came to.
+    Done,
 }
 
 /// What a valid answer leads to.
@@ -61,6 +63,8 @@ pub enum Advance {
         target: String,
         page: TurnSpec,
     },
+    /// Restart the machine, a job having finished.
+    Restart,
 }
 
 fn text(r#ref: &str, body: &str) -> Element {
@@ -612,6 +616,31 @@ pub fn progress_page(
     }
 }
 
+/// What a job that finished goes on to: what it came to, in `message`,
+/// and the restart it leaves the machine wanting. Every job here changes
+/// what the machine starts from, so every one offers it.
+///
+/// The conversation stays open on this page rather than ending with the
+/// job, because the restart is asked of installerd: the surfaces hold no
+/// privilege, and the machine is not theirs to take down.
+pub fn done_page(kind: JobKind, message: &str) -> TurnSpec {
+    let (job, name) = match kind {
+        JobKind::Install => ("install", "Installation complete"),
+        JobKind::Upgrade => ("upgrade", "Upgrade complete"),
+        _ => ("repair", "Repair complete"),
+    };
+    TurnSpec {
+        id: Some(format!("{job}.done")),
+        name: Some(name.into()),
+        elements: vec![
+            text("done.summary", message),
+            primary(action("act.reboot", "Reboot now")),
+            no_validate(action("nav.start", "Back to the start")),
+        ],
+        class: vec!["done".into()],
+    }
+}
+
 /// The tree itself.
 pub fn advance(
     state: &FlowState,
@@ -719,6 +748,8 @@ pub fn advance(
             };
             begin(kind, target, None, None)
         }
+        (FlowState::Done, "act.reboot") => Some(Advance::Restart),
+        (FlowState::Done, "nav.start") => Some(Advance::Page(FlowState::Mode, mode_page())),
         _ => None,
     }
 }

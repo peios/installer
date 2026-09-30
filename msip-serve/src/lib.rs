@@ -109,7 +109,8 @@ pub enum Step {
     /// Domain validation failed: stamp these `ref -> message` errors
     /// onto the open page, which stays open for every surface.
     Reject(Vec<(String, String)>),
-    /// Show `page`, then run `job`; its outcome ends the conversation.
+    /// Show `page`, then run `job`. A job that fails ends the conversation;
+    /// one that finishes goes on to [`Flow::after_job`], or ends it.
     Work { page: TurnSpec, job: Job },
     /// Finish here.
     End(Outcome, Option<String>),
@@ -129,6 +130,15 @@ pub trait Flow: Send + 'static {
     fn advance(&mut self, answer: &ValidAnswer) -> Step;
     /// What to say when a job finished successfully.
     fn completion_message(&self) -> Option<String> {
+        None
+    }
+    /// The page a job that finished goes on to, or nothing for its end to
+    /// be the conversation's, with [`Flow::completion_message`] as what is
+    /// said. Asked once, of this flow, when the job has returned.
+    ///
+    /// For a job whose finishing leaves something to do with the machine:
+    /// an installation, after which the machine is restarted.
+    fn after_job(&mut self) -> Option<TurnSpec> {
         None
     }
     /// The conversation has ended and this flow is about to be dropped.
@@ -225,6 +235,15 @@ impl Server {
             let result = job(&Reporter(&server));
             let mut guard = server.live.lock().unwrap();
             if let Some(live) = guard.as_mut() {
+                if result.is_ok()
+                    && let Some(next) = live.flow.after_job()
+                {
+                    // The conversation goes on, on a page that takes
+                    // answers again.
+                    live.working = false;
+                    live.issue(next);
+                    return;
+                }
                 let (outcome, message) = match result {
                     Ok(()) => (Outcome::Complete, live.flow.completion_message()),
                     Err(e) => (Outcome::Failed, Some(e)),

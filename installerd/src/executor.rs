@@ -272,6 +272,11 @@ pub trait Executor: Send + Sync + 'static {
         target: &str,
         progress: &dyn Progress,
     ) -> Result<Option<String>, String>;
+    /// Restart the machine, once a job has finished and someone has asked
+    /// for it. `Ok` is the service manager having taken the request: the
+    /// machine is on its way down, and whoever asked is told so before it
+    /// gets there. An `Err` is a sentence for the page.
+    fn restart(&self) -> Result<(), String>;
 }
 
 pub const INSTALL_PHASES: &[Phase] = &[
@@ -437,5 +442,12 @@ impl Executor for DryRun {
             progress.log(format!("{}: ok", phase.name));
         }
         Ok(None)
+    }
+
+    /// Restarts nothing: the machine a dry run is on is not one it may
+    /// take down. It is taken to have gone, which is as far as a surface
+    /// can tell from here.
+    fn restart(&self) -> Result<(), String> {
+        Ok(())
     }
 }
