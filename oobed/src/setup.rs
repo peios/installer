@@ -8,6 +8,8 @@ use std::sync::OnceLock;
 
 use msip_serve::Progress;
 
+use crate::network::Manual;
+
 /// The account first-boot setup in a browser runs as.
 ///
 /// GXWI runs an overlay only as an account that needs no credential, and a
@@ -56,6 +58,9 @@ pub trait Setup: Send + Sync + 'static {
     fn account_exists(&self, name: &str) -> bool;
     fn create_account(&self, name: &str, password: &str, p: &dyn Progress) -> Result<(), String>;
     fn set_hostname(&self, name: &str, p: &dyn Progress) -> Result<(), String>;
+    /// Give an interface the address chosen for it by hand
+    /// ([`Manual::registry`]).
+    fn set_address(&self, manual: &Manual, p: &dyn Progress) -> Result<(), String>;
     /// Setup is done: make sure it does not happen again.
     ///
     /// Returns nothing and reports nothing, because there is nobody left
@@ -371,6 +376,15 @@ impl Setup for Real {
         Self::run(p, "reg", &["set", NETWORK_KEY, "Hostname", &data])
     }
 
+    fn set_address(&self, manual: &Manual, p: &dyn Progress) -> Result<(), String> {
+        p.log(format!("giving {} {}", manual.interface, manual.address));
+        for (key, name, data) in manual.registry() {
+            // -p: the profile and the rule are new keys.
+            Self::run(p, "reg", &["set", "-p", &key, name, &data])?;
+        }
+        Ok(())
+    }
+
     fn retire(&self) {
         self.send_browsers_away();
         for key in RETIRE_KEYS {
@@ -440,6 +454,12 @@ impl Setup for DryRun {
     }
     fn set_hostname(&self, name: &str, p: &dyn Progress) -> Result<(), String> {
         p.log(format!("dry run: would set the hostname to {name}"));
+        Ok(())
+    }
+    fn set_address(&self, manual: &Manual, p: &dyn Progress) -> Result<(), String> {
+        for (key, name, data) in manual.registry() {
+            p.log(format!("dry run: would set {key} {name} {data}"));
+        }
         Ok(())
     }
     fn retire(&self) {
