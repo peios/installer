@@ -62,7 +62,8 @@ disk is really to be erased, the installation as it runs, and the restart.
   again, on another boot, which is the machine starting from the medium; or,
   after three minutes of nothing, what the machine's screen might be showing.
 
-Of first-boot setup, the welcome, the network and the account are drawn.
+Of first-boot setup, the welcome, the network, the account and the naming
+are drawn.
 
 - **The welcome**: the greeting, going round the languages, and the language,
   which `oobed` shows and cannot yet let be chosen. The keyboard layout
@@ -86,11 +87,16 @@ Of first-boot setup, the welcome, the network and the account are drawn.
   browser's own until Next, and a password is never sent to anyone else
   looking. Opened by an address that is not the loopback, the page says the
   password will cross the network unencrypted.
+- **The naming**: the machine's name, offered by `oobed`, shown as the
+  machine it will be as it is typed, and whether it is one a network will
+  carry yet, by the rule `oobed` sends with it (`max`, `pattern`). The name
+  offered can be had back in one press. Joining a domain is shown greyed,
+  with why.
 
 An upgrade's and a repair's pages are not drawn yet, nor the rest of
 first-boot setup. An action that leads to a page not drawn here says so
 instead of moving everyone on to it: today, the disk page's Next for an
-upgrade or a repair, and the account page's Next.
+upgrade or a repair, and the naming page's Finish, which would apply setup.
 
 The pages draw what `installerd` has only lately learned to say (the
 `detail` of each row of disks, of the confirmation's sentence and of the
@@ -126,13 +132,15 @@ dev/host-oobe.sh                                   # http://127.0.0.1:7791/
 node dev/browser/welcome.mjs                       # the welcome, and waking into it
 node dev/browser/network.mjs                       # the network page
 node dev/browser/account.mjs                       # the account page
+node dev/browser/naming.mjs                        # the naming page
 ```
 
 The network the pretended `oobed` reports is what `dev/net-status.txt` says
 `net status` prints (`NET_STATUS=FILE dev/host-oobe.sh` for another). It is
 read again each time the page checks, so editing it and pressing Check again
-is a cable plugged in or pulled. `network.mjs` and `account.mjs` start their
-own `oobed` and `oobe-gxwi`, and need nothing else running. `account.mjs`
+is a cable plugged in or pulled. `network.mjs`, `account.mjs` and
+`naming.mjs` start their own `oobed` and `oobe-gxwi`, and need nothing else
+running. `account.mjs`
 serves on every address, to open the page by one that is not the loopback.
 
 `restart.mjs` starts its own `oobed` and `oobe-gxwi` to come back as, so it

@@ -924,6 +924,32 @@ h1 {
 }
 .clear svg { width: 16px; height: 16px; margin-top: 2px; color: var(--wait); }
 
+/* ---- first-boot setup's naming ---- */
+.turn[data-kind="naming"] { max-width: 520px; }
+.turn[data-kind="naming"] .input { height: 48px; font-size: 17px; }
+.turn[data-kind="naming"] .input[data-off] { border-color: rgb(240 184 110 / 60%); }
+/* the machine as it will be, as its name is typed */
+.machine {
+    display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 16px;
+    padding: 16px 18px;
+    border: 1px solid rgb(98 210 255 / 28%); border-radius: 16px;
+    background: linear-gradient(110deg, rgb(98 210 255 / 9%), rgb(157 140 255 / 6%) 55%, rgb(255 255 255 / 2%));
+    transition: border-color .3s, background .3s;
+}
+.machine-glyph { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 14px; background: rgb(98 210 255 / 12%); color: var(--accent-quiet); }
+.machine-glyph svg { width: 30px; height: 30px; }
+.machine-said { display: grid; gap: 4px; min-width: 0; }
+.machine-name { font: 600 1.45rem/1.15 var(--font-mono); color: var(--text-primary); overflow-wrap: anywhere; }
+.machine-what { font-size: 13px; color: var(--text-secondary); }
+.machine.nobody .machine-name { font: 500 1.1rem/1.2 var(--font-text); color: var(--text-muted); }
+.machine.off { border-color: rgb(240 184 110 / 40%); background: rgb(240 184 110 / 5%); }
+.machine.off .machine-glyph { background: rgb(240 184 110 / 12%); color: var(--wait); }
+.machine.off .machine-what { color: var(--wait); }
+.field-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.count { font: 400 12px/1 var(--font-mono); color: var(--text-muted); }
+.count.over { color: var(--wait); }
+.turn[data-kind="naming"] .field-hint { color: var(--wait); }
+
 /* the moment it is begun, over everything */
 .flash {
     position: fixed; inset: 0; z-index: 6; pointer-events: none;
@@ -1042,7 +1068,7 @@ h1 {
    and every choice keeps an edge the system colours draw */
 @media (forced-colors: active) {
     #field, .aurora, .vignette, .flash { display: none; }
-    .act, .toast, .disk, .net, .iface, .planned, .plan, .erased, .build, .layout, .btn, .log, .ptrack, .select, .who, .clear { border: 1px solid CanvasText; }
+    .act, .toast, .disk, .net, .iface, .planned, .plan, .erased, .build, .layout, .btn, .log, .ptrack, .select, .who, .clear, .machine { border: 1px solid CanvasText; }
     .who-face { forced-color-adjust: none; }
     .ptrack i, .st svg { forced-color-adjust: none; }
     .destroy { border: 2px solid ButtonText; }

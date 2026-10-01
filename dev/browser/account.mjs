@@ -7,10 +7,10 @@
 // page to the account, and looks at what is asked, who the account will be as
 // the name is typed, whether the passwords match as the second is typed, the
 // way to see them, Caps Lock, and that nothing typed reaches anyone else
-// looking. Next says the page after is not drawn. Opened by an address that
-// is not the machine's own, the page says the password crosses the network
-// unencrypted; by the loopback, it does not. Then a narrow screen, and Back,
-// which leaves nothing typed behind.
+// looking. Then a narrow screen, and Back, which leaves nothing typed
+// behind. Opened by an address that is not the machine's own, the page says
+// the password crosses the network unencrypted; by the loopback, it does
+// not. Last, what oobed turns down, and Next on to the naming page.
 //
 // oobed comes from ../installer (cargo +1.98.1 build -p oobed) and oobe-gxwi
 // from this checkout (cargo +1.98.1 build).
@@ -50,6 +50,7 @@ const seen = () => js(`(() => {
         who: turn.querySelector(".who") && [turn.querySelector(".who-face").textContent, turn.querySelector(".who-name").textContent],
         match: turn.querySelector(".field-hint:not(:empty)")?.textContent ?? null,
         caps: [...turn.querySelectorAll(".field-caps")].filter((c) => !c.hidden).length,
+        errors: [...turn.querySelectorAll(".field-error")].map((e) => e.textContent).filter(Boolean),
         eye: turn.querySelector(".eye")?.getAttribute("aria-pressed") ?? null,
         clear: turn.querySelector(".clear")?.textContent ?? null,
         focused: document.activeElement?.id || document.activeElement?.tagName,
@@ -133,10 +134,6 @@ try {
     expect("nothing typed reaches anyone else looking", !shared.includes("correct horse") && !shared.includes("Jack Palfrey")
         && JSON.parse(shared).page.kind === "account");
 
-    await click("#turn .nav .btn.go-on");
-    out.next = await eventually(seen, (s) => s.toast !== null, 3);
-    expect("Next says the page after is not drawn, and stays", out.next.toast === "The step after this one is not drawn yet." && out.next.kind === "account");
-    expect("and nobody else is moved on", JSON.parse(await elsewhere()).page.kind === "account");
 
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await sleep(500);
@@ -159,6 +156,35 @@ try {
     } else {
         out.lan = "no address but the loopback to try";
     }
+
+    // What lpsd would refuse, oobed turns down on the page: all of it at
+    // once, each on its field, the typing kept.
+    await type("account.name", "jack@home");
+    await type("account.password", "one");
+    await type("account.confirm", "two");
+    await click("#turn .nav .btn.go-on");
+    out.wrong = await eventually(seen, (s) => s.errors.length === 2, 5);
+    await sleep(600);
+    out.wrong = await seen();
+    await picture("account-5-wrong.png");
+    expect("what oobed turns down is said on each field, the page staying",
+        out.wrong.kind === "account" && out.wrong.errors[0] === "A name cannot contain “@”." && out.wrong.errors[1] === "The passwords do not match.");
+    expect("the keyboard goes to the first, chosen to be typed over", out.wrong.focused === "field-account-name" && out.wrong.selected);
+    // Put right, and turned down for something else: what was right now is
+    // no longer said to be wrong.
+    await type("account.name", "jack");
+    await type("account.password", "");
+    await type("account.confirm", "");
+    await click("#turn .nav .btn.go-on");
+    out.wrongAgain = await eventually(seen, (s) => s.errors.length === 1 && s.errors[0].startsWith("Choose a password"), 5);
+    expect("an error put right is taken back", out.wrongAgain.after !== null);
+    await type("account.password", "correct horse");
+    await type("account.confirm", "correct horse");
+    await js(`document.getElementById("field-account-confirm").focus()`);
+    await key("Enter", "Enter", 13);
+    out.named = await eventually(seen, (s) => s.kind === "naming" && s.showing, 5);
+    expect("answered, Next goes on to the naming page", out.named.after !== null);
+    expect("and nothing typed went to anyone else looking", !(await elsewhere()).includes("correct horse"));
 
     out.elsewhere = chrome.elsewhere(site).filter((url) => !lan || new URL(url).host !== `${lan}:${port}`);
     expect("nothing is fetched from anywhere else", out.elsewhere.length === 0);

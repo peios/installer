@@ -15,6 +15,7 @@ import { createDiskPage } from "./disk.js";
 import { createField } from "./field.js";
 import { createIntro } from "./intro.js";
 import { createManualPage } from "./manual.js";
+import { createNamingPage } from "./naming.js";
 import { createNetworkPage } from "./network.js";
 import { createProgressPage } from "./progress.js";
 import { createRestart } from "./restart.js";
@@ -206,11 +207,13 @@ function fill(page) {
     if (was === "welcome" && page.kind !== "welcome") welcomePage.gone();
     if (was === "manual" && page.kind !== "manual") manualPage.gone();
     if (was === "account" && page.kind !== "account") accountPage.gone();
+    if (was === "naming" && page.kind !== "naming") namingPage.gone();
     if (page.kind === "mode") return fillMode(page, was === "mode");
     if (page.kind === "welcome") return welcomePage.draw(page, view?.waiting);
     if (page.kind === "network") return networkPage.draw(page, view?.waiting);
     if (page.kind === "manual") return manualPage.draw(page, view?.waiting ?? null);
     if (page.kind === "account") return accountPage.draw(page, view?.waiting ?? null);
+    if (page.kind === "naming") return namingPage.draw(page, view?.waiting ?? null);
     if (page.kind === "disk") return diskPage.draw(page, view?.waiting);
     if (page.kind === "confirm") return confirmPage.draw(page, view?.waiting);
     if (page.kind === "progress") return progressPage.draw(page, view?.waiting);
@@ -293,6 +296,7 @@ const welcomePage = createWelcomePage({ turn, el, rise, ask, toast: (text) => to
 const networkPage = createNetworkPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 const manualPage = createManualPage({ turn, el, rise, ask, reduced });
 const accountPage = createAccountPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
+const namingPage = createNamingPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 
 function menuKeys(e) {
     const at = actions.findIndex((button) => button.classList.contains("hl"));
@@ -329,13 +333,14 @@ function arrived() {
     if (shown?.kind === "network") networkPage.focus();
     if (shown?.kind === "manual") manualPage.focus();
     if (shown?.kind === "account") accountPage.focus();
+    if (shown?.kind === "naming") namingPage.focus();
 }
 
 // Where each page comes in the installation, or in setup, which decides the
 // side it arrives from: a later page from the right, an earlier one from the
 // left. The pages that are not steps (starting, lost, an ending) count as
 // later.
-const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3, welcome: 0, network: 1, manual: 2, account: 3 };
+const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3, welcome: 0, network: 1, manual: 2, account: 3, naming: 4 };
 const order = (page) => ORDER[page?.kind] ?? 9;
 
 // What is on the page now, and whether the intro has landed: until it has,

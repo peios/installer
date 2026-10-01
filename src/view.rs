@@ -197,6 +197,17 @@ pub enum Page {
         back: Option<Action>,
         next: Option<Action>,
     },
+    /// oobed's `oobe.naming`: the machine's name, the last thing asked.
+    Naming {
+        title: String,
+        /// The name, which oobed offers one for.
+        name: Option<Field>,
+        /// What else oobed offers here: today, joining a domain, which it
+        /// cannot do yet.
+        others: Vec<Action>,
+        back: Option<Action>,
+        finish: Option<Action>,
+    },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
     /// The conversation is over, and not on a page that stays to say so.
@@ -289,6 +300,12 @@ pub struct Field {
     pub required: bool,
     /// What is typed is not to be shown: a password.
     pub secret: bool,
+    /// The most characters it takes, where oobed says.
+    pub max: Option<u64>,
+    /// What it must look like, where oobed says: an anchored regular
+    /// expression, for a page to test what is typed against as it is typed.
+    /// oobed checks it again, and has the last word.
+    pub pattern: Option<String>,
     /// Why oobed turned down what it was answered with.
     pub error: Option<String>,
 }
@@ -370,10 +387,11 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         // An install goes on to the confirmation, which is drawn; an
         // upgrade and a repair to pages of their own, which are not.
         (Some("disk.choose"), "nav.next") => purpose(turn) != "install",
-        // What joining a wireless network would lead to once oobed can do
-        // it, and first-boot setup's naming page.
+        // What joining a wireless network or a domain would lead to once
+        // oobed can do them, and first-boot setup applying what it has
+        // been told.
         (Some("oobe.network"), "network.wifi") => true,
-        (Some("oobe.account"), "nav.next") => true,
+        (Some("oobe.naming"), "nav.finish" | "domain.join") => true,
         _ => false,
     }
 }
@@ -549,6 +567,13 @@ impl Page {
                 back: action("nav.back"),
                 next: action("nav.next"),
             },
+            Some("oobe.naming") => Page::Naming {
+                title,
+                name: element(turn, "hostname").filter(|e| e.r#type == types::STRING).map(Field::of),
+                others: turn.elements.iter().filter(|e| e.is_action() && !["nav.back", "nav.finish"].contains(&e.r#ref.as_str())).map(|e| Action::of(turn, e)).collect(),
+                back: action("nav.back"),
+                finish: action("nav.finish"),
+            },
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
         }
     }
@@ -665,6 +690,8 @@ impl Field {
             default: element.default.as_ref().and_then(Value::as_str).filter(|_| !element.secret).map(str::to_string),
             required: element.required,
             secret: element.secret,
+            max: element.state.get("max").and_then(Value::as_u64),
+            pattern: said("pattern"),
             error: element.error.clone(),
         }
     }
@@ -1275,12 +1302,44 @@ mod tests {
         // Nothing of a password is sent to everyone looking.
         assert!(!serde_json::to_value(Page::of(&account(), None)).unwrap().to_string().contains("hunter2"));
         assert!(back.is_some_and(|b| !b.unbuilt));
-        // The naming page it leads to is not drawn yet.
-        assert!(next.is_some_and(|n| n.primary && n.unbuilt));
+        // The naming page it leads to is drawn.
+        assert!(next.is_some_and(|n| n.primary && !n.unbuilt));
         // What is typed is answered with, passwords and all.
         let said = json!({ "account.name": "jack", "account.password": "one", "account.confirm": "one", "account.intro": "x" });
         let filled = filled(&account(), said.as_object().unwrap().clone());
         assert_eq!(Value::Object(filled), json!({ "account.name": "jack", "account.password": "one", "account.confirm": "one" }));
+    }
+
+    /// oobed's naming page, as it sends it.
+    fn naming() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 5, "id": "oobe.naming", "name": "Name this machine",
+            "elements": [
+                { "ref": "hostname", "type": "string", "name": "Machine name", "required": true, "default": "peios-3f2a",
+                  "help": "How this machine identifies itself on a network.", "min": 1, "max": 63, "pattern": "[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" },
+                { "ref": "domain.join", "type": "action", "name": "Join a domain instead…", "enabled": false,
+                  "help": "Domain membership needs a directory source, which is not built yet." },
+                { "ref": "nav.back", "type": "action", "name": "Back", "validate": false },
+                { "ref": "nav.finish", "type": "action", "name": "Finish", "primary": true },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_name_is_asked_for_as_oobed_asks() {
+        let Page::Naming { title, name, others, back, finish } = Page::of(&naming(), None) else { panic!("not the naming page") };
+        assert_eq!(title, "Name this machine");
+        let name = name.unwrap();
+        assert_eq!((name.r#ref.as_str(), name.default.as_deref(), name.max), ("hostname", Some("peios-3f2a"), Some(63)));
+        assert_eq!(name.pattern.as_deref(), Some("[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?"));
+        let others: Vec<_> = others.iter().map(|a| (a.r#ref.as_str(), a.enabled, a.help.is_some())).collect();
+        assert_eq!(others, [("domain.join", false, true)]);
+        assert!(back.is_some_and(|b| !b.unbuilt));
+        // Applying is not drawn yet.
+        assert!(finish.is_some_and(|f| f.primary && f.unbuilt));
+        let said = json!({ "hostname": "workshop", "domain.join": "x" });
+        assert_eq!(Value::Object(filled(&naming(), said.as_object().unwrap().clone())), json!({ "hostname": "workshop" }));
     }
 
     /// installerd's page after an install that finished
