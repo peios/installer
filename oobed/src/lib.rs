@@ -1,6 +1,7 @@
 pub mod account;
 pub mod flow;
 pub mod flow_impl;
+pub mod naming;
 pub mod network;
 pub mod setup;
 

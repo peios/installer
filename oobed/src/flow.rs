@@ -8,9 +8,9 @@ use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::{Element, types};
 use serde_json::{Map, Value, json};
 
-use crate::account;
 use crate::network::{Answered, Manual, Network};
 use crate::setup::Setup;
+use crate::{account, naming};
 
 /// Where the conversation is, and what it has gathered getting there.
 ///
@@ -332,7 +332,14 @@ pub fn account_page(prefill: &str) -> TurnSpec {
 pub fn naming_page(suggested: &str) -> TurnSpec {
     let mut host = field("hostname", "Machine name", false);
     host.default = Some(json!(suggested));
-    host.help = Some("How this machine identifies itself on a network.".into());
+    host.help = Some(
+        "How this machine identifies itself on a network: letters, digits and hyphens, \
+         with no hyphen at either end."
+            .into(),
+    );
+    host.state.insert("min".into(), json!(1));
+    host.state.insert("max".into(), json!(naming::MAX));
+    host.state.insert("pattern".into(), json!(naming::PATTERN));
     TurnSpec {
         id: Some("oobe.naming".into()),
         name: Some("Name this machine".into()),
@@ -459,11 +466,16 @@ pub fn advance(
             },
             account_page(account),
         )),
-        (Page::Naming { account, password }, "nav.finish") => Some(Advance::Apply {
-            account: account.clone(),
-            password: password.clone(),
-            hostname: value(answer, "hostname"),
-        }),
+        (Page::Naming { account, password }, "nav.finish") => {
+            Some(match naming::check(&value(answer, "hostname")) {
+                Ok(hostname) => Advance::Apply {
+                    account: account.clone(),
+                    password: password.clone(),
+                    hostname,
+                },
+                Err(why) => Advance::Reject(vec![("hostname".into(), why)]),
+            })
+        }
         _ => None,
     }
 }
