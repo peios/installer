@@ -51,3 +51,13 @@ dest = "usr/bin/fenestra"
 [[file]]
 src  = "../../fenesh/target/release/fenesh"
 dest = "usr/bin/fenesh"
+
+# The icons of the applications the medium carries, as they stand in their
+# checkouts, over the packaged ones.
+[[file]]
+src  = "../../gexora/gexora.svg"
+dest = "usr/share/icons/base/dev.peios.gexora.svg"
+
+[[file]]
+src  = "../../gxwi/libgxwi/examples/hello/hello.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi.hello.svg"
