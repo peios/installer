@@ -47,7 +47,7 @@ const seen = () => js(`(() => {
         showing: turn.classList.contains("in") && document.getElementById("page").classList.contains("live"),
         labels: [...turn.querySelectorAll(".field label")].map((l) => l.textContent),
         name: input("account.name"), password: input("account.password"), confirm: input("account.confirm"),
-        who: turn.querySelector(".who") && [turn.querySelector(".who-face").textContent, turn.querySelector(".who-name").textContent],
+        who: turn.querySelector(".acct") && [turn.querySelector(".acct-face").textContent, turn.querySelector(".acct-name").textContent],
         match: turn.querySelector(".field-hint:not(:empty)")?.textContent ?? null,
         caps: [...turn.querySelectorAll(".field-caps")].filter((c) => !c.hidden).length,
         errors: [...turn.querySelectorAll(".field-error")].map((e) => e.textContent).filter(Boolean),
@@ -102,6 +102,8 @@ try {
         out.account.password.type === "password" && out.account.confirm.type === "password"
         && out.account.password.autocomplete === "new-password" && out.account.name.autocomplete === "username");
     expect("reached by the loopback, nothing crosses a network", out.account.clear === null);
+    out.unreachable = await chrome.unreachable();
+    expect("a pointer reaches every button", out.unreachable.length === 0);
 
     await type("account.name", "Jack Palfrey");
     await type("account.password", "correct horse");

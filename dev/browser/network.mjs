@@ -66,6 +66,8 @@ const seen = () => js(`(() => {
             how: n.className,
             here: !!n.querySelector(".chip.here"),
             label: n.getAttribute("aria-label"),
+            // The name and what it is, in a column of their own.
+            column: Math.round(n.querySelector(".who").getBoundingClientRect().width),
         })),
         list: !turn.querySelector(".nets")?.hidden,
         words: turn.querySelector(".net-words:not([hidden])")?.textContent ?? null,
@@ -120,6 +122,9 @@ try {
     expect("Check again, addressing by hand, and what cannot be done yet, greyed", JSON.stringify(out.network.links) === JSON.stringify([
         ["Check again", false], ["Configure manually…", false], ["Connect to Wi-Fi…", true]]));
     expect("the keyboard starts on Next", out.network.focused === "Next");
+    expect("each interface is laid out as a row, not squeezed into a column", out.network.nets.every((n) => n.column > 200));
+    out.unreachable = await chrome.unreachable();
+    expect("a pointer reaches every button", out.unreachable.length === 0);
     expect("the words are not said twice", out.network.words === null);
 
     await js(`document.querySelectorAll("#turn .aux .link")[2].focus()`);
@@ -204,6 +209,8 @@ try {
         out.manual.heading === "Configure manually" && out.manual.when === "Applied when setup finishes, not now.");
     expect("the wired interfaces can be chosen, the wireless one not, none yet chosen", JSON.stringify(out.manual.ifaces) === JSON.stringify([
         ["enp1s0", "false", null], ["enp2s0", "false", null], ["wlp3s0", "false", "true"], ["enp4s0", "false", null]]));
+    out.manualUnreachable = await chrome.unreachable();
+    expect("a pointer reaches every button on it", out.manualUnreachable.length === 0);
     expect("the fields say which are needed", JSON.stringify(out.manual.labels) === JSON.stringify(["Address", "Gateway (optional)", "Name servers (optional)"]));
     const type = async (ref, text) => js(`(() => { const i = document.getElementById("field-${ref.replace(/\W/g, "-")}"); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event("input")); })()`);
     await click('#turn .iface[data-value="enp1s0"]');

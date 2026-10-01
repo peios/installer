@@ -94,6 +94,8 @@ try {
         && out.naming.focused === "field-hostname" && out.naming.selected);
     expect("and shown as the machine it will be", JSON.stringify(out.naming.machine) === JSON.stringify(["peios-0000", "How this machine is known on a network"])
         && out.naming.count === "10 / 63");
+    out.unreachable = await chrome.unreachable();
+    expect("a pointer reaches every button", out.unreachable.length === 0);
     expect("joining a domain is there, greyed", JSON.stringify(out.naming.restore) === JSON.stringify([["Join a domain instead…", true]]));
 
     await type("hostname", "my workshop");

@@ -49,6 +49,16 @@ export async function browser(port) {
         },
         /** Clicks the first element `selector` finds. */
         click: (selector) => js(`document.querySelector(${JSON.stringify(selector)}).click()`),
+        /** The page's buttons a pointer cannot reach: scrolled to, each one's
+            middle is under something else. click() presses a button
+            whatever covers it, so a page can pass every check and still
+            not be pressable; this is what a person's pointer finds. */
+        unreachable: () => js(`[...document.querySelectorAll("#turn button:not([hidden])")].filter((b) => b.getClientRects().length).map((b) => {
+            b.scrollIntoView({ block: "nearest" });
+            const r = b.getBoundingClientRect();
+            const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return at === b || b.contains(at) ? null : b.textContent.trim() + " under " + (at?.closest("[class]")?.className ?? at?.tagName);
+        }).filter(Boolean)`),
         /** Which requests went anywhere but `site`. */
         elsewhere: (site) => {
             const origin = new URL(site).origin;

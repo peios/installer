@@ -54,10 +54,10 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
         parts = {
             title: rise(0, "h1", ""),
             lede: rise(1, "p", "lede"),
-            who: rise(2, "div", "who", [
-                el("span", "who-face", "", { "aria-hidden": "true" }),
-                el("span", "who-said", [el("span", "who-name"), el("span", "who-what", "Administrator of this machine")]),
-                el("span", "who-badge", [picture(SHIELD)], { "aria-hidden": "true" }),
+            acct: rise(2, "div", "acct", [
+                el("span", "acct-face", "", { "aria-hidden": "true" }),
+                el("span", "acct-said", [el("span", "acct-name"), el("span", "acct-what", "Administrator of this machine")]),
+                el("span", "acct-badge", [picture(SHIELD)], { "aria-hidden": "true" }),
             ]),
             // A form, for a password manager to know the fields for what
             // they are. It is never sent: Next asks setup.
@@ -72,7 +72,7 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
         };
         parts.form.addEventListener("submit", (e) => { e.preventDefault(); next(); });
         turn.replaceChildren(
-            parts.title, parts.lede, parts.who, parts.form,
+            parts.title, parts.lede, parts.acct, parts.form,
             ...(parts.clear ? [parts.clear] : []),
             rise(5, "div", "nav", [parts.back, parts.next]),
         );
@@ -84,13 +84,13 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
     // colour of its own.
     function drawWho() {
         const name = (input("account.name")?.value ?? "").trim();
-        const face = parts.who.querySelector(".who-face");
+        const face = parts.acct.querySelector(".acct-face");
         face.textContent = (name[0] ?? "").toUpperCase();
         let hue = 0;
         for (const c of name.toLowerCase()) hue = (hue * 31 + c.charCodeAt(0)) % 360;
-        parts.who.style.setProperty("--hue", hue);
-        parts.who.classList.toggle("nobody", !name);
-        parts.who.querySelector(".who-name").textContent = name || "No name yet";
+        parts.acct.style.setProperty("--hue", hue);
+        parts.acct.classList.toggle("nobody", !name);
+        parts.acct.querySelector(".acct-name").textContent = name || "No name yet";
     }
 
     // Whether the password typed again matches, while it is being typed: said
