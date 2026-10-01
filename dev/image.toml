@@ -41,3 +41,13 @@ dest = "usr/bin/gxwid"
 [[file]]
 src  = "../../gxwi/target/x86_64-unknown-linux-musl/release/gxwi-server"
 dest = "usr/bin/gxwi-server"
+
+# The desktop as it stands in ../fenestra and ../fenesh, over the packaged
+# ones: what the first logon after setup arrives at.
+[[file]]
+src  = "../../fenestra/target/release/fenestra"
+dest = "usr/bin/fenestra"
+
+[[file]]
+src  = "../../fenesh/target/release/fenesh"
+dest = "usr/bin/fenesh"
