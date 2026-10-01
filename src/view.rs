@@ -106,10 +106,11 @@ pub enum Page {
         begin: Option<Action>,
     },
     /// installerd's `install.progress`, and the upgrade's and the repair's:
-    /// a job as it runs, and how it ended once it has.
+    /// a job as it runs, and how it ended once it has. oobed's
+    /// `oobe.applying` is one too, the job being `setup`.
     Progress {
         title: String,
-        /// Which job it is: `install`, `upgrade` or `repair`.
+        /// Which job it is: `install`, `upgrade`, `repair` or `setup`.
         job: String,
         /// What it is being done to, in installerd's words.
         summary: String,
@@ -223,6 +224,12 @@ pub struct Phase {
     /// The whole of it, or nothing where installerd cannot say how far
     /// there is to go.
     pub max: Option<f64>,
+    /// What the job says of the phase beyond its name, passed on as it came,
+    /// or nothing. Setup's addressing an interface by hand says the address
+    /// it is given, which a page reached through that interface follows the
+    /// machine to.
+    #[serde(skip_serializing_if = "Value::is_null")]
+    pub detail: Value,
 }
 
 /// How a job ended: `complete`, `cancelled` or `failed`, and what installerd
@@ -391,7 +398,7 @@ pub fn unbuilt(turn: &Turn, action: &str) -> bool {
         // oobed can do them, and first-boot setup applying what it has
         // been told.
         (Some("oobe.network"), "network.wifi") => true,
-        (Some("oobe.naming"), "nav.finish" | "domain.join") => true,
+        (Some("oobe.naming"), "domain.join") => true,
         _ => false,
     }
 }
@@ -500,6 +507,20 @@ impl Page {
                     job: id.trim_end_matches(".progress").to_string(),
                     summary: text(turn, DOING),
                     disk: element(turn, DOING).and_then(|e| e.state.get("detail")).and_then(Disk::said),
+                    phases: turn.elements.iter().filter(|e| e.r#type == types::PROGRESS).map(Phase::of).collect(),
+                    lines: said[said.len().saturating_sub(TAIL)..].iter().map(|line| line.as_str().unwrap_or_default().to_string()).collect(),
+                    said: said.len(),
+                    ended: None,
+                }
+            }
+            // Setup's job is one page like the installer's, with no disk.
+            Some("oobe.applying") => {
+                let said = said(turn);
+                Page::Progress {
+                    title,
+                    job: "setup".into(),
+                    summary: text(turn, "applying.summary"),
+                    disk: None,
                     phases: turn.elements.iter().filter(|e| e.r#type == types::PROGRESS).map(Phase::of).collect(),
                     lines: said[said.len().saturating_sub(TAIL)..].iter().map(|line| line.as_str().unwrap_or_default().to_string()).collect(),
                     said: said.len(),
@@ -643,6 +664,7 @@ impl Phase {
             name: element.name.clone().unwrap_or_default(),
             value: number("value").unwrap_or(0.0),
             max: number("max"),
+            detail: element.state.get("detail").cloned().unwrap_or(Value::Null),
         }
     }
 }
@@ -997,7 +1019,7 @@ mod tests {
         assert!(summary.starts_with("Installing Peios onto CT500MX500SSD1"));
         assert_eq!(disk.unwrap().device, "/dev/sda");
         assert_eq!(phases.iter().map(|p| p.r#ref.as_str()).collect::<Vec<_>>(), ["phase.partition", "phase.format", "phase.copy", "phase.boot"]);
-        assert_eq!(phases[2], Phase { r#ref: "phase.copy".into(), name: "Copying the system".into(), value: 36.0, max: Some(100.0) });
+        assert_eq!(phases[2], Phase { r#ref: "phase.copy".into(), name: "Copying the system".into(), value: 36.0, max: Some(100.0), detail: Value::Null });
         // One that does not say how far there is to go.
         assert_eq!(phases[3].max, None);
         // A page is sent the last of what the job said, and how much there
@@ -1336,10 +1358,44 @@ mod tests {
         let others: Vec<_> = others.iter().map(|a| (a.r#ref.as_str(), a.enabled, a.help.is_some())).collect();
         assert_eq!(others, [("domain.join", false, true)]);
         assert!(back.is_some_and(|b| !b.unbuilt));
-        // Applying is not drawn yet.
-        assert!(finish.is_some_and(|f| f.primary && f.unbuilt));
+        // Applying is drawn.
+        assert!(finish.is_some_and(|f| f.primary && !f.unbuilt));
         let said = json!({ "hostname": "workshop", "domain.join": "x" });
         assert_eq!(Value::Object(filled(&naming(), said.as_object().unwrap().clone())), json!({ "hostname": "workshop" }));
+    }
+
+    /// oobed's applying page, as it sends it, with an address given by hand
+    /// and the account made.
+    fn applying() -> Turn {
+        serde_json::from_value(json!({
+            "seq": 6, "id": "oobe.applying", "name": "Finishing setup", "class": ["progress"],
+            "elements": [
+                { "ref": "phase.account", "type": "progress", "name": "Creating your account", "value": 100, "max": 100 },
+                { "ref": "phase.hostname", "type": "progress", "name": "Naming the machine", "value": 0, "max": 100 },
+                { "ref": "phase.network", "type": "progress", "name": "Addressing eth0", "value": 0, "max": 100,
+                  "detail": { "interface": "eth0", "address": "10.0.2.20/24", "gateway": "10.0.2.2", "dns": ["10.0.2.3"] } },
+                { "ref": "out", "type": "log", "name": "Details", "lines": ["creating jack as an administrator"] },
+            ],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn setup_applying_is_a_job_like_the_installer_s() {
+        let Page::Progress { title, job, disk, phases, lines, said, ended, .. } = Page::of(&applying(), None) else { panic!("not a job's page") };
+        assert_eq!((title.as_str(), job.as_str(), disk, said, ended), ("Finishing setup", "setup", None, 1, None));
+        assert_eq!(lines, ["creating jack as an administrator"]);
+        let phases: Vec<_> = phases.iter().map(|p| (p.r#ref.as_str(), p.value)).collect();
+        assert_eq!(phases, [("phase.account", 100.0), ("phase.hostname", 0.0), ("phase.network", 0.0)]);
+        // Where the machine is going is passed on with the phase that takes
+        // it there, and nothing is said of the others.
+        let sent = serde_json::to_value(Page::of(&applying(), None)).unwrap();
+        assert_eq!(sent["phases"][2]["detail"]["address"], "10.0.2.20/24");
+        assert!(sent["phases"][0].get("detail").is_none());
+        // Ending, it stays, and says how it ended.
+        let end: End = serde_json::from_value(json!({ "seq": 6, "outcome": "complete", "message": "Setup is complete. You can log in now." })).unwrap();
+        let Page::Progress { ended, phases, .. } = Page::ended(Some(Page::of(&applying(), None)), &end) else { panic!("the job's page gave way") };
+        assert_eq!((ended.unwrap().outcome, phases.len()), ("complete", 3));
     }
 
     /// installerd's page after an install that finished

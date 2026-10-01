@@ -17,7 +17,12 @@
 //
 // What the job and the disk say of themselves is put on the page as text,
 // never as markup.
-import { AGAIN, POWER, SAVE, glyph, icon, madeBar, partitionsText, picture, sizeText } from "./bits.js";
+//
+// First-boot setup's job, applying what it was told, is drawn here too, with
+// no disk. Finished, it does not offer a restart but the sign-in page, which
+// is what the machine goes back to; and the page follows the machine there by
+// itself once its connection closes (ending.js), saying so here.
+import { AGAIN, ONWARD, POWER, SAVE, glyph, icon, madeBar, partitionsText, picture, sizeText } from "./bits.js";
 
 // How much of the whole each phase is taken to be, for the one figure. The
 // shares are this page's, by the phase's ref: installerd says how far along
@@ -32,7 +37,7 @@ const FINISHES = { esp: "phase.boot", root: "phase.copy" };
 // The phase whose work is poured into the disk, which is when the stars are.
 const POURS = "phase.copy";
 // What a job that did not finish is called.
-const STOPPED = { install: "Installation stopped", upgrade: "Upgrade stopped", repair: "Repair stopped" };
+const STOPPED = { install: "Installation stopped", upgrade: "Upgrade stopped", repair: "Repair stopped", setup: "Setup stopped" };
 // How warm the page is once a job has stopped.
 const WARM = .3;
 // How many of the job's lines the page keeps.
@@ -59,7 +64,7 @@ function sentences(message) {
  * installer for something; `say` says something to a screen reader and
  * `retitle` names the tab; `field` is the stars.
  */
-export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, field, reduced }) {
+export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, field, reduced, daemon = "installerd" }) {
     let parts = null;   // the page's own elements, while it is the page drawn
     let page = null;    // what the installer last said is on it
     let rows = [];      // one for each phase, in order
@@ -74,6 +79,7 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
     let over = null;    // how the job ended, as last drawn
     let headed = "";
     let pouring = false;
+    let onward = { words: "", url: "/" };  // where a finished setup goes, and how it is getting there
 
     const here = () => parts?.title.isConnected;
     const fraction = (phase) => phase.max > 0 ? Math.min(1, Math.max(0, phase.value / phase.max)) : 0;
@@ -115,19 +121,22 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
             if (page.ended?.reboot && !busy(reboot)) ask({ press: page.ended.reboot.ref });
         });
         const refused = el("p", "err", "", { role: "alert" });
+        // Setup's way on: the sign-in page, wherever the machine now is.
+        const signIn = el("a", "btn go-on", [el("span", "", "Sign in"), picture(ONWARD)], { href: "/", "data-way": "sign-in" });
+        const going = el("p", "going", "", { role: "status" });
         parts = {
-            title, num, pct, nowName, nowCount, log, again, againName, reboot, rebootName, refused,
+            title, num, pct, nowName, nowCount, log, again, againName, reboot, rebootName, refused, signIn, going,
             // The heading takes the keyboard when the page arrives: nothing
             // on it can be pressed while the job runs.
             heading: rise(0, "h1", "", [title], { tabindex: "-1" }),
             lede: rise(1, "p", "lede"),
             said: el("code"),
             phases: rise(3, "ol", "phases"),
-            nav: rise(5, "div", "nav ends", [reboot, again, refused]),
+            nav: rise(5, "div", "nav ends", [signIn, reboot, again, refused, going]),
             disk: rise(2, "aside", "build"),
             bar: null, made: [],
         };
-        parts.saidBox = rise(1, "p", "said", ["installerd said ", parts.said]);
+        parts.saidBox = rise(1, "p", "said", [`${daemon} said `, parts.said]);
         turn.replaceChildren(
             el("div", "col", [
                 parts.heading,
@@ -279,6 +288,14 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
 
         parts.nav.hidden = !ended;
         const reboot = page.ended?.reboot, start = page.ended?.start;
+        // Setup that finished has nothing to start again: what is left is to
+        // sign in.
+        const signing = page.job === "setup" && ended === "complete";
+        parts.signIn.hidden = !signing;
+        parts.signIn.href = onward.url;
+        parts.going.textContent = signing ? onward.words : "";
+        parts.going.hidden = !signing || !onward.words;
+        parts.again.hidden = signing;
         parts.reboot.hidden = !reboot;
         parts.rebootName.textContent = waiting === reboot?.ref ? "Restarting…" : reboot?.name ?? "";
         parts.again.className = ended === "complete" ? "btn quiet" : "btn go-on";
@@ -309,7 +326,7 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
 
     // What the keyboard is taken to once the job is over: the restart, where
     // there is one, and otherwise the way back.
-    const wayOn = () => (page.ended?.reboot ? parts.reboot : parts.again);
+    const wayOn = () => (page.ended?.reboot ? parts.reboot : !parts.signIn.hidden ? parts.signIn : parts.again);
 
     // Where the stars drain to: the whole of the disk's bar, and while the
     // system is being copied, the leading edge of what has been copied.
@@ -430,6 +447,13 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         mood(false);
     }
 
+    /** Where a finished setup is going, and how it is getting there, in
+        words (ending.js): drawn under the way on. */
+    function following(words, url) {
+        onward = { words, url };
+        if (here() && page) drawWords(null);
+    }
+
     /** The page has gone, and leaves nothing of itself behind. */
     function gone() {
         if (!parts) return;
@@ -442,5 +466,5 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         turn.classList.remove("finished", "stopped", "alone");
     }
 
-    return { draw, focus, gone };
+    return { draw, focus, gone, following };
 }

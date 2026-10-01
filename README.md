@@ -62,8 +62,8 @@ disk is really to be erased, the installation as it runs, and the restart.
   again, on another boot, which is the machine starting from the medium; or,
   after three minutes of nothing, what the machine's screen might be showing.
 
-Of first-boot setup, the welcome, the network, the account and the naming
-are drawn.
+Of first-boot setup, all of it is drawn, from the welcome to the sign-in
+page it ends on.
 
 - **The welcome**: the greeting, going round the languages, and the language,
   which `oobed` shows and cannot yet let be chosen. The keyboard layout
@@ -92,11 +92,21 @@ are drawn.
   carry yet, by the rule `oobed` sends with it (`max`, `pattern`). The name
   offered can be had back in one press. Joining a domain is shown greyed,
   with why.
+- **Finishing**: what `oobed` does with all of it, as the installation's
+  page shows a job (its phases, one figure, what it says of itself), and,
+  done, the sign-in page as the way on. `oobed`'s last act is to take the
+  overlay away, which ends this process and gives the address back to GXWI's
+  sign-in page; the page keeps itself as it was meanwhile, asks the address
+  until it answers with something other than setup, and goes there. Where
+  an address was given by hand to an interface, the page also asks that
+  address, and where only that one answers, the machine has moved out from
+  under the page and the page follows it. So setup's page alone may ask
+  another address than its own (`connect-src 'self' http:`); the
+  installer's may not.
 
-An upgrade's and a repair's pages are not drawn yet, nor the rest of
-first-boot setup. An action that leads to a page not drawn here says so
-instead of moving everyone on to it: today, the disk page's Next for an
-upgrade or a repair, and the naming page's Finish, which would apply setup.
+An upgrade's and a repair's pages are not drawn yet. An action that leads to
+a page not drawn here says so instead of moving everyone on to it: today, the
+disk page's Next for an upgrade or a repair.
 
 The pages draw what `installerd` has only lately learned to say (the
 `detail` of each row of disks, of the confirmation's sentence and of the
@@ -133,14 +143,17 @@ node dev/browser/welcome.mjs                       # the welcome, and waking int
 node dev/browser/network.mjs                       # the network page
 node dev/browser/account.mjs                       # the account page
 node dev/browser/naming.mjs                        # the naming page
+node dev/browser/finish.mjs                        # Finish, and on to the sign-in page
 ```
 
 The network the pretended `oobed` reports is what `dev/net-status.txt` says
 `net status` prints (`NET_STATUS=FILE dev/host-oobe.sh` for another). It is
 read again each time the page checks, so editing it and pressing Check again
-is a cable plugged in or pulled. `network.mjs`, `account.mjs` and
-`naming.mjs` start their own `oobed` and `oobe-gxwi`, and need nothing else
-running. `account.mjs`
+is a cable plugged in or pulled. `network.mjs`, `account.mjs`, `naming.mjs`
+and `finish.mjs` start their own `oobed` and `oobe-gxwi`, and need nothing
+else running. `finish.mjs` plays GXWI's part at the end, with a stand-in
+sign-in page, and moves the machine to this one's own address on its
+network to be followed there. `account.mjs`
 serves on every address, to open the page by one that is not the loopback.
 
 `restart.mjs` starts its own `oobed` and `oobe-gxwi` to come back as, so it

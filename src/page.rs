@@ -33,6 +33,13 @@ const FONT: &str = "font/woff2";
 /// talks to nothing but this program.
 const POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; \
     img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+/// First-boot setup's page, which may also ask another address of the
+/// machine's whether it answers: an address given by hand moves the machine
+/// out from under the page at the end of setup, and the page follows it
+/// there once it answers. Only whether it answers: nothing that comes back
+/// can be read, and what runs is still only what is served from here.
+const SETUP_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; \
+    img-src 'self' data:; connect-src 'self' http:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// What serving a browser takes: the state to show it, what the job has
 /// said of itself, and the way to the thread that holds the conversation,
@@ -47,13 +54,14 @@ struct Served {
 pub fn routes(conversation: Conversation, view: watch::Receiver<View>, said: Said, tell: mpsc::Sender<Heard>) -> Router {
     let part = |content_type, bytes: &'static [u8]| get(move || async move { file(content_type, bytes) });
     Router::new()
-        .route("/", part(HTML, index(conversation).as_bytes()))
+        .route("/", get(move || async move { with_policy(file(HTML, index(conversation).as_bytes()), policy(conversation)) }))
         .route("/style.css", part(CSS, include_bytes!("../page/style.css")))
         .route("/app.js", part(SCRIPT, include_bytes!("../page/app.js")))
         .route("/bits.js", part(SCRIPT, include_bytes!("../page/bits.js")))
         .route("/account.js", part(SCRIPT, include_bytes!("../page/account.js")))
         .route("/confirm.js", part(SCRIPT, include_bytes!("../page/confirm.js")))
         .route("/disk.js", part(SCRIPT, include_bytes!("../page/disk.js")))
+        .route("/ending.js", part(SCRIPT, include_bytes!("../page/ending.js")))
         .route("/field.js", part(SCRIPT, include_bytes!("../page/field.js")))
         .route("/intro.js", part(SCRIPT, include_bytes!("../page/intro.js")))
         .route("/manual.js", part(SCRIPT, include_bytes!("../page/manual.js")))
@@ -124,6 +132,18 @@ async fn hello(State(served): State<Served>) -> Response {
 /// an address left over from a desktop means nothing to an installer.
 async fn elsewhere(method: Method) -> Response {
     if method == Method::GET { Redirect::to("/").into_response() } else { StatusCode::NOT_FOUND.into_response() }
+}
+
+fn policy(conversation: Conversation) -> &'static str {
+    match conversation {
+        Conversation::Install => POLICY,
+        Conversation::Oobe => SETUP_POLICY,
+    }
+}
+
+fn with_policy(mut response: Response, policy: &'static str) -> Response {
+    response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(policy));
+    response
 }
 
 fn file(content_type: &'static str, bytes: &'static [u8]) -> Response {

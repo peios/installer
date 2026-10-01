@@ -12,6 +12,7 @@ import { WOKE } from "./bits.js";
 import { createAccountPage } from "./account.js";
 import { createConfirmPage } from "./confirm.js";
 import { createDiskPage } from "./disk.js";
+import { createEnding } from "./ending.js";
 import { createField } from "./field.js";
 import { createIntro } from "./intro.js";
 import { createManualPage } from "./manual.js";
@@ -87,7 +88,7 @@ let socket = null;
 
 function listen() {
     socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live`);
-    socket.onopen = () => { heard = "open"; draw(); };
+    socket.onopen = () => { heard = "open"; ending.stop(); draw(); };
     socket.onmessage = (message) => {
         // Once the machine is restarting, what was said is over.
         if (restart?.active) return;
@@ -101,6 +102,12 @@ function listen() {
     // answers here next is not this installer.
     socket.onclose = () => {
         heard = "lost";
+        // Setup applying what it was told, or done: its last acts take this
+        // page's ground away, and the page follows the machine to what
+        // comes after it.
+        if (firstBoot && view?.page?.kind === "progress" && view.page.job === "setup" && view.page.ended?.outcome !== "failed") {
+            ending.begin(view.page);
+        }
         draw();
         if (restart?.active) return restart.closed();
         setTimeout(listen, 1500);
@@ -161,7 +168,8 @@ function drawStatus() {
     // A job's end is the conversation's: there is nothing to be connected to.
     const ended = view?.page?.kind === "progress" ? view.page.ended?.outcome : view?.page?.kind === "ended" ? view.page.outcome : null;
     const [text, how] =
-        heard === "lost" ? ["Lost touch with this machine", "bad"]
+        ending.active ? [ending.state.stage === "lost" ? "Waiting for the machine" : "Setup has finished", ending.state.stage === "lost" ? "bad" : "wait"]
+        : heard === "lost" ? ["Lost touch with this machine", "bad"]
         : !link ? ["Starting", "wait"]
         : view.waiting === "again" ? ["Starting again", "wait"]
         : ended === "complete" ? ["Finished", ""]
@@ -178,6 +186,8 @@ function drawStatus() {
 // Which page is to be shown, from what the installer says and whether it can
 // be heard at all. Every one has a kind, which is what a change of page is.
 function pageWanted() {
+    // Setup is ending: the page stays as it was while it finds where to go.
+    if (ending.active && view?.page) return view.page;
     if (heard === "lost") {
         return {
             kind: "away", title: "Lost touch with this machine",
@@ -291,7 +301,18 @@ const diskPage = createDiskPage({ turn, el, rise, ask, toast: (text) => toast(te
 const confirmPage = createConfirmPage({
     turn, stage: els.stage, el, rise, ask, toast: (text) => toast(text), say, field, flash: els.flash, reduced,
 });
-const progressPage = createProgressPage({ turn, stage: els.stage, el, rise, ask, say, retitle, field, reduced });
+const progressPage = createProgressPage({
+    turn, stage: els.stage, el, rise, ask, say, retitle, field, reduced, daemon: firstBoot ? "oobed" : "installerd",
+});
+// Where the page goes once setup has finished: what it says of that is drawn
+// on setup's job page, and said.
+const ending = createEnding({
+    onChange: ({ words, onward }) => {
+        progressPage.following(words, onward);
+        if (words) say(words);
+        drawStatus();
+    },
+});
 const welcomePage = createWelcomePage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 const networkPage = createNetworkPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 const manualPage = createManualPage({ turn, el, rise, ask, reduced });

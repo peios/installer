@@ -728,6 +728,10 @@ h1 {
 .nav.ends { flex-wrap: wrap; }
 .nav.ends .err { flex: 1 1 100%; }
 .err { margin: 0; font-size: 13.5px; color: var(--danger); overflow-wrap: anywhere; }
+a.btn { text-decoration: none; }
+/* where a finished setup is taking the page */
+.going { flex: 1 1 100%; display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13.5px; color: var(--text-secondary); }
+.going::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent-glow); animation: blink 1.1s ease-in-out infinite alternate; }
 .err:empty { display: none; }
 
 /* ---- a restart: the page goes, the stars gather into the mark, and the

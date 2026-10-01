@@ -7,9 +7,8 @@
 // page and the account to the naming page, and looks at the name oobed
 // offers, the machine shown as it is typed, what the page says of a name a
 // network will not carry before oobed is asked, having the offered name back
-// in one press, and joining a domain, which says why it cannot. Finish
-// says the page after is not drawn, so what oobed would turn down is not
-// seen here yet (oobed's tests have it). Last, a narrow
+// in one press, joining a domain, which says why it cannot, and what oobed
+// turns down when Finish is pressed. Finishing is finish.mjs's. Last, a narrow
 // screen, and Back to the account.
 //
 // oobed comes from ../installer (cargo +1.98.1 build -p oobed) and oobe-gxwi
@@ -113,17 +112,20 @@ try {
     out.why = await eventually(seen, (s) => s.why !== null, 3);
     expect("joining a domain says why it cannot", out.why.why?.startsWith("Domain membership needs a directory source"));
 
-    // Finish leads to applying, which is not drawn; so does Enter, in the
-    // name.
+    // What oobed turns down: the hint is the page's, the word is oobed's.
+    await type("hostname", "host.example.com");
     await click("#turn .nav .btn.go-on");
-    out.finish = await eventually(seen, (s) => s.toast !== null, 3);
-    expect("Finish says the page after is not drawn, and stays", out.finish.toast === "The step after this one is not drawn yet." && out.finish.kind === "naming");
-    expect("and nobody else is moved on", (await elsewhere()).page.kind === "naming");
-    await sleep(3000);
-    await js(`document.getElementById("field-hostname").focus()`);
+    out.wrong = await eventually(seen, (s) => s.error !== null, 5);
+    await picture("naming-3-wrong.png");
+    expect("what oobed turns down is said on the field, the page staying and the typing kept",
+        out.wrong.kind === "naming" && out.wrong.error === "One name, without dots: the network the machine is on gives the rest."
+        && out.wrong.value === "host.example.com" && out.wrong.focused === "field-hostname" && out.wrong.selected);
+    expect("for everyone looking", (await elsewhere()).page.name.error === out.wrong.error);
+    // Enter in the name is Finish too.
+    await type("hostname", "-workshop");
     await key("Enter", "Enter", 13);
-    out.enter = await eventually(seen, (s) => s.toast !== null, 3);
-    expect("as does Enter in the name", out.enter.toast === "The step after this one is not drawn yet.");
+    out.enter = await eventually(seen, (s) => s.error === "A machine's name cannot begin or end with a hyphen.", 5);
+    expect("as is Enter in the name", out.enter.after !== null);
 
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await sleep(500);
