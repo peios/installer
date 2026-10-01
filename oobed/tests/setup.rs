@@ -435,6 +435,52 @@ fn what_lpsd_would_refuse_is_refused_on_the_account_page() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// netd hands the machine's name to the kernel and to DHCP as it is, so a
+/// name a network will not carry is refused on the naming page, where it
+/// can be put right, and the one taken is trimmed. The page says what a
+/// name may be, for a surface to say so as it is typed.
+#[test]
+fn a_name_a_network_will_not_carry_is_refused_on_the_naming_page() {
+    let dir = scratch("naming");
+    let setup = Arc::new(Recorder::default());
+    let mut s = Surface::open(&dir, Arc::clone(&setup));
+
+    s.advance_to_account();
+    s.press(
+        "nav.next",
+        &[
+            ("account.name", "jack"),
+            ("account.password", "x"),
+            ("account.confirm", "x"),
+        ],
+    );
+    assert!(matches!(s.recv(), Event::NewTurn));
+    let host = s
+        .session
+        .page()
+        .unwrap()
+        .element("hostname")
+        .unwrap()
+        .clone();
+    assert_eq!(host.state.get("max"), Some(&json!(63)));
+    assert!(host.state.get("pattern").is_some());
+
+    for name in ["", "my machine", "host.example.com", "-x"] {
+        s.press("nav.finish", &[("hostname", name)]);
+        assert!(matches!(s.recv(), Event::Updated), "{name:?}");
+        assert_eq!(s.id(), "oobe.naming");
+        let field = s.session.page().unwrap().element("hostname").unwrap();
+        assert!(field.error.is_some(), "{name:?}");
+    }
+    assert!(setup.done.lock().unwrap().is_empty(), "nothing applied yet");
+
+    s.press("nav.finish", &[("hostname", " workshop ")]);
+    assert!(matches!(s.recv(), Event::NewTurn));
+    assert_eq!(s.drain_to_end(), Outcome::Complete);
+    assert_eq!(wait_for_steps(&setup, 2)[1], "hostname workshop");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// A cable plugged in while the network page is open is seen by checking
 /// again, which changes the page for every surface without leaving it.
 #[test]
