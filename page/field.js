@@ -12,7 +12,8 @@
 // second, and have what drained come back out at once. It can have them
 // stop. And across a restart it can gather them into the mark again, as the
 // intro did, put them out while the machine is away, and throw them out of
-// the mark when it is back.
+// the mark when it is back. Drifting, it can say where every star is, for
+// the page that comes after this one to take them up.
 //
 // The field knows nothing of what the installer is doing. It is told when to
 // gather, when to let go, how far to even out, where to drain to and when to
@@ -22,11 +23,13 @@ const PALETTE = [["#62d2ff", .55], ["#c8f1ff", .25], ["#9d8cff", .12], ["#4fd1c5
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const easeInOut = (k) => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+// A colour, by its place in the palette.
 const pick = () => {
     let r = Math.random();
-    for (const [colour, weight] of PALETTE) if ((r -= weight) <= 0) return colour;
-    return PALETTE[0][0];
+    for (let i = 0; i < PALETTE.length; i++) if ((r -= PALETTE[i][1]) <= 0) return i;
+    return 0;
 };
+const round = (v, places) => Math.round(v * 10 ** places) / 10 ** places;
 
 /**
  * @param canvas  where the stars are drawn, covering the viewport
@@ -124,13 +127,14 @@ export function createField(canvas, mark, reduced) {
         for (let i = 0; i < n; i++) {
             const q = points[i % points.length];
             const z = Math.random();
+            const ci = pick();
             parts.push({
                 sx: Math.random() * W, sy: Math.random() * H, z,
                 tx: q[0] + (Math.random() - .5) * .8, ty: q[1] + (Math.random() - .5) * .8,
                 x: 0, y: 0, fx: 0, fy: 0, vx: 0, vy: 0, a: 0,
                 delay: Math.random() * 450,
                 ph: Math.random() * Math.PI * 2,
-                col: pick(),
+                ci, col: PALETTE[ci][0],
                 // A few near stars catch the light now and then.
                 glint: z > .55 && Math.random() < .0125,
             });
@@ -413,6 +417,21 @@ export function createField(canvas, mark, reduced) {
         mode = "ambient";
     }
 
+    /** The field as it is drawn now, for a page that is to take it up where
+        it is: the clock its drift and glints go by, and seven numbers a star
+        (where it is drawn, how near, its phase, its colour's place in the
+        palette, whether it glints, how bright), as GXWI's logon pages read
+        them. Only a drifting field can be taken up; anything else is none. */
+    function snapshot() {
+        if (!released || mode !== "ambient") return null;
+        const stars = [];
+        for (const p of parts) {
+            const [x, y] = drawnAt(p);
+            stars.push(round(x, 1), round(y, 1), round(p.z, 3), round(p.ph, 3), p.ci, p.glint ? 1 : 0, round(clamp(p.a, 0, 1), 3));
+        }
+        return { w: W, h: H, t: now, stars };
+    }
+
     // The slow drift the field keeps once the burst has spent itself. A
     // star's place in an even field drifts with it, so an evened field moves
     // as the cloud did.
@@ -574,5 +593,5 @@ export function createField(canvas, mark, reduced) {
         retarget();
     });
 
-    return { seed, gather, release, even, stream, hold, finale, stall, wake, regather, fade, darken, asleep, burst, draw };
+    return { seed, gather, release, even, stream, hold, finale, stall, wake, regather, fade, darken, asleep, burst, draw, snapshot };
 }

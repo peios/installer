@@ -67,6 +67,7 @@ pub fn routes(conversation: Conversation, view: watch::Receiver<View>, said: Sai
         .route("/manual.js", part(SCRIPT, include_bytes!("../page/manual.js")))
         .route("/naming.js", part(SCRIPT, include_bytes!("../page/naming.js")))
         .route("/network.js", part(SCRIPT, include_bytes!("../page/network.js")))
+        .route("/outro.js", part(SCRIPT, include_bytes!("../page/outro.js")))
         .route("/progress.js", part(SCRIPT, include_bytes!("../page/progress.js")))
         .route("/restart.js", part(SCRIPT, include_bytes!("../page/restart.js")))
         .route("/welcome.js", part(SCRIPT, include_bytes!("../page/welcome.js")))
@@ -194,6 +195,24 @@ async fn show(mut socket: WebSocket, Served { mut view, tell, .. }: Served) {
                     }
                     Some(Ok(_)) => {}
                 },
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A module of the page's that is not served fails to load, and takes
+    /// the page down with it, in the browser and nowhere else.
+    #[test]
+    fn every_script_of_the_pages_is_served() {
+        let routes = include_str!("page.rs");
+        let page = concat!(env!("CARGO_MANIFEST_DIR"), "/page");
+        for entry in std::fs::read_dir(page).unwrap() {
+            let name = entry.unwrap().file_name().into_string().unwrap();
+            if name.ends_with(".js") {
+                let route = format!(".route(\"/{name}\", part(SCRIPT, include_bytes!(\"../page/{name}\")))");
+                assert!(routes.contains(&route), "page/{name} is not served");
             }
         }
     }

@@ -102,7 +102,13 @@ page it ends on.
   address, and where only that one answers, the machine has moved out from
   under the page and the page follows it. So setup's page alone may ask
   another address than its own (`connect-src 'self' http:`); the
-  installer's may not.
+  installer's may not. It goes without a cut (`outro.js`): GXWI's
+  sign-in page has the same glows, stars and corner lockup, so setup holds
+  "Setup is complete" a moment, fades all but those, leaves its stars in
+  session storage under `gxwi.field` (the shape is in gxwid(1)), and the
+  sign-in page takes them up where they were. It fetches the sign-in page's
+  stylesheet and faces from `/.gxwi/` first, which GXWI serves through an
+  overlay, so that page is drawn in them from its first frame.
 
 An upgrade's and a repair's pages are not drawn yet. An action that leads to
 a page not drawn here says so instead of moving everyone on to it: today, the
@@ -152,8 +158,9 @@ read again each time the page checks, so editing it and pressing Check again
 is a cable plugged in or pulled. `network.mjs`, `account.mjs`, `naming.mjs`
 and `finish.mjs` start their own `oobed` and `oobe-gxwi`, and need nothing
 else running. `finish.mjs` plays GXWI's part at the end, with a stand-in
-sign-in page, and moves the machine to this one's own address on its
-network to be followed there. `account.mjs`
+sign-in page that checks what setup left it of its stars, and moves the
+machine to this one's own address on its network to be followed there.
+`account.mjs`
 serves on every address, to open the page by one that is not the loopback.
 
 `restart.mjs` starts its own `oobed` and `oobe-gxwi` to come back as, so it

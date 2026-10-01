@@ -64,8 +64,11 @@ async function setupDone(host) {
     await sleep(300);
     signIn = createServer((request, response) => {
         // GXWI's sign-in page answers anything it does not know with itself.
+        // This one keeps what setup's page left it of its stars, as GXWI's
+        // takes it up.
         response.writeHead(request.url === "/" ? 200 : 401, { "content-type": "text/html" });
-        response.end("<!doctype html><title>Sign in</title><h1>Sign in</h1>");
+        response.end(`<!doctype html><title>Sign in</title><h1>Sign in</h1>
+            <script>window.handed = sessionStorage.getItem("gxwi.field");</script>`);
     }).listen(port, host);
 }
 function signInDown() {
@@ -141,8 +144,22 @@ try {
     out.unreachable = await chrome.unreachable();
     expect("a pointer reaches every button", out.unreachable.length === 0);
     await setupDone("127.0.0.2");
+    out.leaving = await eventually(() => js(`document.getElementById("stage").classList.contains("leaving")`), (on) => on, 15);
+    expect("setup's page gives way to the sign-in page rather than being cut from", out.leaving.after !== null);
     out.signedIn = await eventually(seen, (s) => s.title === "Sign in", 15);
     expect("setup gone, the page goes to the sign-in page where it was", out.signedIn.after !== null && out.signedIn.url === site);
+    const handed = JSON.parse(await js(`window.handed`) ?? "null");
+    out.handed = handed && { v: handed.v, stars: handed.stars.length / 7, glows: handed.glows, rise: handed.rise, w: handed.w, h: handed.h };
+    if (handed) {
+        // How bright the stars were handed over, against how bright a drifting
+        // field settles at: the sign-in page eases them there.
+        let a = 0, settles = 0;
+        for (let i = 0; i < handed.stars.length; i += 7) { a += handed.stars[i + 6]; settles += .1 + .5 * handed.stars[i + 2] ** 2; }
+        out.handed.brightness = [a, settles].map((v) => Math.round(v / (handed.stars.length / 7) * 1000) / 1000);
+    }
+    expect("and leaves the sign-in page its stars, to take up where they were",
+        handed?.v === 1 && handed.stars.length > 0 && handed.stars.length % 7 === 0 && handed.rise === true
+        && handed.glows.length === 3 && handed.glows.every((t) => t > 0) && Date.now() - handed.at < 15000);
     signInDown();
 
     // With the address the page came in by given another by hand.

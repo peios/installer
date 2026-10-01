@@ -18,6 +18,7 @@ import { createIntro } from "./intro.js";
 import { createManualPage } from "./manual.js";
 import { createNamingPage } from "./naming.js";
 import { createNetworkPage } from "./network.js";
+import { createOutro } from "./outro.js";
 import { createProgressPage } from "./progress.js";
 import { createRestart } from "./restart.js";
 import { createWelcomePage } from "./welcome.js";
@@ -305,13 +306,16 @@ const progressPage = createProgressPage({
     turn, stage: els.stage, el, rise, ask, say, retitle, field, reduced, daemon: firstBoot ? "oobed" : "installerd",
 });
 // Where the page goes once setup has finished: what it says of that is drawn
-// on setup's job page, and said.
+// on setup's job page, and said. It goes there by giving way to GXWI's
+// sign-in page, which takes up its stars.
+const outro = createOutro({ stage: els.stage, glows: [...document.querySelectorAll(".aurora i:not(.ember)")], field, reduced });
 const ending = createEnding({
     onChange: ({ words, onward }) => {
         progressPage.following(words, onward);
         if (words) say(words);
         drawStatus();
     },
+    go: (url) => outro.leave(url),
 });
 const welcomePage = createWelcomePage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 const networkPage = createNetworkPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
@@ -423,6 +427,8 @@ function draw() {
         });
     }
     if (restart?.active) return;
+    // Setup complete: the moment it is left to be seen begins.
+    if (firstBoot && view?.page?.kind === "progress" && view.page.job === "setup" && view.page.ended?.outcome === "complete") outro.complete();
     drawRelease();
     drawTicker();
     drawStatus();
