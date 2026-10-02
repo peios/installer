@@ -117,6 +117,19 @@ dest = "usr/share/apps/dev.peios.gexora.toml"
 src  = "../../gexora/gexora.svg"
 dest = "usr/share/icons/base/dev.peios.gexora.svg"
 
+# The permissions editor Gexora opens, which nothing packages yet.
+[[file]]
+src  = "../../gxwi-sd-editor/target/release/gxwi-sd-editor"
+dest = "usr/bin/gxwi-sd-editor"
+
+[[file]]
+src  = "../../gxwi-sd-editor/dev.peios.gxwi-sd-editor.toml"
+dest = "usr/share/apps/dev.peios.gxwi-sd-editor.toml"
+
+[[file]]
+src  = "../../gxwi-sd-editor/gxwi-sd-editor.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi-sd-editor.svg"
+
 # The icons of the other applications the medium carries, as they stand in
 # their checkouts, over the packaged ones.
 
