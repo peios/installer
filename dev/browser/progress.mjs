@@ -8,7 +8,8 @@
 // up over a few seconds and nothing is written anywhere.
 //
 // It holds the confirmation's button the whole way, as a person does, and
-// watches the job: the phases, the one figure, the disk being made, what the
+// watches the job: the phases, the one figure, the disk being made and what
+// is said under it (the root's descriptor, then the boot file), what the
 // job says, and a browser that arrives part way. It sees it finish, saves
 // what it said, and goes back to the start. Then it does it again with an
 // installerd told to fail part way through the copy (--fail-at copy), and
@@ -30,6 +31,10 @@ const address = "127.0.0.1:7794";
 const site = `http://${address}/`;
 // installer-gxwi links libpeios, which is found beside the sibling checkout.
 const env = { ...process.env, LD_LIBRARY_PATH: join(root, "../libpeios/target/debug") };
+
+// The descriptor installerd writes to the root it makes (ROOT_SDDL in
+// installerd's real.rs), which a dry run does not say it runs.
+const ROOT_SDDL = "O:SYG:SYD:(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;WD)(A;OICIIO;GA;;;S-1-3-0)";
 
 const startInstallerd = (machine, ...more) => spawn(join(installer, "installerd"),
     ["--dry-run", "--inventory", machine, "--socket", socket, ...more], { stdio: "ignore" });
@@ -85,6 +90,25 @@ const seen = () => js(`(() => {
             })),
             made: number(build, "--made"), fmt: number(build, "--fmt"), copy: number(build, "--copy"), boot: number(build, "--boot"),
             doing: build?.className.replace(/build|rise/g, "").trim() ?? null,
+            spot: (() => {
+                const s = build?.querySelector(".prog-spot");
+                if (!s) return null;
+                const seen = (q) => getComputedStyle(s.querySelector(q)).visibility === "visible";
+                const code = s.querySelector(".prog-sddl"), box = build.getBoundingClientRect(), at = s.getBoundingClientRect();
+                return {
+                    show: s.dataset.show, sd: seen(".prog-sd"), boot: seen(".prog-boot"),
+                    sddl: code.textContent, typing: !!code.querySelector(".prog-caret"),
+                    keys: [...code.querySelectorAll(".prog-k")].map((k) => k.textContent).join(""),
+                    aces: [...s.querySelectorAll(".prog-ace")].map((a) => a.textContent),
+                    acesShown: [...s.querySelectorAll(".prog-ace")].filter((a) => getComputedStyle(a).opacity === "1").length,
+                    heads: [...s.querySelectorAll("section")].map((section) => document.getElementById(section.getAttribute("aria-labelledby"))?.textContent ?? null),
+                    file: s.querySelector(".prog-boot-file").textContent,
+                    card: Math.round(box.height),
+                    // It keeps inside the card, and nothing in it runs out sideways.
+                    held: at.left >= box.left && at.right <= box.right + .5 && at.bottom <= box.bottom + .5
+                        && [...s.querySelectorAll("code")].every((c) => c.scrollWidth <= c.clientWidth + 1),
+                };
+            })(),
         },
         log: {
             lines: log ? log.children.length : null,
@@ -178,6 +202,25 @@ try {
     expect("what the job has said of itself can be saved", out.arrived.save === "log.txt");
     out.shared = (await elsewhere()).page;
     expect("everyone looking is on it, with the same disk", out.shared.kind === "progress" && out.shared.job === "install" && out.shared.disk.device === "/dev/nvme0n1" && out.shared.ended === null);
+    expect("the place under the disk is kept, and nothing is in it before the root is formatted",
+        out.arrived.disk.spot !== null && out.arrived.disk.spot.held
+        && (out.arrived.disk.spot.show === "" ? !out.arrived.disk.spot.sd && !out.arrived.disk.spot.boot : under(out.arrived, "Formatting").state !== ""));
+    out.unreachableArrived = await chrome.unreachable();
+    expect("a pointer reaches every button", out.unreachableArrived.length === 0);
+
+    // The root formatted: its descriptor types itself out, and says who it
+    // lets do what.
+    out.typing = await eventually(seen, (s) => s.disk.spot?.typing, 10);
+    expect("as installerd formats the root, its descriptor types itself out under the disk",
+        out.typing.after !== null && out.typing.disk.spot.show === "sd" && out.typing.disk.spot.sd && !out.typing.disk.spot.boot
+        && ROOT_SDDL.startsWith(out.typing.disk.spot.sddl) && out.typing.disk.spot.sddl.length < ROOT_SDDL.length
+        && under(out.typing, "Formatting").state !== "" && under(out.typing, "Setting up boot").state === "");
+    out.stamped = await eventually(seen, (s) => !s.disk.spot?.typing && s.disk.spot?.acesShown === 4, 5);
+    await picture("progress-6-descriptor.png");
+    expect("whole, it is installerd's own, its parts marked, and who it lets do what is said under it",
+        out.stamped.after !== null && out.stamped.disk.spot.sddl === ROOT_SDDL && out.stamped.disk.spot.keys === "O:G:D:"
+        && JSON.stringify(out.stamped.disk.spot.aces) === JSON.stringify(["SYSTEM full control", "Administrators full control", "Everyone read & execute", "Creator owner full control of what they create"])
+        && JSON.stringify(out.stamped.disk.spot.heads) === JSON.stringify(["The root's security descriptor", "Boot"]) && out.stamped.disk.spot.held);
 
     // The copy, part of the way.
     out.copying = await eventually(seen, (s) => under(s, "Copying the system")?.state === "active" && under(s, "Copying the system").now >= 20, 20);
@@ -192,6 +235,7 @@ try {
         && out.copying.disk.doing === "copying" && out.copying.disk.parts.every((p) => !p.done));
     expect("what the job says of itself is shown as it says it", out.copying.log.lines >= 5 && out.copying.log.first === "dry run: no bytes will be written to /dev/nvme0n1" && out.copying.log.scrolls === false);
     expect("the status says who is doing it", out.copying.status.startsWith("Connected to installerd"));
+    expect("the descriptor stays while the system is copied", out.copying.disk.spot.show === "sd" && out.copying.disk.spot.sd && out.copying.disk.spot.sddl === ROOT_SDDL);
 
     // A browser that arrives part way is shown the job as it stands.
     await send("Page.navigate", { url: site });
@@ -201,6 +245,17 @@ try {
     expect("a browser that arrives part way is shown the job as it stands, with everything it has said",
         out.late.after !== null && out.late.heading === "Installing" && under(out.late, "Formatting").state === "done" && out.late.disk.there
         && out.late.log.first === "dry run: no bytes will be written to /dev/nvme0n1");
+    expect("the descriptor already written is shown whole, not typed again",
+        out.late.disk.spot.show === "sd" && !out.late.disk.spot.typing && out.late.disk.spot.sddl === ROOT_SDDL && out.late.disk.spot.aces.length === 4);
+
+    // The machine made to start from the disk: the file the firmware starts
+    // takes the descriptor's place.
+    out.booting = await eventually(seen, (s) => under(s, "Setting up boot")?.state === "active" && s.disk.spot?.boot && !s.disk.spot.sd, 30);
+    await picture("progress-7-boot.png");
+    expect("as the machine is made to start from the disk, the file the firmware starts takes the descriptor's place",
+        out.booting.after !== null && out.booting.disk.spot.show === "boot" && out.booting.disk.spot.file === "EFI/BOOT/BOOTX64.EFI" && out.booting.disk.spot.held);
+    expect("the card is the same size throughout, its place kept for what comes",
+        out.arrived.disk.spot.card === out.stamped.disk.spot.card && out.stamped.disk.spot.card === out.booting.disk.spot.card);
 
     // It finishes.
     out.done = await eventually(seen, (s) => s.finished && s.again !== null, 40);
@@ -218,6 +273,9 @@ try {
         && out.done.again?.says === "Back to the start" && out.done.again.how === "btn quiet" && out.done.again.clear);
     expect("what the job said can now be read through, by a keyboard too", out.done.log.scrolls === true && out.done.log.reachable === "0" && out.done.log.last === "Setting up boot: ok");
     expect("and the status says it finished", out.done.status === "Finished" && out.done.statusIs === "" && out.done.heat === 0);
+    expect("the boot file stays under the finished disk", out.done.disk.spot.show === "boot" && out.done.disk.spot.boot);
+    out.unreachableDone = await chrome.unreachable();
+    expect("a pointer reaches every button of the ending", out.unreachableDone.length === 0);
     out.ended = (await elsewhere());
     expect("for everyone looking, installerd's page of what came of it being the one answered",
         out.ended.page.kind === "progress" && out.ended.page.ended.outcome === "complete" && out.ended.seq > 0
@@ -267,13 +325,16 @@ try {
     expect("starting again is offered plainly, has the keyboard, and is not under the bar along the bottom",
         out.stopped.again?.says === "Start again" && out.stopped.again.how === "btn go-on" && out.stopped.focused === "Start again" && out.stopped.again.clear);
     expect("the status says it stopped, and the page is warm", out.stopped.status === "Stopped" && out.stopped.statusIs === "bad" && out.stopped.heat === .3);
+    expect("the descriptor written before it stopped is still said", out.stopped.disk.spot.show === "sd" && out.stopped.disk.spot.sddl === ROOT_SDDL);
+    out.unreachableStopped = await chrome.unreachable();
+    expect("a pointer reaches every button of a job that stopped", out.unreachableStopped.length === 0);
 
     // A narrow screen.
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await sleep(400);
     out.phone = await seen();
     await picture("progress-5-phone.png");
-    expect("a phone holds the page without scrolling sideways, the disk before the phases", out.phone.wide === false && out.phone.diskBeforePhases === true);
+    expect("a phone holds the page without scrolling sideways, the disk before the phases", out.phone.wide === false && out.phone.diskBeforePhases === true && out.phone.disk.spot.held);
     await send("Emulation.clearDeviceMetricsOverride");
 
     await click('#turn .nav.ends [data-way="again"]');
@@ -296,6 +357,8 @@ try {
         out.hostile.title === "Installation stopped · Peios Setup" && out.hostile.lede === "It stopped while partitioning."
         && JSON.stringify(out.hostile.phases.map((p) => p.state)) === JSON.stringify(["failed", "skipped", "skipped", "skipped"])
         && out.hostile.log.atEnd && out.hostile.again.says === "Start again" && out.hostile.focused === "Start again");
+    expect("and one that stopped before the root was formatted says nothing under the disk",
+        out.hostile.disk.spot?.show === "" && !out.hostile.disk.spot.sd && !out.hostile.disk.spot.boot);
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));

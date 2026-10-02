@@ -723,6 +723,47 @@ h1 {
 .stopped .build { border-color: rgb(255 158 146 / 35%); box-shadow: 0 0 70px -28px rgb(178 59 46 / 55%); }
 /* what was copied before it stopped is not a system */
 .stopped .layout.made .r-root .fill { background: repeating-linear-gradient(135deg, rgb(255 158 146 / 60%) 0 5px, rgb(255 158 146 / 22%) 5px 10px); animation: none; }
+/* under the disk, what two of an install's steps leave on it, one at a
+   time in the same place: the root's descriptor, typing itself out and
+   then saying who it lets do what, and then the file the firmware starts.
+   The place is kept for them from the start, so that the card does not
+   grow under the page as they come. */
+.prog-spot { display: grid; }
+.prog-spot > * {
+    grid-area: 1 / 1; min-width: 0;
+    opacity: 0; visibility: hidden; transform: translateY(6px);
+    transition: opacity .5s, transform .6s var(--ease-out), visibility 0s .5s;
+}
+.prog-spot[data-show="sd"] .prog-sd, .prog-spot[data-show="boot"] .prog-boot { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.prog-spot[data-show="boot"] .prog-sd { transform: translateY(-6px); }
+.prog-spot-head { display: flex; align-items: center; gap: 8px; margin: 0; font: 600 13px/1.2 var(--font-text); color: var(--text-primary); }
+.prog-spot-head svg { flex: none; width: 15px; height: 15px; color: var(--accent); }
+.prog-spot code {
+    display: block; margin-top: 9px;
+    min-height: 3.2em;
+    padding: 9px 12px;
+    border: 1px solid var(--border-default); border-radius: 10px;
+    background: rgb(6 8 12 / 55%);
+    font: 400 11.5px/1.6 var(--font-mono);
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+.prog-k { color: var(--accent-quiet); font-weight: 500; }
+.prog-caret { display: inline-block; width: .55em; height: 1.1em; vertical-align: -.2em; background: var(--accent); animation: prog-caret .8s steps(1) infinite; }
+@keyframes prog-caret { 50% { opacity: 0; } }
+.prog-spot p { margin: 9px 0 0; font-size: 12.5px; color: var(--text-muted); }
+.prog-aces { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; }
+.prog-ace {
+    padding: 5px 9px; border-radius: 999px;
+    background: var(--surface-2);
+    font: 500 11.5px/1 var(--font-text); color: var(--text-muted);
+    opacity: 0; transform: translateY(4px);
+    transition: opacity .5s var(--ease-out), transform .5s var(--ease-out);
+}
+.prog-ace b { color: var(--text-primary); font-weight: 600; }
+.prog-sd.decoded .prog-ace { opacity: 1; transform: none; transition-delay: calc(var(--i) * 110ms); }
+/* a line of the job's that is an error */
+.log .prog-err { color: var(--danger); }
 
 /* the way on from a job that finished, and why a restart could not be had */
 .nav.ends { flex-wrap: wrap; }
@@ -1135,6 +1176,8 @@ a.btn { text-decoration: none; }
     .name-chip, .name-prompt { border: 1px solid CanvasText; }
     .name-chip[aria-pressed="true"] { outline: 3px solid Highlight; outline-offset: 1px; }
     .name-caret { forced-color-adjust: none; background: CanvasText; }
+    .prog-spot code, .prog-ace { border: 1px solid CanvasText; }
+    .prog-caret { forced-color-adjust: none; background: CanvasText; }
     .ptrack i, .st svg { forced-color-adjust: none; }
     .destroy { border: 2px solid ButtonText; }
     .destroy .fill { forced-color-adjust: none; }

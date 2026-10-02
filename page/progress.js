@@ -15,6 +15,12 @@
 // picture. And while the system is copied the stars drain into the disk, to
 // come back out when it is done.
 //
+// Under the disk an install is making, the page says what two of its steps
+// leave on it that nothing else shows: the security descriptor written to
+// the root as it is formatted, which types itself out and then says who it
+// lets do what, and, once the machine is being made to start from the disk,
+// the one file the firmware starts.
+//
 // What the job and the disk say of themselves is put on the page as text,
 // never as markup.
 //
@@ -42,6 +48,46 @@ const STOPPED = { install: "Installation stopped", upgrade: "Upgrade stopped", r
 const WARM = .3;
 // How many of the job's lines the page keeps.
 const KEPT = 200;
+
+// The descriptor installerd writes to the root it makes, with mke2fs's
+// `-E root_sddl=`, as installerd's real.rs has it (ROOT_SDDL), and the file
+// it makes the machine start from on the EFI system partition (in
+// write_boot_files). What installerd says it ran is taken over these, and
+// they stand for a job that runs neither, as a dry run does.
+const ROOT_SDDL = "O:SYG:SYD:(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;WD)(A;OICIIO;GA;;;S-1-3-0)";
+const BOOT_FILE = "EFI/BOOT/BOOTX64.EFI";
+const SAYS_SDDL = /^\$ mke2fs .*-E root_sddl=(\S+)/;
+const SAYS_BOOT = /^\$ mkuki .*--out \S*?\/(EFI\/\S+)/;
+// How far through formatting installerd is when it runs mke2fs, which
+// writes the descriptor.
+const STAMPED = .6;
+// Who and what a descriptor's entries name, in words.
+const WHO = {
+    SY: "SYSTEM", "S-1-5-18": "SYSTEM", BA: "Administrators", "S-1-5-32-544": "Administrators",
+    WD: "Everyone", "S-1-1-0": "Everyone", CO: "Creator owner", "S-1-3-0": "Creator owner",
+    AU: "Authenticated users", "S-1-5-11": "Authenticated users", BU: "Users", "S-1-5-32-545": "Users",
+};
+const RIGHTS = {
+    GA: "full control", FA: "full control", GRGX: "read & execute", GXGR: "read & execute",
+    GR: "read", GX: "execute", GW: "write", GRGW: "read & write", GWGR: "read & write",
+};
+/** Who a descriptor lets do what, an entry of its DACL at a time, in words:
+    an entry this page has no words for is given as written. */
+function aces(sddl) {
+    const dacl = sddl.indexOf("D:");
+    if (dacl < 0) return [];
+    return [...sddl.slice(dacl).matchAll(/\(([^)]*)\)/g)].map(([, ace]) => {
+        const [type, flags = "", rights = "", , , trustee = ""] = ace.split(";");
+        const who = WHO[trustee] ?? trustee;
+        let what = RIGHTS[rights] ?? rights;
+        // Inherited only: it is what is made inside that it applies to.
+        if ((flags.match(/../g) ?? []).includes("IO")) what += who === "Creator owner" ? " of what they create" : " of what is made inside";
+        return { who, what: type === "D" ? `denied ${what}` : what };
+    });
+}
+
+const SHIELD = icon("0 0 16 16", 1.5, '<path d="M8 1.75 13.5 4v4c0 3.2-2.4 5.4-5.5 6.25C4.9 13.4 2.5 11.2 2.5 8V4z"/>');
+const CHIP = icon("0 0 16 16", 1.5, '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5"/><path d="M6 1.5v2M10 1.5v2M6 12.5v2M10 12.5v2M1.5 6h2M1.5 10h2M12.5 6h2M12.5 10h2"/>');
 
 const STATE = icon("0 0 22 22", 1.5,
     '<circle class="ring" cx="11" cy="11" r="9.5"/><circle class="arc" cx="11" cy="11" r="9.5"/>'
@@ -80,6 +126,10 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
     let headed = "";
     let pouring = false;
     let onward = { words: "", url: "/" };  // where a finished setup goes, and how it is getting there
+    // Under the disk: what is shown there ("sd", "boot" or nothing, null
+    // before it is first drawn), the descriptor and the boot file as last
+    // heard, and the descriptor typing itself out.
+    let spotAs = null, sddl = ROOT_SDDL, bootFile = BOOT_FILE, typing = 0;
 
     const here = () => parts?.title.isConnected;
     const fraction = (phase) => phase.max > 0 ? Math.min(1, Math.max(0, phase.value / phase.max)) : 0;
@@ -134,7 +184,7 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
             phases: rise(3, "ol", "phases"),
             nav: rise(5, "div", "nav ends", [signIn, reboot, again, refused, going]),
             disk: rise(2, "aside", "build"),
-            bar: null, made: [],
+            bar: null, made: [], spot: null,
         };
         parts.saidBox = rise(1, "p", "said", [`${daemon} said `, parts.said]);
         turn.replaceChildren(
@@ -164,6 +214,8 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         // the moment of its ending.
         over = outcome();
         pouring = false;
+        sddl = ROOT_SDDL;
+        bootFile = BOOT_FILE;
     }
 
     // The phases, in installerd's order: a mark for how each stands, its
@@ -200,6 +252,10 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         turn.classList.toggle("alone", !becomes.length);
         parts.bar = null;
         parts.made = [];
+        parts.spot = null;
+        clearInterval(typing);
+        typing = 0;
+        spotAs = null;
         if (!becomes.length) return parts.disk.replaceChildren();
         parts.bar = madeBar(el, detail);
         parts.bar.setAttribute("aria-label", `${disk.device} as it is being made: ${partitionsText(becomes)}.`);
@@ -218,13 +274,109 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
             ]),
             parts.bar,
             el("ul", "parts", parts.made.map((made) => made.li)),
+            ...(page.job === "install" ? [spot()] : []),
         );
+    }
+
+    // What two of an install's steps leave on the disk, in the card's last
+    // place, one at a time: the root's descriptor and who it lets do what,
+    // and then the file the firmware starts.
+    function spot() {
+        const head = (id, svg, words) => el("h2", "prog-spot-head", [picture(svg), words], { id });
+        const sd = el("section", "prog-sd", [
+            head("prog-sd-head", SHIELD, "The root's security descriptor"),
+            el("code", "prog-sddl"),
+            el("ul", "prog-aces", null, { "aria-label": "Who it lets do what" }),
+            el("p", "", "Written as the root is formatted. Everything created inside inherits from it."),
+        ], { "aria-labelledby": "prog-sd-head" });
+        const boot = el("section", "prog-boot", [
+            head("prog-boot-head", CHIP, "Boot"),
+            el("code", "prog-boot-file"),
+            el("p", "", "One file on the EFI partition holds the kernel, the initramfs and the command line. The firmware starts it directly, with no boot manager in between."),
+        ], { "aria-labelledby": "prog-boot-head" });
+        parts.spot = el("div", "prog-spot", [sd, boot], { "data-show": "" });
+        // Filled from the start, unseen, so that the place kept for it is
+        // the size it will be.
+        fill();
+        return parts.spot;
+    }
+
+    // The descriptor, whole, its parts' letters marked, and who it lets do
+    // what, not yet shown.
+    function fill() {
+        parts.spot.querySelector(".prog-sddl").replaceChildren(...sddl.split(/([OGD]:)/).filter(Boolean)
+            .map((piece) => /^[OGD]:$/.test(piece) ? el("span", "prog-k", piece) : piece));
+        parts.spot.querySelector(".prog-aces").replaceChildren(...aces(sddl).map(({ who, what }, i) => {
+            const li = el("li", "prog-ace", [el("b", "", who), ` ${what}`]);
+            li.style.setProperty("--i", i);
+            return li;
+        }));
+    }
+
+    // The descriptor, whole, and who it lets do what said under it, each
+    // seen to come.
+    function stamped() {
+        const sd = parts.spot.querySelector(".prog-sd");
+        sd.classList.remove("decoded");
+        fill();
+        void sd.offsetWidth;
+        sd.classList.add("decoded");
+    }
+
+    // The descriptor types itself out, a little at a time, and then is
+    // shown whole.
+    function typeOut() {
+        const code = parts.spot.querySelector(".prog-sddl");
+        const sd = parts.spot.querySelector(".prog-sd");
+        sd.classList.remove("decoded");
+        let n = 0;
+        clearInterval(typing);
+        typing = setInterval(() => {
+            if (!parts?.spot?.isConnected) {
+                clearInterval(typing);
+                typing = 0;
+                return;
+            }
+            n = Math.min(sddl.length, n + 2);
+            if (n < sddl.length) return code.replaceChildren(sddl.slice(0, n), el("i", "prog-caret", "", { "aria-hidden": "true" }));
+            clearInterval(typing);
+            typing = 0;
+            stamped();
+        }, 30);
+    }
+
+    // Which of the two is shown, from how far the job has got: the
+    // descriptor from when installerd runs mke2fs, part way through
+    // formatting, and the boot file from when the copy is done and the
+    // machine is being made to start from the disk. A page that arrives
+    // with either already there shows it as it stands.
+    function drawSpot() {
+        if (!parts.spot) return;
+        const at = reached();
+        const index = (ref) => page.phases.findIndex((phase) => phase.ref === ref);
+        const format = index("phase.format"), boot = index("phase.boot");
+        const past = (i) => i >= 0 && (at < 0 || at > i);
+        const booting = boot >= 0 && (at < 0 || at >= boot);
+        const written = past(format) || (format >= 0 && at === format && fraction(page.phases[format]) >= STAMPED);
+        const show = booting ? "boot" : written ? "sd" : "";
+        parts.spot.querySelector(".prog-boot-file").textContent = bootFile;
+        const arriving = spotAs === null;
+        if (show !== spotAs) {
+            parts.spot.dataset.show = show;
+            if (show && !typing && (arriving || spotAs === "")) {
+                if (show === "sd" && !arriving && !reduced) typeOut();
+                else stamped();
+            }
+            spotAs = show;
+        }
     }
 
     // What the job has said of itself: a command it ran, what that printed,
     // or something it said in its own words.
     function line(text) {
         if (text.startsWith("$ ")) return el("li", "cmd", [el("span", "pr", "$ "), text.slice(2)], { title: text });
+        // An error, as the tool or the kernel wrote it.
+        if (text.startsWith("! ")) return el("li", "prog-err", text.slice(2), { title: text });
         return el("li", text.startsWith("  ") ? "" : "say", text, { title: text });
     }
 
@@ -238,7 +390,15 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         const follows = !heard || !over || log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
         heard = page.said;
         if (fresh <= 0) return follows;
-        log.append(...page.lines.slice(page.lines.length - fresh).map(line));
+        const lines = page.lines.slice(page.lines.length - fresh);
+        log.append(...lines.map(line));
+        // What it says it wrote is what the disk's card says it wrote.
+        const was = sddl;
+        for (const text of lines) {
+            sddl = SAYS_SDDL.exec(text)?.[1] ?? sddl;
+            bootFile = SAYS_BOOT.exec(text)?.[1] ?? bootFile;
+        }
+        if (sddl !== was && parts.spot && !typing) (spotAs ? stamped : fill)();
         while (log.children.length > KEPT) log.firstChild.remove();
         return follows;
     }
@@ -427,6 +587,7 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         drawPhases();
         drawDisk();
         const follows = drawLog();
+        drawSpot();
         drawWords(waiting);
         // Once the words are drawn, since a job that is over lets its long
         // lines wrap, which makes the list longer.
@@ -459,6 +620,8 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         if (!parts) return;
         cancelAnimationFrame(frame);
         frame = 0;
+        clearInterval(typing);
+        typing = 0;
         parts = page = null;
         field.wake();
         field.even(0);

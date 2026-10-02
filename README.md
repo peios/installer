@@ -50,9 +50,17 @@ disk is really to be erased, the installation as it runs, and the restart.
   Its button is held down rather than pressed, and holding it all the way
   begins the installation.
 - **The installation** shows the phases `installerd` reports and one figure
-  for the whole, the disk being made, and what the job says of itself. It
-  ends finished or stopped, in `installerd`'s words, and what the job said
-  can be saved whole from `/log.txt`. Finished, it offers Reboot now.
+  for the whole, the disk being made, and what the job says of itself (a
+  line it starts `! ` is an error, in red). Under the disk is what two
+  steps leave on it: from when `installerd` runs `mke2fs`, part way through
+  formatting, the security descriptor it writes to the root, typed out,
+  and who it lets do what; and from when the machine is being made to
+  start from the disk, the one file the firmware starts. Both are what
+  `installerd` says it ran (`-E root_sddl=` on `mke2fs`'s line, `--out`
+  on `mkuki`'s) and otherwise what its `real.rs` writes, which a dry run
+  does not say. It ends finished or stopped, in `installerd`'s words, and
+  what the job said can be saved whole from `/log.txt`. Finished, it
+  offers Reboot now.
 - **The restart**: the page leaves and the stars gather back into the mark,
   which sleeps while the machine is away. The page asks the address for
   `/hello`, which only this installer and first-boot setup answer, with the
