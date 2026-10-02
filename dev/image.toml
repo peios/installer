@@ -52,6 +52,57 @@ dest = "usr/bin/fenestra"
 src  = "../../fenesh/target/release/fenesh"
 dest = "usr/bin/fenesh"
 
+# Get started, which fenesh opens on a person's first desktop, with its
+# declaration and icon.
+[[file]]
+src  = "../../fenesh/target/release/fenesh-welcome"
+dest = "usr/bin/fenesh-welcome"
+
+[[file]]
+src  = "../../fenesh/dev.peios.fenesh.welcome.toml"
+dest = "usr/share/apps/dev.peios.fenesh.welcome.toml"
+
+[[file]]
+src  = "../../fenesh/welcome.svg"
+dest = "usr/share/icons/base/dev.peios.fenesh.welcome.svg"
+
+# fenesh's settings as they stand, over the packaged seed: what is pinned to
+# a new person's dock. Both where the seed is kept and in the queue peinit
+# applies at boot, which peiso fills before a layer's files are put in.
+[[file]]
+src  = "../../fenesh/registry.d/fenesh-config.reg"
+dest = "usr/share/regim/fenesh-config.reg"
+
+[[file]]
+src  = "../../fenesh/registry.d/fenesh-config.reg"
+dest = "lcl/policy/autoapply.d/fenesh-config.reg"
+
+# The terminal and the text editor, which fenesh pins, as they stand in
+# their checkouts: the medium carries neither package yet.
+[[file]]
+src  = "../../peiterm/target/release/peiterm"
+dest = "usr/bin/peiterm"
+
+[[file]]
+src  = "../../peiterm/dev.peios.peiterm.toml"
+dest = "usr/share/apps/dev.peios.peiterm.toml"
+
+[[file]]
+src  = "../../peiterm/peiterm.svg"
+dest = "usr/share/icons/base/dev.peios.peiterm.svg"
+
+[[file]]
+src  = "../../peitor/target/release/peitor"
+dest = "usr/bin/peitor"
+
+[[file]]
+src  = "../../peitor/dev.peios.peitor.toml"
+dest = "usr/share/apps/dev.peios.peitor.toml"
+
+[[file]]
+src  = "../../peitor/peitor.svg"
+dest = "usr/share/icons/base/dev.peios.peitor.svg"
+
 # The icons of the applications the medium carries, as they stand in their
 # checkouts, over the packaged ones.
 [[file]]
