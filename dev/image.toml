@@ -103,11 +103,22 @@ dest = "usr/share/apps/dev.peios.peitor.toml"
 src  = "../../peitor/peitor.svg"
 dest = "usr/share/icons/base/dev.peios.peitor.svg"
 
-# The icons of the applications the medium carries, as they stand in their
-# checkouts, over the packaged ones.
+# Gexora as it stands in its checkout, over the package the medium carries,
+# which is older than its menus.
+[[file]]
+src  = "../../gexora/target/release/gexora"
+dest = "usr/bin/gexora"
+
+[[file]]
+src  = "../../gexora/dev.peios.gexora.toml"
+dest = "usr/share/apps/dev.peios.gexora.toml"
+
 [[file]]
 src  = "../../gexora/gexora.svg"
 dest = "usr/share/icons/base/dev.peios.gexora.svg"
+
+# The icons of the other applications the medium carries, as they stand in
+# their checkouts, over the packaged ones.
 
 [[file]]
 src  = "../../gxwi/libgxwi/examples/hello/hello.svg"
