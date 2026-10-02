@@ -91,10 +91,16 @@ page it ends on.
   looking. Opened by an address that is not the loopback, the page says the
   password will cross the network unencrypted.
 - **The naming**: the machine's name, offered by `oobed`, shown as the
-  machine it will be as it is typed, and whether it is one a network will
-  carry yet, by the rule `oobed` sends with it (`max`, `pattern`). The name
-  offered can be had back in one press. Joining a domain is shown greyed,
-  with why.
+  machine it will be as it is typed, as the account's shell prompt will
+  read on it, and whether it is one a network will carry yet, by the rule
+  `oobed` sends with it (`max`, `pattern`). Under it are names to pick
+  from: the one `oobed` offered, which can be had back in one press, and
+  three made up in the browser, two words and a hyphen, each one that rule
+  takes; Shuffle makes up three more. `oobed` does not send the account's
+  name with this page, so this process keeps the name the account page was
+  answered with to show in the prompt; come to a conversation already past
+  the account, it shows the machine alone. Joining a domain is shown
+  greyed, with why.
 - **Finishing**: what `oobed` does with all of it, as the installation's
   page shows a job (its phases, one figure, what it says of itself), and,
   done, the sign-in page as the way on. `oobed`'s last act is to take the

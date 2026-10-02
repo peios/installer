@@ -225,6 +225,9 @@ fn talk(
     // The disk chosen on the page that asks for one. It is this process's to
     // hold: installerd hears of it only when the page is answered.
     let mut chosen: Option<String> = None;
+    // The name oobed's account page was last answered with, for the naming
+    // page it leads to, which oobed sends without it.
+    let mut account: Option<String> = None;
     loop {
         let (kind, body) = match inbox.recv().map_err(|_| format!("nothing is listening to {daemon}"))? {
             Heard::Said(from, kind, body) if from == connection => (kind, body),
@@ -232,7 +235,7 @@ fn talk(
             // The last words of a connection already given up.
             Heard::Said(..) | Heard::Gone(..) => continue,
             Heard::Asked(asked) => {
-                ask(stream, &session, &mut chosen, view, asked)?;
+                ask(stream, &session, &mut chosen, &mut account, view, asked)?;
                 continue;
             }
         };
@@ -279,7 +282,11 @@ fn talk(
                     view.seq = turn.seq;
                     // Either is installerd's answer to whatever was pressed.
                     view.waiting = None;
-                    view.page = Some(if done { Page::done(view.page.take(), turn) } else { Page::of(turn, chosen.as_deref()) });
+                    view.page = Some(if done {
+                        Page::done(view.page.take(), turn)
+                    } else {
+                        Page::of(turn, chosen.as_deref()).for_account(account.as_deref())
+                    });
                 });
             }
             Event::Ended(end) => {
@@ -335,6 +342,7 @@ fn ask(
     stream: &mut UnixStream,
     session: &Session,
     chosen: &mut Option<String>,
+    account: &mut Option<String>,
     view: &watch::Sender<View>,
     asked: Asked,
 ) -> Result<(), String> {
@@ -368,6 +376,9 @@ fn ask(
         } else {
             Map::new()
         };
+        if let Some(name) = answered_account(turn, &values) {
+            *account = Some(name);
+        }
         let Some(answer) = session.answer(Some(&action), values) else { return Ok(()) };
         write_msg(stream, MsgType::Answer, &answer).map_err(|e| format!("answer: {e}"))?;
         view.send_modify(|view| view.waiting = Some(action));
@@ -375,9 +386,35 @@ fn ask(
     Ok(())
 }
 
+/// The account's name, as oobed takes it (trimmed), where `values` answer
+/// oobed's account page. oobed goes on to the naming page only once it has
+/// taken the name, so the last one answered is the account's.
+fn answered_account(turn: &msip::msg::Turn, values: &Map<String, Value>) -> Option<String> {
+    if turn.id.as_deref() != Some("oobe.account") {
+        return None;
+    }
+    values.get("account.name").and_then(Value::as_str).map(|name| name.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_account_answered_is_kept_for_the_naming_page() {
+        let turn = |id: &str| -> msip::msg::Turn {
+            serde_json::from_value(serde_json::json!({
+                "seq": 4, "id": id, "elements": [{ "ref": "account.name", "type": "string", "name": "User name" }],
+            }))
+            .unwrap()
+        };
+        let values = serde_json::json!({ "account.name": "  Jack Palfrey ", "account.password": "one" });
+        let values = values.as_object().unwrap();
+        assert_eq!(answered_account(&turn("oobe.account"), values).as_deref(), Some("Jack Palfrey"));
+        // Another page's field of the same name is not the account.
+        assert_eq!(answered_account(&turn("oobe.naming"), values), None);
+        assert_eq!(answered_account(&turn("oobe.account"), &Map::new()), None);
+    }
 
     #[test]
     fn what_a_browser_asks_for_is_read_whichever_it_is() {

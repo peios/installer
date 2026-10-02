@@ -5,17 +5,26 @@
 // pressed: it says on the field what is wrong, the page staying, or applies
 // setup. What is typed stays in this browser until then.
 //
-// As it is typed, the name is shown as the machine it will be, and whether
-// it is one a network will carry yet, by oobed's own pattern. That is a hint
-// and not a check: oobed has the last word. The name oobed offered can be
-// had back with one press. Joining a domain oobed cannot do yet, and says
-// why.
+// As it is typed, the name is shown as the machine it will be, as the
+// account's shell prompt will read on it, and whether it is one a network
+// will carry yet, by oobed's own pattern. That is a hint and not a check:
+// oobed has the last word. Names to pick from are offered under it: the one
+// oobed offered, which can be had back with one press, and others made up
+// here, which Shuffle makes up again; each is one oobed's pattern takes.
+// Joining a domain oobed cannot do yet, and says why.
 import { BACK, NOT_DRAWN, ONWARD, icon, picture } from "./bits.js";
 
 const MACHINE = icon("0 0 24 24", 1.5, '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="M7 8.5h4"/>');
 const DOMAIN = icon("0 0 16 16", 1.6, '<circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.75 1.9 2.6 4 2.6 6.25S9.75 12.35 8 14.25C6.25 12.35 5.4 10.25 5.4 8S6.25 3.65 8 1.75z"/>');
-const UNDO = icon("0 0 16 16", 1.6, '<path d="M3.5 6.5h6.25a3.25 3.25 0 0 1 0 6.5H6"/><path d="M6 3.75 3.25 6.5 6 9.25"/>');
+const DICE = icon("0 0 16 16", 1.5, '<rect x="2" y="2" width="12" height="12" rx="3"/><path d="M5.5 5.5h.01M10.5 5.5h.01M8 8h.01M5.5 10.5h.01M10.5 10.5h.01"/>');
 const OTHERS = { "domain.join": DOMAIN };
+
+// What the names made up here are made of: two words, a hyphen between.
+const ADJ = ["amber", "azure", "calm", "coral", "drift", "golden", "lunar", "misty", "north", "quiet", "salt", "silver", "still", "tidal", "velvet", "bright"];
+const NOUN = ["beacon", "cove", "current", "dune", "gull", "harbour", "heron", "kelp", "lagoon", "lantern", "pebble", "reef", "shell", "shoal", "tern", "wave"];
+// How many names are offered, oobed's among them.
+const OFFERED = 4;
+const any = (list) => list[crypto.getRandomValues(new Uint32Array(1))[0] % list.length];
 
 /**
  * The naming page. `turn` is where a page is drawn; `el` and `rise` make its
@@ -26,6 +35,7 @@ export function createNamingPage({ turn, el, rise, ask, toast, reduced }) {
     let page = null;    // what setup last said is on it
     let othersAs = "", errorAs = null;
     let shape = null;   // oobed's pattern, as a regular expression
+    let offered = null; // the names to pick from, oobed's first, as last drawn
 
     function button(className, content, press, attributes) {
         const node = el("button", className, content, { type: "button", ...attributes });
@@ -48,6 +58,11 @@ export function createNamingPage({ turn, el, rise, ask, toast, reduced }) {
             machine: rise(1, "div", "machine", [
                 el("span", "machine-glyph", [picture(MACHINE)], { "aria-hidden": "true" }),
                 el("span", "machine-said", [el("span", "machine-name"), el("span", "machine-what")]),
+                // The machine as the account's prompt will read on it.
+                el("code", "name-prompt", [
+                    el("span", "name-prompt-u"), el("span", "name-prompt-at", "@"), el("span", "name-prompt-h"), ":~$ ",
+                    el("i", "name-caret", "", { "aria-hidden": "true" }),
+                ]),
             ]),
             label: el("label", "", "", { for: id }),
             input: el("input", "input", "", {
@@ -58,21 +73,14 @@ export function createNamingPage({ turn, el, rise, ask, toast, reduced }) {
             error: el("p", "field-error", "", { id: `${id}-error`, "aria-live": "polite" }),
             hint: el("p", "field-hint", "", { id: `${id}-hint` }),
             help: el("p", "note", "", { id: `${id}-help` }),
-            restore: button("link", [picture(UNDO), el("span")], () => {
-                parts.input.value = page.name?.default ?? "";
-                typed();
-                parts.input.focus();
-            }),
+            chips: el("div", "name-chips", null, { role: "group", "aria-labelledby": "name-suggest-label" }),
+            shuffle: button("link name-shuffle", [picture(DICE), el("span", "", "Shuffle")], shuffle),
             others: el("span", "others"),
             why: el("p", "help", "", { id: "naming-help", "aria-live": "polite" }),
             back: button("btn quiet", [picture(BACK), el("span")], () => page.back?.enabled && ask({ press: page.back.ref })),
             finish: button("btn go-on", [el("span"), picture(ONWARD)], finish),
         };
-        parts.input.addEventListener("input", () => {
-            parts.input.removeAttribute("aria-invalid");
-            parts.error.textContent = "";
-            typed();
-        });
+        parts.input.addEventListener("input", edited);
         parts.input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); finish(); } });
         turn.replaceChildren(
             parts.title, parts.machine,
@@ -80,11 +88,65 @@ export function createNamingPage({ turn, el, rise, ask, toast, reduced }) {
                 el("div", "field-top", [parts.label, parts.count]),
                 parts.input, parts.error, parts.hint, parts.help,
             ])]),
-            rise(3, "div", "aux", [parts.restore, parts.others, parts.why]),
-            rise(4, "div", "nav", [parts.back, parts.finish]),
+            rise(3, "div", "name-suggest", [
+                el("span", "name-suggest-label", "Or pick one", { id: "name-suggest-label" }),
+                parts.chips, parts.shuffle,
+            ]),
+            rise(4, "div", "aux", [parts.others, parts.why]),
+            rise(5, "div", "nav", [parts.back, parts.finish]),
         );
         othersAs = "";
         errorAs = null;
+        offered = null;
+    }
+
+    // The name has changed, by typing or by picking one: what oobed said of
+    // the last one no longer stands.
+    function edited() {
+        parts.input.removeAttribute("aria-invalid");
+        parts.error.textContent = "";
+        typed();
+    }
+
+    // Whether `name` is one oobed would take, as far as the page can tell:
+    // its pattern, its longest, and not localhost, which every machine is.
+    function takes(name) {
+        const max = page.name?.max;
+        return (!shape || shape.test(name)) && (!max || name.length <= max) && name.toLowerCase() !== "localhost";
+    }
+
+    // The names to pick from: oobed's, and others made up to its rule. Each
+    // is a button that puts it in the field; the one in the field is shown
+    // pressed. `fresh` is whether they are new ones, which are seen to come.
+    function suggest(fresh) {
+        const theirs = page.name?.default;
+        const names = theirs && takes(theirs) ? [theirs] : [];
+        for (let tries = 0; names.length < OFFERED && tries < 100; tries++) {
+            const name = `${any(ADJ)}-${any(NOUN)}`;
+            if (takes(name) && !names.includes(name)) names.push(name);
+        }
+        offered = names;
+        parts.chips.replaceChildren(...names.map((name, i) => {
+            const chip = button(`name-chip${fresh ? " new" : ""}`, name, () => {
+                parts.input.value = name;
+                edited();
+            }, { "aria-pressed": "false" });
+            chip.style.setProperty("--i", i);
+            return chip;
+        }));
+        pressChips();
+    }
+
+    function shuffle() {
+        parts.shuffle.classList.remove("rolled");
+        void parts.shuffle.offsetWidth;
+        parts.shuffle.classList.add("rolled");
+        suggest(true);
+    }
+
+    function pressChips() {
+        const name = parts.input.value.trim().toLowerCase();
+        for (const chip of parts.chips.children) chip.setAttribute("aria-pressed", String(chip.textContent.toLowerCase() === name));
     }
 
     function say(text) {
@@ -108,9 +170,13 @@ export function createNamingPage({ turn, el, rise, ask, toast, reduced }) {
         const max = page.name?.max;
         parts.count.textContent = max ? `${name.length} / ${max}` : "";
         parts.count.classList.toggle("over", !!max && name.length > max);
-        const offered = page.name?.default;
-        parts.restore.hidden = !offered || name === offered;
-        parts.restore.querySelector("span").textContent = `Use ${offered ?? ""}`;
+        // The prompt, as the account will see it: whose it is where this
+        // program heard the account named, and the machine.
+        const prompt = parts.machine.querySelector(".name-prompt");
+        prompt.querySelector(".name-prompt-u").textContent = page.account ?? "";
+        prompt.querySelector(".name-prompt-at").hidden = !page.account;
+        prompt.querySelector(".name-prompt-h").textContent = name || "—";
+        if (offered) pressChips();
     }
 
     function drawOthers() {
@@ -151,6 +217,9 @@ export function createNamingPage({ turn, el, rise, ask, toast, reduced }) {
         parts.error.textContent = field?.error ?? "";
         if (field?.error) parts.input.setAttribute("aria-invalid", "true");
         else parts.input.removeAttribute("aria-invalid");
+        // Made up once the rule is known, and again only if oobed offers
+        // another name of its own.
+        if (!offered || (field?.default && takes(field.default) && offered[0] !== field.default)) suggest(false);
         typed();
         drawOthers();
         const name = (node, action) => {

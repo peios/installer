@@ -5,9 +5,10 @@
 // It starts its own oobed (--dry-run) and its own oobe-gxwi, so it needs no
 // VM and nothing else running. It goes from the welcome through the network
 // page and the account to the naming page, and looks at the name oobed
-// offers, the machine shown as it is typed, what the page says of a name a
-// network will not carry before oobed is asked, having the offered name back
-// in one press, joining a domain, which says why it cannot, and what oobed
+// offers, the machine shown as it is typed and as the account's prompt will
+// read on it, the names to pick from and Shuffle, what the page says of a
+// name a network will not carry before oobed is asked, having the offered
+// name back in one press, joining a domain, which says why it cannot, and what oobed
 // turns down when Finish is pressed. Finishing is finish.mjs's. Last, a narrow
 // screen, and Back to the account.
 //
@@ -48,6 +49,19 @@ const seen = () => js(`(() => {
         help: turn.querySelector(".field .note:not([hidden])")?.textContent ?? null,
         count: turn.querySelector(".count")?.textContent ?? null,
         restore: [...turn.querySelectorAll(".aux .link")].filter((l) => !l.hidden).map((l) => [l.textContent, l.getAttribute("aria-disabled") === "true"]),
+        prompt: turn.querySelector(".name-prompt")?.innerText ?? null,
+        chips: [...turn.querySelectorAll(".name-chip")].map((c) => [c.textContent, c.getAttribute("aria-pressed") === "true"]),
+        chipsLabel: (() => { const g = turn.querySelector(".name-chips"); return g?.getAttribute("role") === "group" ? document.getElementById(g.getAttribute("aria-labelledby"))?.textContent ?? null : null; })(),
+        shuffle: turn.querySelector(".name-shuffle")?.textContent ?? null,
+        // Everything on the card and in the row of names stays inside it.
+        held: (() => {
+            const card = turn.querySelector(".machine")?.getBoundingClientRect(), prompt = turn.querySelector(".name-prompt")?.getBoundingClientRect();
+            const row = turn.querySelector(".name-suggest")?.getBoundingClientRect();
+            const inside = (r, o) => r && o && r.left >= o.left - .5 && r.right <= o.right + .5 && r.bottom <= o.bottom + .5;
+            return !!(inside(prompt, card) && prompt.width > card.width * .8
+                && [...turn.querySelectorAll(".name-chip, .name-shuffle")].every((c) => inside(c.getBoundingClientRect(), row))
+                && [...turn.querySelectorAll(".name-chip")].every((c) => c.getBoundingClientRect().height >= 30));
+        })(),
         why: turn.querySelector(".help.on")?.textContent ?? null,
         error: turn.querySelector(".field-error")?.textContent || null,
         focused: document.activeElement?.id || document.activeElement?.tagName,
@@ -93,9 +107,40 @@ try {
         && out.naming.focused === "field-hostname" && out.naming.selected);
     expect("and shown as the machine it will be", JSON.stringify(out.naming.machine) === JSON.stringify(["peios-0000", "How this machine is known on a network"])
         && out.naming.count === "10 / 63");
+    expect("and as the account's prompt will read on it", out.naming.prompt === "jack@peios-0000:~$ ");
+    // oobed's rule for a name, as it sends it.
+    const rule = /^(?:[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)$/;
+    expect("names are offered to pick from: oobed's first, pressed, and three more, each one oobed's rule takes",
+        out.naming.chips.length === 4 && JSON.stringify(out.naming.chips[0]) === JSON.stringify(["peios-0000", true])
+        && out.naming.chips.slice(1).every(([n, pressed]) => !pressed && rule.test(n) && n.length <= 63 && n !== "localhost")
+        && new Set(out.naming.chips.map(([n]) => n)).size === 4
+        && out.naming.chipsLabel === "Or pick one" && out.naming.shuffle === "Shuffle");
+    expect("the card and the names keep to their places", out.naming.held);
     out.unreachable = await chrome.unreachable();
     expect("a pointer reaches every button", out.unreachable.length === 0);
     expect("joining a domain is there, greyed", JSON.stringify(out.naming.restore) === JSON.stringify([["Join a domain instead…", true]]));
+
+    // One picked: it is the name, and the machine shown as it.
+    const picked = out.naming.chips[2][0];
+    await click("#turn .name-chip:nth-child(3)");
+    out.picked = await seen();
+    expect("a name picked is put in the field, shown pressed, and is the machine",
+        out.picked.value === picked && out.picked.chips[2][1] && !out.picked.chips[0][1]
+        && out.picked.machine[0] === picked && out.picked.prompt === `jack@${picked}:~$ `);
+    // Shuffle: oobed's stays, the others are made up again.
+    await js(`document.querySelector("#turn .name-shuffle").focus()`);
+    await click("#turn .name-shuffle");
+    await sleep(700);
+    out.shuffled = await seen();
+    await picture("naming-5-shuffled.png");
+    expect("Shuffle makes up other names, keeping oobed's, and keeps the keyboard",
+        out.shuffled.chips.length === 4 && out.shuffled.chips[0][0] === "peios-0000"
+        && out.shuffled.chips.slice(1).map(([n]) => n).join() !== out.naming.chips.slice(1).map(([n]) => n).join()
+        && out.shuffled.chips.slice(1).every(([n]) => rule.test(n)) && out.shuffled.focused === "BUTTON"
+        && out.shuffled.value === picked && out.shuffled.held);
+    await click("#turn .name-chip:first-child");
+    out.back = await seen();
+    expect("and oobed's name is had back in one press", out.back.value === "peios-0000" && out.back.chips[0][1] && !out.back.off);
 
     await type("hostname", "my workshop");
     out.off = await seen();
@@ -103,10 +148,10 @@ try {
     expect("a name a network will not carry is said to be so as it is typed",
         out.off.off && out.off.hint === "Letters, digits and hyphens only, with no hyphen at either end." && out.off.machine[1] === "Not a name a network will carry yet");
     expect("in place of what a name may be, not beside it", out.off.help === null && out.naming.help?.startsWith("How this machine identifies itself"));
-    expect("and the name offered can be had back", out.off.restore[0]?.[0] === "Use peios-0000");
-    await click("#turn .aux .link");
+    expect("with no name to pick from pressed, and the prompt as typed", out.off.chips.every(([, pressed]) => !pressed) && out.off.prompt === "jack@my workshop:~$ ");
+    await click("#turn .name-chip:first-child");
     out.restored = await seen();
-    expect("in one press", out.restored.value === "peios-0000" && !out.restored.off && out.restored.restore.length === 1);
+    expect("and the name offered had back in one press", out.restored.value === "peios-0000" && !out.restored.off);
 
     await js(`document.querySelector("#turn .aux .link[aria-disabled]").focus()`);
     out.why = await eventually(seen, (s) => s.why !== null, 3);
@@ -126,12 +171,15 @@ try {
     await key("Enter", "Enter", 13);
     out.enter = await eventually(seen, (s) => s.error === "A machine's name cannot begin or end with a hyphen.", 5);
     expect("as is Enter in the name", out.enter.after !== null);
+    await click("#turn .name-chip:nth-child(2)");
+    out.unrefused = await seen();
+    expect("a name picked takes back what oobed said of the last", out.unrefused.error === null && out.unrefused.value === out.unrefused.chips[1][0]);
 
     await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await sleep(500);
     out.phone = await seen();
     await picture("naming-4-phone.png");
-    expect("a phone holds it without scrolling sideways", out.phone.wide === false);
+    expect("a phone holds it without scrolling sideways", out.phone.wide === false && out.phone.held);
     await send("Emulation.clearDeviceMetricsOverride");
 
     await click("#turn .nav .btn.quiet");

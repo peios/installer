@@ -968,6 +968,40 @@ a.btn { text-decoration: none; }
 .machine.off { border-color: rgb(240 184 110 / 40%); background: rgb(240 184 110 / 5%); }
 .machine.off .machine-glyph { background: rgb(240 184 110 / 12%); color: var(--wait); }
 .machine.off .machine-what { color: var(--wait); }
+/* the machine as the account's shell prompt will read on it */
+.name-prompt {
+    grid-column: 1 / -1; min-width: 0;
+    padding: 10px 13px;
+    border: 1px solid var(--border-default); border-radius: 10px;
+    background: rgb(6 8 12 / 70%);
+    font: 400 12.5px/1.5 var(--font-mono);
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+.name-prompt-u { color: var(--ok); }
+.name-prompt-h { color: var(--accent-quiet); }
+.machine.off .name-prompt-h { color: var(--wait); }
+.name-caret { display: inline-block; width: .55em; height: 1.1em; vertical-align: -.2em; margin-left: 2px; background: var(--text-secondary); animation: name-caret 1s steps(1) infinite; }
+@keyframes name-caret { 50% { opacity: 0; } }
+/* names to pick from, and a way to have others */
+.name-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.name-suggest-label { width: 100%; font: 500 13px/1.2 var(--font-text); color: var(--text-secondary); }
+.name-chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.name-chip {
+    height: 32px; max-width: 100%; padding: 0 12px;
+    border: 1px solid var(--border-default); border-radius: 999px;
+    background: rgb(255 255 255 / 3%);
+    color: var(--text-secondary);
+    font: 500 13px/1 var(--font-mono);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer;
+    transition: border-color .2s, color .2s, background-color .2s;
+}
+.name-chip:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.name-chip[aria-pressed="true"] { border-color: rgb(98 210 255 / 65%); color: var(--accent-quiet); background: rgb(98 210 255 / 10%); }
+.name-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.name-chip.new { animation: swap .4s var(--ease-out) both; animation-delay: calc(var(--i) * 60ms); }
+.name-shuffle.rolled svg { animation: spin .6s var(--ease-swift); }
 .field-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .count { font: 400 12px/1 var(--font-mono); color: var(--text-muted); }
 .count.over { color: var(--wait); }
@@ -1098,6 +1132,9 @@ a.btn { text-decoration: none; }
     .act, .toast, .disk, .net, .iface, .planned, .plan, .erased, .build, .layout, .btn, .log, .ptrack, .select, .acct, .clear, .machine { border: 1px solid CanvasText; }
     .acct-face { forced-color-adjust: none; }
     .acct-meter i { forced-color-adjust: none; outline: 1px solid CanvasText; }
+    .name-chip, .name-prompt { border: 1px solid CanvasText; }
+    .name-chip[aria-pressed="true"] { outline: 3px solid Highlight; outline-offset: 1px; }
+    .name-caret { forced-color-adjust: none; background: CanvasText; }
     .ptrack i, .st svg { forced-color-adjust: none; }
     .destroy { border: 2px solid ButtonText; }
     .destroy .fill { forced-color-adjust: none; }

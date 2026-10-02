@@ -208,6 +208,12 @@ pub enum Page {
         others: Vec<Action>,
         back: Option<Action>,
         finish: Option<Action>,
+        /// The account's name, as the account page was answered with it
+        /// (trimmed, as oobed takes it), for the page to show the machine as
+        /// its prompt will read. oobed does not send it here: this process
+        /// heard it answered. Nothing where it did not, as when it came to a
+        /// conversation already past the account.
+        account: Option<String>,
     },
     /// A page of installerd's that is not drawn here yet.
     Unbuilt { id: String, title: String },
@@ -594,9 +600,19 @@ impl Page {
                 others: turn.elements.iter().filter(|e| e.is_action() && !["nav.back", "nav.finish"].contains(&e.r#ref.as_str())).map(|e| Action::of(turn, e)).collect(),
                 back: action("nav.back"),
                 finish: action("nav.finish"),
+                account: None,
             },
             id => Page::Unbuilt { id: id.unwrap_or_default().to_string(), title },
         }
+    }
+
+    /// The page, with `named` as the account the naming page says the
+    /// machine's prompt is for. Any other page is as it was.
+    pub fn for_account(mut self, named: Option<&str>) -> Page {
+        if let Page::Naming { account, .. } = &mut self {
+            *account = named.map(str::to_string);
+        }
+        self
     }
 
     /// What is shown once the conversation has ended with `end`, `shown`
@@ -1350,7 +1366,13 @@ mod tests {
 
     #[test]
     fn the_name_is_asked_for_as_oobed_asks() {
-        let Page::Naming { title, name, others, back, finish } = Page::of(&naming(), None) else { panic!("not the naming page") };
+        let Page::Naming { title, name, others, back, finish, account: whose } = Page::of(&naming(), None) else { panic!("not the naming page") };
+        // oobed does not say whose account it is; this process says so once
+        // it has heard it answered.
+        assert_eq!(whose, None);
+        let Page::Naming { account: whose, .. } = Page::of(&naming(), None).for_account(Some("jack")) else { panic!("not the naming page") };
+        assert_eq!(whose.as_deref(), Some("jack"));
+        assert_eq!(Page::of(&account(), None).for_account(Some("jack")), Page::of(&account(), None));
         assert_eq!(title, "Name this machine");
         let name = name.unwrap();
         assert_eq!((name.r#ref.as_str(), name.default.as_deref(), name.max), ("hostname", Some("peios-3f2a"), Some(63)));
