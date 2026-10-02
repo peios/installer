@@ -925,6 +925,19 @@ a.btn { text-decoration: none; }
 .field-hint[data-state="match"] { color: var(--ok); }
 .field-hint[data-state="differ"] { color: var(--wait); }
 .field-hint svg { width: 12px; height: 12px; }
+/* how strong the password looks: four bars, and the word for it */
+.acct-strength { display: flex; align-items: center; gap: 10px; min-height: 16px; }
+.acct-meter { display: inline-grid; grid-template-columns: repeat(4, 28px); gap: 4px; }
+.acct-meter i { height: 4px; border-radius: 2px; background: var(--surface-2); transition: background-color .3s; }
+.acct-strength-say { font-size: 12.5px; color: var(--text-muted); transition: color .3s; }
+.acct-strength[data-level="1"] .acct-meter i:nth-child(-n+1) { background: var(--danger); }
+.acct-strength[data-level="2"] .acct-meter i:nth-child(-n+2) { background: var(--wait); }
+.acct-strength[data-level="3"] .acct-meter i:nth-child(-n+3) { background: var(--accent); }
+.acct-strength[data-level="4"] .acct-meter i { background: var(--ok); }
+.acct-strength[data-level="1"] .acct-strength-say { color: var(--danger); }
+.acct-strength[data-level="2"] .acct-strength-say { color: var(--wait); }
+.acct-strength[data-level="3"] .acct-strength-say { color: var(--accent-quiet); }
+.acct-strength[data-level="4"] .acct-strength-say { color: var(--ok); }
 /* the password crosses a network in the clear */
 .clear {
     display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; margin: 0;
@@ -1084,6 +1097,7 @@ a.btn { text-decoration: none; }
     #field, .aurora, .vignette, .flash { display: none; }
     .act, .toast, .disk, .net, .iface, .planned, .plan, .erased, .build, .layout, .btn, .log, .ptrack, .select, .acct, .clear, .machine { border: 1px solid CanvasText; }
     .acct-face { forced-color-adjust: none; }
+    .acct-meter i { forced-color-adjust: none; outline: 1px solid CanvasText; }
     .ptrack i, .st svg { forced-color-adjust: none; }
     .destroy { border: 2px solid ButtonText; }
     .destroy .fill { forced-color-adjust: none; }

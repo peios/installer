@@ -5,10 +5,11 @@
 // or goes on. What is typed stays in this browser until then and goes to
 // oobed with Next, never to anyone else looking: a password least of all.
 //
-// Some of it is said here as it is typed, and none of that is a check: that
-// the two passwords match or do not yet, that Caps Lock is on, and who the
-// account will be. And where this page reached the machine over a network,
-// in the clear, it says that the password will cross it so.
+// Some of it is said here as it is typed, and none of that is a check: how
+// strong the password looks, that the two passwords match or do not yet,
+// that Caps Lock is on, and who the account will be. And where this page
+// reached the machine over a network, in the clear, it says that the
+// password will cross it so.
 import { BACK, NOT_DRAWN, ONWARD, icon, picture } from "./bits.js";
 
 const EYE = icon("0 0 18 18", 1.5, '<path d="M1.75 9S4.5 3.75 9 3.75 16.25 9 16.25 9 13.5 14.25 9 14.25 1.75 9 1.75 9z"/><circle cx="9" cy="9" r="2.25"/>');
@@ -20,6 +21,26 @@ const SHIELD = icon("0 0 16 16", 1.5, '<path d="M8 1.75 13.25 3.5v4c0 3.2-2.2 5.
 /** Whether this page is being looked at on the machine it came from, or over
     a network: a location that is the loopback crosses none. */
 const local = (host) => /^(localhost|127(\.\d+){3}|\[::1\])$/i.test(host);
+
+// Passwords that are guessed first, whatever they are made of.
+const COMMON = ["password", "passw0rd", "12345678", "123456789", "qwertyui", "qwerty123", "letmein1", "iloveyou", "peios123", "admin123"];
+const STRENGTHS = ["", "Weak", "Fair", "Strong", "Very strong"];
+
+/** How strong `password` looks, 0 (nothing typed) to 4, and in words: by
+    how many guesses it would take at most, from its length and the kinds
+    of character in it; one that is common or is the account's own name is
+    guessed at once. Only a guide: oobed takes any password that is not
+    empty. */
+function strength(password, name) {
+    if (!password) return [0, ""];
+    const lower = password.toLowerCase();
+    if (COMMON.includes(lower) || lower === name.trim().toLowerCase()) return [1, "Easily guessed"];
+    const pool = (/[a-z]/.test(password) ? 26 : 0) + (/[A-Z]/.test(password) ? 26 : 0)
+        + (/\d/.test(password) ? 10 : 0) + (/[^A-Za-z0-9]/.test(password) ? 33 : 0);
+    const bits = [...password].length * Math.log2(pool || 1);
+    const level = bits < 36 ? 1 : bits < 50 ? 2 : bits < 70 ? 3 : 4;
+    return [level, STRENGTHS[level]];
+}
 
 /**
  * The account page. `turn` is where a page is drawn; `el` and `rise` make its
@@ -109,6 +130,17 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
             : state === "differ" ? [el("span", "", "Does not match yet")] : []));
     }
 
+    // How strong the password looks, as it is typed: four bars and a word,
+    // said again to a screen reader only when the word changes.
+    function drawStrength() {
+        const meter = parts.fields["account.password"]?.strength;
+        if (!meter) return;
+        const [level, words] = strength(input("account.password").value, input("account.name")?.value ?? "");
+        if (meter.dataset.level === String(level)) return;
+        meter.dataset.level = level;
+        meter.querySelector(".acct-strength-say").textContent = words;
+    }
+
     function reveal() {
         shown = !shown;
         for (const ref of ["account.password", "account.confirm"]) {
@@ -141,6 +173,7 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
                     "aria-describedby": `${id}-help ${id}-error ${id}-hint`,
                 });
                 input.value = field.default ?? "";
+                const rated = field.ref === "account.password" && field.secret;
                 made = {
                     input, secret: field.secret,
                     label: el("label", "", "", { for: id }),
@@ -148,12 +181,18 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
                     error: el("p", "field-error", "", { id: `${id}-error`, "aria-live": "polite" }),
                     hint: el("p", "field-hint", "", { id: `${id}-hint`, "aria-live": "polite" }),
                     caps: field.secret ? el("p", "field-caps", "Caps Lock is on", { hidden: "" }) : null,
+                    strength: rated ? el("div", "acct-strength", [
+                        el("span", "acct-meter", [el("i"), el("i"), el("i"), el("i")], { "aria-hidden": "true" }),
+                        el("span", "acct-strength-say"),
+                    ], { id: `${id}-strength`, "aria-live": "polite", "data-level": "0" }) : null,
                 };
+                if (rated) input.setAttribute("aria-describedby", `${id}-strength ${input.getAttribute("aria-describedby")}`);
                 input.addEventListener("input", () => {
                     input.removeAttribute("aria-invalid");
                     made.error.textContent = "";
                     drawWho();
                     drawMatch();
+                    drawStrength();
                 });
                 input.addEventListener("keydown", (e) => {
                     if (field.secret) caps(made, e.getModifierState?.("CapsLock"));
@@ -176,7 +215,8 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
                     box = el("div", "secret", [input, made.eye]);
                 }
                 parts.fields[field.ref] = made;
-                parts.form.append(el("div", "field", [made.label, box, made.error, ...(made.caps ? [made.caps] : []), made.hint, made.help]));
+                parts.form.append(el("div", "field", [made.label, box, ...(made.strength ? [made.strength] : []), made.error,
+                    ...(made.caps ? [made.caps] : []), made.hint, made.help]));
             }
             made.label.textContent = field.required ? field.name : `${field.name} (optional)`;
             made.input.placeholder = field.placeholder ?? "";
@@ -189,6 +229,7 @@ export function createAccountPage({ turn, el, rise, ask, toast, reduced }) {
         }
         drawWho();
         drawMatch();
+        drawStrength();
     }
 
     // Caps Lock, which a password typed blind is most often wrong by. Said

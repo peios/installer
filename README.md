@@ -82,8 +82,11 @@ page it ends on.
   typed is the browser's own until Save, and goes with it.
 - **The account**: a name, a password and the password again, which `oobed`
   checks when Next is pressed. As they are typed the page shows who the
-  account will be, whether the second password matches the first, and when
-  Caps Lock is on, and can show the passwords as typed. What is typed is the
+  account will be, how strong the password looks (a guide only, by its
+  length and what it is made of, a common one or the name itself being
+  easily guessed: `oobed` takes any that is not empty), whether the second
+  password matches the first, and when Caps Lock is on, and can show the
+  passwords as typed. What is typed is the
   browser's own until Next, and a password is never sent to anyone else
   looking. Opened by an address that is not the loopback, the page says the
   password will cross the network unencrypted.

@@ -6,7 +6,8 @@
 // VM and nothing else running. It goes from the welcome through the network
 // page to the account, and looks at what is asked, who the account will be as
 // the name is typed, whether the passwords match as the second is typed, the
-// way to see them, Caps Lock, and that nothing typed reaches anyone else
+// way to see them, how strong the password looks, Caps Lock, and that nothing
+// typed reaches anyone else
 // looking. Then a narrow screen, and Back, which leaves nothing typed
 // behind. Opened by an address that is not the machine's own, the page says
 // the password crosses the network unencrypted; by the loopback, it does
@@ -49,6 +50,18 @@ const seen = () => js(`(() => {
         name: input("account.name"), password: input("account.password"), confirm: input("account.confirm"),
         who: turn.querySelector(".acct") && [turn.querySelector(".acct-face").textContent, turn.querySelector(".acct-name").textContent],
         match: turn.querySelector(".field-hint:not(:empty)")?.textContent ?? null,
+        strength: (() => {
+            const s = turn.querySelector(".acct-strength");
+            if (!s) return null;
+            const bars = [...s.querySelectorAll(".acct-meter i")];
+            return {
+                level: s.dataset.level, says: s.querySelector(".acct-strength-say").textContent, live: s.getAttribute("aria-live"),
+                lit: bars.filter((b) => getComputedStyle(b).backgroundColor !== getComputedStyle(bars[3]).backgroundColor || s.dataset.level === "4").length,
+                described: (field("account.password")?.getAttribute("aria-describedby") ?? "").split(" ").includes(s.id),
+                under: s.previousElementSibling?.contains(field("account.password")) ?? false,
+                width: Math.round(s.querySelector(".acct-meter").getBoundingClientRect().width),
+            };
+        })(),
         caps: [...turn.querySelectorAll(".field-caps")].filter((c) => !c.hidden).length,
         errors: [...turn.querySelectorAll(".field-error")].map((e) => e.textContent).filter(Boolean),
         eye: turn.querySelector(".eye")?.getAttribute("aria-pressed") ?? null,
@@ -105,7 +118,25 @@ try {
     out.unreachable = await chrome.unreachable();
     expect("a pointer reaches every button", out.unreachable.length === 0);
 
+    expect("the password's strength is shown under it, empty while nothing is typed, and said politely",
+        out.account.strength?.level === "0" && out.account.strength.says === "" && out.account.strength.lit === 0
+        && out.account.strength.live === "polite" && out.account.strength.described && out.account.strength.under
+        && out.account.strength.width === 124);
+
     await type("account.name", "Jack Palfrey");
+    // How strong each looks, as it is typed: by how long it is and what it
+    // is made of, and a common one or the name itself at once.
+    out.strengths = {};
+    for (const password of ["abc12", "abcdefgh1", "Abcdefgh12", "correct horse", "password", "jack palfrey"]) {
+        await type("account.password", password);
+        await sleep(400);
+        const { level, says, lit } = (await seen()).strength;
+        out.strengths[password] = [level, says, lit];
+    }
+    expect("the strength follows what is typed", JSON.stringify(out.strengths) === JSON.stringify({
+        "abc12": ["1", "Weak", 1], "abcdefgh1": ["2", "Fair", 2], "Abcdefgh12": ["3", "Strong", 3], "correct horse": ["4", "Very strong", 4],
+        "password": ["1", "Easily guessed", 1], "jack palfrey": ["1", "Easily guessed", 1],
+    }));
     await type("account.password", "correct horse");
     await type("account.confirm", "correct");
     out.typing = await seen();
@@ -116,6 +147,7 @@ try {
     expect("one typed differently is said to differ", out.differ.match === "Does not match yet");
     await type("account.confirm", "correct horse");
     out.match = await seen();
+    await sleep(400);
     await picture("account-2-typed.png");
     expect("and the same, to match", out.match.match === "Matches");
 
@@ -148,7 +180,8 @@ try {
     await eventually(seen, (s) => s.kind === "network" && s.showing, 5);
     await click("#turn .nav .btn.go-on");
     out.again = await eventually(seen, onAccount, 5);
-    expect("Back leaves nothing typed behind", out.again.name.value === "peios" && out.again.password.value === "" && out.again.confirm.value === "");
+    expect("Back leaves nothing typed behind", out.again.name.value === "peios" && out.again.password.value === "" && out.again.confirm.value === ""
+        && out.again.strength?.level === "0" && out.again.strength.says === "");
 
     if (lan) {
         out.lan = await toAccount(`http://${lan}:${port}/`);
