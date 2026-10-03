@@ -143,6 +143,19 @@ dest = "usr/share/apps/dev.peios.gxwi-services-manager.toml"
 src  = "../../gxwi-services-manager/gxwi-services-manager.svg"
 dest = "usr/share/icons/base/dev.peios.gxwi-services-manager.svg"
 
+# Event Viewer, which nothing packages yet.
+[[file]]
+src  = "../../gxwi-event-viewer/target/release/gxwi-event-viewer"
+dest = "usr/bin/gxwi-event-viewer"
+
+[[file]]
+src  = "../../gxwi-event-viewer/dev.peios.gxwi-event-viewer.toml"
+dest = "usr/share/apps/dev.peios.gxwi-event-viewer.toml"
+
+[[file]]
+src  = "../../gxwi-event-viewer/gxwi-event-viewer.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi-event-viewer.svg"
+
 # The icons of the other applications the medium carries, as they stand in
 # their checkouts, over the packaged ones.
 
