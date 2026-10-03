@@ -132,16 +132,16 @@ dest = "usr/share/icons/base/dev.peios.gxwi-sd-editor.svg"
 
 # Services Manager, which nothing packages yet.
 [[file]]
-src  = "../../services-manager/target/release/services-manager"
-dest = "usr/bin/services-manager"
+src  = "../../gxwi-services-manager/target/release/gxwi-services-manager"
+dest = "usr/bin/gxwi-services-manager"
 
 [[file]]
-src  = "../../services-manager/dev.peios.services-manager.toml"
-dest = "usr/share/apps/dev.peios.services-manager.toml"
+src  = "../../gxwi-services-manager/dev.peios.gxwi-services-manager.toml"
+dest = "usr/share/apps/dev.peios.gxwi-services-manager.toml"
 
 [[file]]
-src  = "../../services-manager/services-manager.svg"
-dest = "usr/share/icons/base/dev.peios.services-manager.svg"
+src  = "../../gxwi-services-manager/gxwi-services-manager.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi-services-manager.svg"
 
 # The icons of the other applications the medium carries, as they stand in
 # their checkouts, over the packaged ones.

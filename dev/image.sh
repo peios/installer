@@ -10,7 +10,7 @@
 # oobed in ../installer, gxwid and gxwi-server in ../gxwi, fenestra in
 # ../fenestra, fenesh and Get started in ../fenesh, the terminal and text
 # editor in ../peiterm and ../peitor, Gexora in ../gexora, the permissions
-# editor in ../gxwi-sd-editor, and Services Manager in ../services-manager,
+# editor in ../gxwi-sd-editor, and Services Manager in ../gxwi-services-manager,
 # and layers dev/image.toml over
 # ../dist/release's spec, which puts them in the image (see there). Packages
 # come from ../pkgs/_repo2_ as for any medium.
@@ -27,7 +27,7 @@ cargo +1.98.1 build --release
 (cd ../peitor && . dev/env.sh && cargo build --release)
 (cd ../gexora && . dev/env.sh && cargo build --release)
 (cd ../gxwi-sd-editor && . dev/env.sh && cargo build --release)
-(cd ../services-manager && . dev/env.sh && cargo build --release)
+(cd ../gxwi-services-manager && . dev/env.sh && cargo build --release)
 (cd ../peiso && go build -o peiso .)
 cd ../dist/release
 # LAYER names one more layer to put over all of that, such as unreleased
