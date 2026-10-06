@@ -33,11 +33,15 @@ its own when GXWI first starts there; the installation goes on either way.
 An upgrade carries nothing: the system's own key stays.
 .PP
 The first page says where the machine is in a browser and its certificate's
-SHA-256 fingerprint, read from
-.I /var/state/gxwi/certificate.sha256
-as the page is made, so that someone at the console can check what a browser
-shows before going past its warning.  Nothing is said while there is no
-certificate.
+SHA-256 fingerprint, from
+.IR /var/state/gxwi/certificate.sha256 ,
+for someone at the console to check what a browser shows before going past
+its warning.  Only the console's drawing of it is worth checking against: a
+page that came over the connection being checked could say anything, and the
+browser installer does not draw it.  The page is made as the machine starts,
+often before it has an address or GXWI has made its certificate; while it is
+open it is asked again every 3 seconds, and the line changes as they come.
+Nothing is said where GXWI is not installed.
 .SH OPTIONS
 .TP
 .BI --socket " PATH"
