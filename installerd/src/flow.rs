@@ -96,20 +96,22 @@ fn disabled(mut e: Element, why: &str) -> Element {
 }
 
 pub fn mode_page() -> TurnSpec {
-    TurnSpec {
-        id: Some("mode".into()),
-        name: Some("Peios Setup".into()),
-        elements: vec![
-            text(
-                "mode.intro",
-                "Set up Peios on this machine, or upgrade or repair a system that is already installed.",
-            ),
-            primary(action("act.install", "Install Peios")),
-            action("act.upgrade", "Upgrade an installation"),
-            action("act.repair", "Repair an existing system"),
-        ],
-        class: vec!["menu".into()],
+    let mut elements = vec![
+        text(
+            "mode.intro",
+            "Set up Peios on this machine, or upgrade or repair a system that is already installed.",
+        ),
+        primary(action("act.install", "Install Peios")),
+        action("act.upgrade", "Upgrade an installation"),
+        action("act.repair", "Repair an existing system"),
+    ];
+    // Where to do this in a browser instead, and the certificate's
+    // fingerprint to check there: on a medium the console is where this
+    // page is first seen.
+    if let Some(browse) = msip_serve::browser::where_to_browse() {
+        elements.push(text("mode.browser", &browse));
     }
+    TurnSpec { id: Some("mode".into()), name: Some("Peios Setup".into()), elements, class: vec!["menu".into()] }
 }
 
 /// What the disk page is made from: the machine's disks with what is
