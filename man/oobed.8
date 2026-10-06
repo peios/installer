@@ -1,4 +1,4 @@
-.TH OOBED 8 "September 2026" "Peios" "System Administration"
+.TH OOBED 8 "October 2026" "Peios" "System Administration"
 .SH NAME
 oobed \- Peios first-boot setup service
 .SH SYNOPSIS
@@ -69,6 +69,12 @@ Both surfaces draw the same conversation.  When setup completes it removes
 the two values, the account and its home directory before retiring.  The
 account page refuses the name
 .BR peios-oobe-setup .
+.PP
+The first page says where the machine is in a browser and its GXWI
+certificate's SHA-256 fingerprint, read from
+.I /var/state/gxwi/certificate.sha256
+as the page is made, for someone at the console to check against what a
+browser shows.  Nothing is said while there is no certificate.
 .SH OPTIONS
 .TP
 .BI --socket " PATH"
