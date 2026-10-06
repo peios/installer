@@ -35,6 +35,9 @@ pub struct Install {
     /// calls on this same flow once the job has returned -- the shared
     /// slot is how a sentence gets from one to the other.
     found: Arc<Mutex<Option<String>>>,
+    /// What the first page last said of where the machine is in a browser,
+    /// once a refresh has said it; nothing until then.
+    browse: Option<String>,
 }
 
 impl Install {
@@ -44,6 +47,7 @@ impl Install {
             state: FlowState::Mode,
             kind: None,
             found: Arc::new(Mutex::new(None)),
+            browse: None,
         }
     }
 }
@@ -57,10 +61,29 @@ impl Flow for Install {
         flow::mode_page()
     }
 
+    /// While the first page is open, where the machine is in a browser, as
+    /// it comes: the page was made as the machine started, often before it
+    /// had an address.
+    fn refresh(&mut self) -> Vec<serde_json::Map<String, Value>> {
+        if self.state != FlowState::Mode {
+            return Vec::new();
+        }
+        let Some(now) = msip_serve::browser::where_to_browse() else { return Vec::new() };
+        if self.browse.as_deref() == Some(now.as_str()) {
+            return Vec::new();
+        }
+        let mut patch = serde_json::Map::new();
+        patch.insert("ref".into(), Value::String("mode.browser".into()));
+        patch.insert("text".into(), Value::String(now.clone()));
+        self.browse = Some(now);
+        vec![patch]
+    }
+
     fn advance(&mut self, answer: &ValidAnswer) -> Step {
         match flow::advance(&self.state, answer, self.executor.as_ref()) {
             Some(Advance::Page(next, spec)) => {
                 self.state = next;
+                self.browse = None;
                 Step::Page(spec)
             }
             Some(Advance::Rescan(mode)) => {

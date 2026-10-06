@@ -39,6 +39,8 @@ use serde_json::{Map, Value};
 /// What this library calls itself when it has something to say. A
 /// daemon's own messages carry its own tag.
 const TAG: &str = "msip";
+/// How often the open page is asked what has changed ([`Flow::refresh`]).
+const REFRESH_EVERY: std::time::Duration = std::time::Duration::from_secs(3);
 
 pub mod browser;
 mod console;
@@ -142,6 +144,15 @@ pub trait Flow: Send + 'static {
     fn after_job(&mut self) -> Option<TurnSpec> {
         None
     }
+    /// Patches for the page open now, where what it shows of the machine
+    /// has changed since it was made: an address that has come, say. A
+    /// page is made once for a conversation and kept for every surface that
+    /// joins it, so what is true of the machine only later reaches it this
+    /// way. Asked every few seconds while a page is open and no job is
+    /// running; a patch names only refs on the open page.
+    fn refresh(&mut self) -> Vec<Map<String, Value>> {
+        Vec::new()
+    }
     /// The conversation has ended and this flow is about to be dropped.
     ///
     /// Where a flow that is *done with the machine* says so — a
@@ -204,6 +215,27 @@ impl Server {
         })
     }
 
+    /// Asks the open page's flow, every [`REFRESH_EVERY`], what has changed,
+    /// and sends it to every surface.
+    fn keep_refreshing(&self) {
+        loop {
+            thread::sleep(REFRESH_EVERY);
+            let mut guard = self.live.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(live) = guard.as_mut() else { continue };
+            if live.working {
+                continue;
+            }
+            let patches = live.flow.refresh();
+            if patches.is_empty() {
+                continue;
+            }
+            match live.conversation.update(patches) {
+                Ok(update) => live.broadcast(MsgType::Update, &update),
+                Err(e) => note(TAG, &format!("cannot refresh the open page: {e:?}")),
+            }
+        }
+    }
+
     fn start_job(self: &Arc<Self>, job: Job) {
         let server = Arc::clone(self);
         thread::spawn(move || {
@@ -262,6 +294,8 @@ impl Server {
 
 /// Accept connections until the listener fails.
 pub fn serve(listener: UnixListener, server: Arc<Server>) -> std::io::Result<()> {
+    let refreshing = Arc::clone(&server);
+    thread::spawn(move || refreshing.keep_refreshing());
     for stream in listener.incoming() {
         let stream = stream?;
         let server = Arc::clone(&server);
