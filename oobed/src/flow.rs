@@ -113,7 +113,7 @@ pub fn locale_page() -> TurnSpec {
                     e.state.insert("choices".into(), json!([]));
                     e
                 },
-                "Peios ships in English only for now; there is no locale data to choose from yet.",
+                "Setup is in English. Choose this machine's language after setup, in System Settings, Language & Keyboard.",
             ),
             disabled(
                 {
@@ -122,8 +122,9 @@ pub fn locale_page() -> TurnSpec {
                     e.state.insert("choices".into(), json!([]));
                     e
                 },
-                "No keymaps are packaged yet. Until they are, the console is US layout — \
-                 which matters most on the next page, where a password is typed.",
+                "Choose the console's keyboard layout after setup, in System Settings, Language & Keyboard. \
+                 Until then the console is US layout — which matters most on the next page, where a password \
+                 is typed.",
             ),
             primary(action("nav.next", "Next")),
         ]
