@@ -73,6 +73,7 @@ pub fn routes(conversation: Conversation, view: watch::Receiver<View>, said: Sai
         .route("/welcome.js", part(SCRIPT, include_bytes!("../page/welcome.js")))
         .route("/fonts/manrope.woff2", part(FONT, include_bytes!("../page/fonts/manrope.woff2")))
         .route("/fonts/schibsted-grotesk.woff2", part(FONT, include_bytes!("../page/fonts/schibsted-grotesk.woff2")))
+        .route("/fonts/jetbrains-mono.woff2", part(FONT, include_bytes!("../page/fonts/jetbrains-mono.woff2")))
         // The state, live. `any`, because a websocket arrives as a GET over
         // HTTP/1.1 and as a CONNECT over HTTP/2, which is how GXWI sends it.
         .route("/live", any(live))

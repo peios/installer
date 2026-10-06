@@ -27,7 +27,7 @@ const VERSION = 1;
 // How long "Setup is complete" is left to be read before anything goes, and
 // how long the going takes.
 const HOLD = 2200, FADE = 700;
-const AHEAD = ["/.gxwi/logon.css", "/.gxwi/fonts/manrope.woff2", "/.gxwi/fonts/schibsted-grotesk.woff2"];
+const AHEAD = ["/.gxwi/logon.css", "/.gxwi/fonts/manrope.woff2", "/.gxwi/fonts/schibsted-grotesk.woff2", "/.gxwi/fonts/jetbrains-mono.woff2"];
 
 /**
  * `stage` is the whole page, `glows` the backdrop's glows, `field` the stars;
