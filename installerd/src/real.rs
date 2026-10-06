@@ -60,6 +60,9 @@ const LIVE_BOOT_PACKAGE: &str = "dev.peios.live-boot";
 const LIVE_BOOT_IRF_PACKAGE: &str = "dev.peios.live-boot-irf";
 const DISK_BOOT_PACKAGE: &str = "dev.peios.disk-boot";
 
+/// Where gxwid keeps this machine's key and certificate (gxwid(1)).
+const GXWI_KEYS: &str = "/var/state/gxwi";
+
 pub struct Real {
     /// Where the boot medium is mounted; live-boot mount-moves it here.
     pub medium: PathBuf,
@@ -561,6 +564,42 @@ impl Real {
         self.run(p, "umount", &[self.lower_mnt().to_string_lossy().as_ref()])
     }
 
+    /// GXWI's key and certificate, from this medium into the system it
+    /// installs, so the browser that installed the machine goes on trusting
+    /// it there and setup carries on in the same tab without a second
+    /// warning. Every install carries it, whichever surface asked: the
+    /// console's installer serves the same GXWI with the same key.
+    ///
+    /// `cp -a`, as the system itself is copied, so the directory arrives with
+    /// its descriptor: SYSTEM's alone, as gxwid made it.
+    ///
+    /// Never a reason to fail the install. A medium without GXWI has no key
+    /// to carry, and one that cannot be carried costs only a new key, which
+    /// gxwid makes on the installed system's first start.
+    fn carry_machine_key(&self, p: &dyn Progress, from: &Path) {
+        if !from.join("key.pem").is_file() {
+            p.log("no GXWI key on this medium; the installed system makes its own".into());
+            return;
+        }
+        let into = self.root_mnt().join("var/state");
+        let carried = std::fs::create_dir_all(&into)
+            .map_err(|e| format!("creating {}: {e}", into.display()))
+            .and_then(|()| {
+                self.run(
+                    p,
+                    "cp",
+                    &["-a", from.to_string_lossy().as_ref(), &format!("{}/", into.display())],
+                )
+            });
+        match carried {
+            Ok(()) => p.log("carried GXWI's key and certificate to the installed system".into()),
+            Err(e) => p.log(format!(
+                "could not carry GXWI's key and certificate ({e}); the installed system makes its own, \
+                 and a browser will warn about it once"
+            )),
+        }
+    }
+
     /// Point the target's registry-seed queues at a machine rather than
     /// a medium.
     ///
@@ -1035,6 +1074,7 @@ impl Real {
                 self.format(p, &esp, &root)?;
                 self.mount_target(p, &esp, &root)?;
                 self.copy_system(p)?;
+                self.carry_machine_key(p, Path::new(GXWI_KEYS));
                 self.make_bootable(p, &root)?;
                 p.log("done — reboot with the install medium removed".into());
                 Ok(None)
@@ -1274,6 +1314,36 @@ mod tests {
         };
 
         assert!(real.settle_seed_queues(&Quiet).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The key arrives where gxwid looks for it, with the certificate and
+    /// its fingerprint; a medium with none leaves the target without one.
+    #[test]
+    fn gxwis_key_is_carried_into_the_target() {
+        let dir = std::env::temp_dir().join(format!("peios-gxwi-key-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        let medium = dir.join("medium/gxwi");
+        std::fs::create_dir_all(&medium).unwrap();
+        std::fs::create_dir_all(dir.join("root")).unwrap();
+        for (name, text) in [("key.pem", "key"), ("certificate.pem", "cert"), ("certificate.sha256", "AB:CD\n")] {
+            std::fs::write(medium.join(name), text).unwrap();
+        }
+        struct Quiet;
+        impl Progress for Quiet {
+            fn phase(&self, _: &str, _: u8) {}
+            fn log(&self, _: String) {}
+        }
+        let real = Real { medium: PathBuf::from("/nonexistent"), work: dir.clone(), force: false };
+
+        real.carry_machine_key(&Quiet, &medium);
+        let carried = dir.join("root/var/state/gxwi");
+        assert_eq!(std::fs::read_to_string(carried.join("key.pem")).unwrap(), "key");
+        assert_eq!(std::fs::read_to_string(carried.join("certificate.sha256")).unwrap(), "AB:CD\n");
+
+        std::fs::remove_dir_all(dir.join("root/var")).unwrap();
+        real.carry_machine_key(&Quiet, &dir.join("medium/none"));
+        assert!(!dir.join("root/var/state/gxwi").exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 
