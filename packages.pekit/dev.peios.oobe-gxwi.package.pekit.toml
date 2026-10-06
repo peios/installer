@@ -6,7 +6,7 @@ side_effects = ["man-db"]
 [package]
 name = "dev.peios.oobe-gxwi"
 description = "Peios first-boot setup in a browser, as GXWI's overlay"
-license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)"
+license = "(((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)) AND OFL-1.1"
 
 [dependencies]
 "dev.peios.libpeios" = ">= 0.5.8-1"
@@ -19,5 +19,6 @@ license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.oobe-gxwi/LICENSE"
 ":licenses/**" = "usr/share/licenses/dev.peios.oobe-gxwi/third-party"
+"@source:page/fonts/*.LICENSE" = "usr/share/licenses/dev.peios.oobe-gxwi/fonts"
 ":usr/bin/oobe-gxwi" = "usr/bin/oobe-gxwi"
 ":usr/share/man/man1/oobe-gxwi.1.gz" = "usr/share/man/man1/oobe-gxwi.1.gz"

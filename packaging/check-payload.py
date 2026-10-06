@@ -12,6 +12,14 @@ for binary in ['installer-gxwi', 'oobe-gxwi']:
     debug = root / 'debug' / binary / 'usr/lib/debug/.build-id' / build_id[:2] / (build_id[2:] + '.debug')
     assert debug.is_file()
     assert (root / 'usr/share/man/man1' / (binary + '.1.gz')).is_file()
+# The faces built into the pages, each with its licence beside it, which
+# every package ships beside its own.
+faces = sorted(p.name.removesuffix('.woff2') for p in pathlib.Path('page/fonts').glob('*.woff2'))
+assert faces == ['jetbrains-mono', 'manrope', 'schibsted-grotesk'], faces
+for face in faces:
+    assert (pathlib.Path('page/fonts') / f'{face}.LICENSE').is_file(), face
+for file in pathlib.Path('packages.pekit').glob('dev.*.toml'):
+    assert '"@source:page/fonts/*.LICENSE"' in file.read_text(), file
 # The one seed is the medium's overlay, for an image's live queue only.
 seeds = sorted(p.name for p in (root / 'usr/share/regim').glob('*.reg'))
 assert seeds == ['installer-gxwi-overlay.reg'], seeds

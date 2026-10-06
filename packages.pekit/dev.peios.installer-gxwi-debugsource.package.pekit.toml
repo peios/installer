@@ -2,9 +2,10 @@
 name = "dev.peios.installer-gxwi-debugsource"
 architecture = "noarch"
 description = "Source for debugging the graphical installer and first-boot setup"
-license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)"
+license = "(((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)) AND OFL-1.1"
 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.installer-gxwi-debugsource/LICENSE"
 ":licenses/**" = "usr/share/licenses/dev.peios.installer-gxwi-debugsource/third-party"
+"@source:page/fonts/*.LICENSE" = "usr/share/licenses/dev.peios.installer-gxwi-debugsource/fonts"
 ":usr/src/debug/**" = "usr/src/debug"

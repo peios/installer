@@ -7,7 +7,7 @@ side_effects = ["man-db"]
 [package]
 name = "dev.peios.installer-gxwi"
 description = "Graphical Peios installer in a browser, as GXWI's overlay"
-license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)"
+license = "(((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)) AND OFL-1.1"
 
 [dependencies]
 "dev.peios.libpeios" = ">= 0.5.8-1"
@@ -20,6 +20,7 @@ license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.installer-gxwi/LICENSE"
 ":licenses/**" = "usr/share/licenses/dev.peios.installer-gxwi/third-party"
+"@source:page/fonts/*.LICENSE" = "usr/share/licenses/dev.peios.installer-gxwi/fonts"
 ":usr/bin/installer-gxwi" = "usr/bin/installer-gxwi"
 ":usr/share/man/man1/installer-gxwi.1.gz" = "usr/share/man/man1/installer-gxwi.1.gz"
 ":usr/share/regim/installer-gxwi-overlay.reg" = "usr/share/regim/installer-gxwi-overlay.reg"
