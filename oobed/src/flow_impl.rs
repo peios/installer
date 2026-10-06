@@ -31,6 +31,9 @@ pub struct Oobe {
     page: Page,
     /// The manual address kept for the end, if one is.
     plan: Option<Manual>,
+    /// What the first page last said of where the machine is in a browser,
+    /// once a refresh has said it; nothing until then.
+    browse: Option<String>,
 }
 
 impl Oobe {
@@ -39,6 +42,7 @@ impl Oobe {
             setup,
             page: Page::Locale,
             plan: None,
+            browse: None,
         }
     }
 }
@@ -52,10 +56,29 @@ impl Flow for Oobe {
         flow::locale_page()
     }
 
+    /// While the first page is open, where the machine is in a browser, as
+    /// it comes: the page was made as the machine started, often before it
+    /// had an address.
+    fn refresh(&mut self) -> Vec<serde_json::Map<String, serde_json::Value>> {
+        if self.page != Page::Locale {
+            return Vec::new();
+        }
+        let Some(now) = msip_serve::browser::where_to_browse() else { return Vec::new() };
+        if self.browse.as_deref() == Some(now.as_str()) {
+            return Vec::new();
+        }
+        let mut patch = serde_json::Map::new();
+        patch.insert("ref".into(), serde_json::Value::String("locale.browser".into()));
+        patch.insert("text".into(), serde_json::Value::String(now.clone()));
+        self.browse = Some(now);
+        vec![patch]
+    }
+
     fn advance(&mut self, answer: &ValidAnswer) -> Step {
         match flow::advance(&self.page, answer, self.setup.as_ref(), self.plan.as_ref()) {
             Some(Advance::Page(next, spec)) => {
                 self.page = next;
+                self.browse = None;
                 Step::Page(spec)
             }
             Some(Advance::Patch(patch)) => Step::Patch(vec![patch]),

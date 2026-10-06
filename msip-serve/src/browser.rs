@@ -5,29 +5,36 @@
 //! browser warns before anyone first signs in. Someone at the console can
 //! check what the browser shows against what the machine says here before
 //! going past the warning. Installer and first-boot setup both put it on
-//! their first page, which on a medium or a new machine is what the console
-//! shows.
+//! their first page. Only the console's drawing of it is worth checking
+//! against: a page that came over the connection being checked would show
+//! whatever whoever is in the middle of it wanted, and GXWI's own surfaces
+//! do not draw it.
 //!
-//! Read as the page is made, every time: the network may have come up since
-//! the last one, and gxwid makes the certificate when it first starts.
+//! A page is made once for a conversation, which the first surface opens as
+//! the machine starts, often before the network has given it an address and
+//! sometimes before gxwid has made its certificate. So the flows ask again
+//! while the page is open ([`msip_serve::Flow::refresh`]) and the line
+//! changes as they come.
 
 use std::net::IpAddr;
 use std::process::Command;
 
 /// The fingerprint gxwid writes (gxwid(1)).
 const FINGERPRINT: &str = "/var/state/gxwi/certificate.sha256";
+/// Where GXWI is, when it is on this machine.
+const GXWID: &str = "/usr/bin/gxwid";
 /// What GXWI listens on when the registry does not say.
 const DEFAULT_PORT: u16 = 7780;
 
 /// A sentence naming the machine's GXWI addresses and its certificate's
-/// fingerprint. Nothing where there is no certificate: no GXWI here, or it
-/// has not started yet.
+/// fingerprint, or saying that they are still to come. Nothing where GXWI is
+/// not on this machine.
 pub fn where_to_browse() -> Option<String> {
-    let fingerprint = std::fs::read_to_string(FINGERPRINT).ok()?;
-    let fingerprint = fingerprint.trim();
-    if fingerprint.is_empty() {
+    if !std::path::Path::new(GXWID).exists() {
         return None;
     }
+    let fingerprint = std::fs::read_to_string(FINGERPRINT).ok();
+    let fingerprint = fingerprint.as_deref().map(str::trim).filter(|f| !f.is_empty());
     let (bound, port) = listen();
     let addresses = match bound {
         Some(address) if !address.is_unspecified() => vec![address],
@@ -36,7 +43,7 @@ pub fn where_to_browse() -> Option<String> {
     Some(sentence(&addresses, port, fingerprint))
 }
 
-fn sentence(addresses: &[IpAddr], port: u16, fingerprint: &str) -> String {
+fn sentence(addresses: &[IpAddr], port: u16, fingerprint: Option<&str>) -> String {
     let urls: Vec<String> = addresses
         .iter()
         .map(|address| match address {
@@ -45,11 +52,17 @@ fn sentence(addresses: &[IpAddr], port: u16, fingerprint: &str) -> String {
         })
         .collect();
     let at = match urls.as_slice() {
-        [] => format!("In a browser, this machine is at https://<its address>:{port}/."),
+        [] => format!(
+            "This machine has no network address yet. Once it has one, it can also be reached in a browser at \
+             https:// and that address, port {port}."
+        ),
         [one] => format!("In a browser, this machine is at {one}."),
         many => format!("In a browser, this machine is at {}.", many.join(" or ")),
     };
-    format!("{at} Its certificate's SHA-256 fingerprint is {fingerprint}.")
+    match fingerprint {
+        Some(fingerprint) => format!("{at} Its certificate's SHA-256 fingerprint is {fingerprint}."),
+        None => format!("{at} Its certificate's SHA-256 fingerprint is shown here once GXWI has made it."),
+    }
 }
 
 /// GXWI's `Listen` value, as an address and a port: the address only where
@@ -120,12 +133,19 @@ mod tests {
     fn the_sentence_names_every_address_and_the_fingerprint() {
         let one: Vec<IpAddr> = vec!["10.0.2.15".parse().unwrap()];
         assert_eq!(
-            sentence(&one, 7780, "AB:CD"),
+            sentence(&one, 7780, Some("AB:CD")),
             "In a browser, this machine is at https://10.0.2.15:7780/. Its certificate's SHA-256 fingerprint is AB:CD."
         );
         let two: Vec<IpAddr> = vec!["192.168.1.4".parse().unwrap(), "2001:db8::4".parse().unwrap()];
-        assert!(sentence(&two, 443, "AB").contains("https://192.168.1.4:443/ or https://[2001:db8::4]:443/"));
-        assert!(sentence(&[], 7780, "AB").contains("https://<its address>:7780/"));
+        assert!(sentence(&two, 443, Some("AB")).contains("https://192.168.1.4:443/ or https://[2001:db8::4]:443/"));
+    }
+
+    #[test]
+    fn what_is_not_there_yet_is_said_so_and_no_placeholder_is_printed() {
+        let none = sentence(&[], 7780, None);
+        assert!(none.starts_with("This machine has no network address yet."), "{none}");
+        assert!(none.contains("shown here once GXWI has made it"), "{none}");
+        assert!(!none.contains('<'), "{none}");
     }
 
     #[test]
