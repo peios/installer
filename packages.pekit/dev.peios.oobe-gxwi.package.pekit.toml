@@ -1,0 +1,23 @@
+side_effects = ["man-db"]
+
+# First-boot setup in a browser. oobed makes it GXWI's overlay while setup is
+# pending, where it is installed (/usr/bin/oobe-gxwi), and takes it away when
+# setup is done.
+[package]
+name = "dev.peios.oobe-gxwi"
+description = "Peios first-boot setup in a browser, as GXWI's overlay"
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)"
+
+[dependencies]
+"dev.peios.libpeios" = ">= 0.5.8-1"
+"org.gnu.glibc" = "*"
+"org.gnu.gcc-libgcc" = "*"
+# The overlay is gxwid's from 0.0.3, and oobed offers this from 0.1.11.
+"dev.peios.gxwi" = ">= 0.0.3-1"
+"dev.peios.oobed" = ">= 0.1.11-1"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.oobe-gxwi/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.oobe-gxwi/third-party"
+":usr/bin/oobe-gxwi" = "usr/bin/oobe-gxwi"
+":usr/share/man/man1/oobe-gxwi.1.gz" = "usr/share/man/man1/oobe-gxwi.1.gz"

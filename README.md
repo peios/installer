@@ -136,8 +136,11 @@ The pages draw what `installerd` has only lately learned to say (the
 running job's), so they want an `installerd` from a current `../installer`.
 Against an older one they show what it says in words and leave the rest out.
 
-Neither is packaged or on any image yet. Until `oobe-gxwi` is installed at
-`/bin/oobe-gxwi`, `oobed` offers setup on the console only.
+They are packaged as `dev.peios.installer-gxwi` and `dev.peios.oobe-gxwi`.
+The installer's package carries `installer-gxwi-overlay`, the seed that makes
+it GXWI's overlay, which a medium applies from its live queue only. Until
+`oobe-gxwi` is installed at `/bin/oobe-gxwi`, `oobed` offers setup on the
+console only.
 
 ## Working on it
 

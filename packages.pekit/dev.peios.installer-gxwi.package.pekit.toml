@@ -1,0 +1,25 @@
+side_effects = ["man-db"]
+
+# What GXWI runs as its overlay on an install medium. Its seed,
+# installer-gxwi-overlay, makes it the overlay, and a medium applies it from
+# its live queue only: an installed machine carries the program, and isn't an
+# installer.
+[package]
+name = "dev.peios.installer-gxwi"
+description = "Graphical Peios installer in a browser, as GXWI's overlay"
+license = "((MIT OR Apache-2.0) AND Unicode-3.0) AND Apache-2.0 AND (Apache-2.0 OR BSD-2-Clause OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND BSD-3-Clause AND ISC AND MIT AND (MIT AND BSD-3-Clause) AND (MIT OR Unlicense)"
+
+[dependencies]
+"dev.peios.libpeios" = ">= 0.5.8-1"
+"org.gnu.glibc" = "*"
+"org.gnu.gcc-libgcc" = "*"
+# The overlay is gxwid's from 0.0.3; installerd asks the questions.
+"dev.peios.gxwi" = ">= 0.0.3-1"
+"dev.peios.installerd" = ">= 0.1.10-1"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.installer-gxwi/LICENSE"
+":licenses/**" = "usr/share/licenses/dev.peios.installer-gxwi/third-party"
+":usr/bin/installer-gxwi" = "usr/bin/installer-gxwi"
+":usr/share/man/man1/installer-gxwi.1.gz" = "usr/share/man/man1/installer-gxwi.1.gz"
+":usr/share/regim/installer-gxwi-overlay.reg" = "usr/share/regim/installer-gxwi-overlay.reg"
