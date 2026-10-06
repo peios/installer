@@ -1,4 +1,4 @@
-.TH INSTALLERD 8 "September 2026" "Peios" "System Administration"
+.TH INSTALLERD 8 "October 2026" "Peios" "System Administration"
 .SH NAME
 installerd \- Peios installation and repair service
 .SH SYNOPSIS
@@ -22,6 +22,22 @@ The service normally reads the pristine system image from the mounted
 installation medium, writes the selected disk, exchanges live-boot for
 disk-boot in the target package database, stages installed-system registry
 seeds, and regenerates the initramfs and UKI.
+.PP
+An installation also carries GXWI's key and certificate,
+.IR /var/state/gxwi ,
+from the medium into the installed system, descriptors and all, so a browser
+that installed the machine goes on trusting it and first-boot setup continues
+in the same tab.  Every installation does, whichever surface started it.  A
+medium without them, or a copy that fails, leaves the installed system to make
+its own when GXWI first starts there; the installation goes on either way.
+An upgrade carries nothing: the system's own key stays.
+.PP
+The first page says where the machine is in a browser and its certificate's
+SHA-256 fingerprint, read from
+.I /var/state/gxwi/certificate.sha256
+as the page is made, so that someone at the console can check what a browser
+shows before going past its warning.  Nothing is said while there is no
+certificate.
 .SH OPTIONS
 .TP
 .BI --socket " PATH"
@@ -82,7 +98,12 @@ Default MSIP socket.
 .TP
 .I /media/peios/rootfs.squashfs
 Default pristine system image.
+.TP
+.I /var/state/gxwi
+GXWI's key and certificate, carried into an installed system; see
+.BR gxwid (1).
 .SH SEE ALSO
+.BR gxwid (1),
 .BR install-tui (1),
 .BR msip-drive (1),
 .BR peipkg (8)
