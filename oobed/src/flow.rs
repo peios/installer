@@ -126,7 +126,13 @@ pub fn locale_page() -> TurnSpec {
                  which matters most on the next page, where a password is typed.",
             ),
             primary(action("nav.next", "Next")),
-        ],
+        ]
+        .into_iter()
+        // Where this machine is in a browser, and the certificate's
+        // fingerprint to check there: a new machine's console shows this
+        // page first.
+        .chain(msip_serve::browser::where_to_browse().map(|browse| text("locale.browser", &browse)))
+        .collect(),
         ..Default::default()
     }
 }

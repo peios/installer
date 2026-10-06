@@ -10,6 +10,7 @@ homepage.workspace = true
 publish.workspace = true
 
 [dependencies]
+libc = "0.2"
 msip = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

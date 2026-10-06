@@ -289,6 +289,7 @@ dependencies = [
 name = "msip-serve"
 version = "0.1.11"
 dependencies = [
+ "libc",
  "msip",
  "serde",
  "serde_json",

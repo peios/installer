@@ -40,6 +40,7 @@ use serde_json::{Map, Value};
 /// daemon's own messages carry its own tag.
 const TAG: &str = "msip";
 
+pub mod browser;
 mod console;
 
 pub fn note(tag: &str, line: &str) {
