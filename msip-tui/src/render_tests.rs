@@ -455,3 +455,34 @@ fn a_disabled_menu_item_explains_itself_however_long_the_reason() {
         lines[y + 1]
     );
 }
+
+/// The daemon's longer completion guidance must remain readable on the
+/// done page, with the restart action available below it.
+#[test]
+fn installation_completion_guidance_wraps_without_hiding_the_actions() {
+    let summary = "Installation complete. Reboot from the installed disk. \
+        When the machine restarts, remove the installation medium \
+        or choose the installed disk from the boot menu.";
+    let a = app(
+        json!([
+            {"ref": "done.summary", "type": "text", "text": summary},
+            {"ref": "act.reboot", "type": "action", "name": "Reboot now", "primary": true},
+            {"ref": "nav.start", "type": "action", "name": "Back to the start"}
+        ]),
+        json!(["done"]),
+    );
+    for width in [80, 100, 160] {
+        let lines = frame(&a, width, 24);
+        let words = lines
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            words.contains(summary),
+            "guidance clipped at {width} columns"
+        );
+        assert!(col(&lines, "[ Reboot now ]").is_some());
+        assert!(col(&lines, "[ Back to the start ]").is_some());
+    }
+}

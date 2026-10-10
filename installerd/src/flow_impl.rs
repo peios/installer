@@ -125,7 +125,10 @@ impl Flow for Install {
 
     fn completion_message(&self) -> Option<String> {
         let mut message: String = match self.kind {
-            Some(JobKind::Install) => "Installation complete. Reboot to start Peios.".into(),
+            Some(JobKind::Install) => "Installation complete. Reboot from the installed disk. \
+                When the machine restarts, remove the installation medium \
+                or choose the installed disk from the boot menu."
+                .into(),
             Some(JobKind::Upgrade) => "Upgrade complete.".into(),
             _ => "Repair complete.".into(),
         };
@@ -145,3 +148,41 @@ impl Flow for Install {
 // Kept so `Value` stays used when the patch shape changes.
 #[allow(unused)]
 fn _value(_: Value) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::executor::DryRun;
+
+    #[test]
+    fn completion_instructions_are_specific_to_a_fresh_install() {
+        let mut install = Install::new(Arc::new(DryRun {
+            step_ms: 0,
+            inventory: Some(crate::executor::Inventory::default()),
+            fail_at: None,
+        }));
+        for (kind, expected) in [
+            (
+                JobKind::Install,
+                "Installation complete. Reboot from the installed disk. \
+                 When the machine restarts, remove the installation medium \
+                 or choose the installed disk from the boot menu.",
+            ),
+            (JobKind::Upgrade, "Upgrade complete."),
+            (JobKind::RepairBoot, "Repair complete."),
+            (JobKind::RepairFsck, "Repair complete."),
+            (JobKind::RepairSd, "Repair complete."),
+        ] {
+            install.kind = Some(kind);
+            *install.found.lock().unwrap() = None;
+            assert_eq!(install.completion_message().as_deref(), Some(expected));
+
+            // Any result supplied by the job still follows its summary.
+            *install.found.lock().unwrap() = Some("Job details.".into());
+            assert_eq!(
+                install.completion_message(),
+                Some(format!("{expected} Job details."))
+            );
+        }
+    }
+}
