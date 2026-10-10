@@ -125,7 +125,7 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
     let over = null;    // how the job ended, as last drawn
     let headed = "";
     let pouring = false;
-    let onward = { words: "", url: "/" };  // where a finished setup goes, and how it is getting there
+    let onward = { words: "", url: "/" };  // where setup is being followed, without implying it finished
     // Under the disk: what is shown there ("sd", "boot" or nothing, null
     // before it is first drawn), the descriptor and the boot file as last
     // heard, and the descriptor typing itself out.
@@ -171,11 +171,13 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
             if (page.ended?.reboot && !busy(reboot)) ask({ press: page.ended.reboot.ref });
         });
         const refused = el("p", "err", "", { role: "alert" });
-        // Setup's way on: the sign-in page, wherever the machine now is.
-        const signIn = el("a", "btn go-on", [el("span", "", "Sign in"), picture(ONWARD)], { href: "/", "data-way": "sign-in" });
+        // The existing manual destination also helps when setup lost touch
+        // before its outcome arrived. In that case, it is not yet sign-in.
+        const signInName = el("span", "", "Sign in");
+        const signIn = el("a", "btn go-on", [signInName, picture(ONWARD)], { href: "/", "data-way": "sign-in" });
         const going = el("p", "going", "", { role: "status" });
         parts = {
-            title, num, pct, nowName, nowCount, log, again, againName, reboot, rebootName, refused, signIn, going,
+            title, num, pct, nowName, nowCount, log, again, againName, reboot, rebootName, refused, signIn, signInName, going,
             // The heading takes the keyboard when the page arrives: nothing
             // on it can be pressed while the job runs.
             heading: rise(0, "h1", "", [title], { tabindex: "-1" }),
@@ -446,17 +448,23 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
             nowAt = at;
         }
 
-        parts.nav.hidden = !ended;
         const reboot = page.ended?.reboot, start = page.ended?.start;
-        // Setup that finished has nothing to start again: what is left is to
-        // sign in.
+        // A lost connection can start following before setup's outcome is
+        // known. Show only that recovery route, not job-ending controls or
+        // completion words. following() clears these words on reconnect.
         const signing = page.job === "setup" && ended === "complete";
-        parts.signIn.hidden = !signing;
+        const recovering = page.job === "setup" && !ended && !!onward.words;
+        const following = signing || recovering;
+        parts.nav.hidden = !ended && !recovering;
+        parts.signIn.hidden = !following;
+        parts.signInName.textContent = recovering ? "Open this machine" : "Sign in";
         parts.signIn.href = onward.url;
-        parts.going.textContent = signing ? onward.words : "";
-        parts.going.hidden = !signing || !onward.words;
-        parts.again.hidden = signing;
-        parts.reboot.hidden = !reboot;
+        parts.going.textContent = following ? onward.words : "";
+        parts.going.hidden = !following || !onward.words;
+        // Setup that finished has nothing to start again. An unfinished
+        // job offers neither action, even while its recovery route is up.
+        parts.again.hidden = !ended || signing;
+        parts.reboot.hidden = !ended || !reboot;
         parts.rebootName.textContent = waiting === reboot?.ref ? "Restarting…" : reboot?.name ?? "";
         parts.again.className = ended === "complete" ? "btn quiet" : "btn go-on";
         parts.againName.textContent = waiting === "again" || (start && waiting === start.ref) ? "Starting again…"
@@ -608,7 +616,7 @@ export function createProgressPage({ turn, stage, el, rise, ask, say, retitle, f
         mood(false);
     }
 
-    /** Where a finished setup is going, and how it is getting there, in
+    /** Where setup is being followed, and how it is getting there, in
         words (ending.js): drawn under the way on. */
     function following(words, url) {
         onward = { words, url };
