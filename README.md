@@ -187,6 +187,20 @@ serves on every address, to open the page by one that is not the loopback.
 wants `oobed` built too (`cargo +1.98.1 build -p installerd -p oobed -p
 msip-drive` in `../installer`).
 
+The browser recovery controller also has deterministic tests that need only
+Node.js, with no SDK, daemon, or browser. They run the actual `ending.js` with
+in-memory probes, timers, and navigation, covering stopped and superseded
+recovery rounds alongside normal arrivals and polling:
+
+```sh
+node --experimental-vm-modules --test dev/browser/ending-state.mjs
+```
+
+These test cancellation and state handling, not real network migration or
+certificate trust. `ENDING_SOURCE=/path/to/page/ending.js` selects another
+source version for a baseline regression run. The read-only Recovery controller
+PR workflow runs the same test command without installing packages.
+
 A pretended installation takes about a quarter of a minute.
 `FAIL_AT=copy dev/host.sh` makes each one fail part way through that phase,
 to look at an installation that goes wrong.
