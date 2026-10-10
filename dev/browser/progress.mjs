@@ -263,8 +263,8 @@ try {
     out.done = { ...await seen(), after: out.done.after };
     await picture("progress-3-finished.png");
     expect("finished, the page says so in installerd's words: its first sentence the heading, the rest beneath",
-        out.done.after !== null && out.done.heading === "Installation complete" && out.done.lede === "Reboot to start Peios."
-        && out.done.title === "Installation complete · Peios Setup" && out.done.said === "Installation complete. Reboot to start Peios.");
+        out.done.after !== null && out.done.heading === "Installation complete" && out.done.lede === "Reboot from the installed disk. When the machine restarts, remove the installation medium or choose the installed disk from the boot menu."
+        && out.done.title === "Installation complete · Peios Setup" && out.done.said === "Installation complete. Reboot from the installed disk. When the machine restarts, remove the installation medium or choose the installed disk from the boot menu.");
     expect("every phase is done, the figure has given way, and the disk is whole",
         out.done.phases.every((p) => p.state === "done") && out.done.overall === "100" && out.done.now[0] === "Complete" && out.done.now[1] === "4 of 4"
         && out.done.disk.copy === 1 && out.done.disk.boot === 1 && out.done.disk.parts.every((p) => p.done) && out.done.disk.doing === "");
@@ -279,6 +279,7 @@ try {
     out.ended = (await elsewhere());
     expect("for everyone looking, installerd's page of what came of it being the one answered",
         out.ended.page.kind === "progress" && out.ended.page.ended.outcome === "complete" && out.ended.seq > 0
+        && out.ended.page.ended.message === "Installation complete. Reboot from the installed disk. When the machine restarts, remove the installation medium or choose the installed disk from the boot menu."
         && out.ended.page.ended.reboot?.ref === "act.reboot" && out.ended.page.ended.start?.ref === "nav.start");
 
     // What it said, whole, as a file.
