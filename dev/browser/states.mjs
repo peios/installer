@@ -136,7 +136,7 @@ try {
     out.running = await eventually(seen, (s) => s.heading === "Installing" && s.showing, 10);
     expect("an installation begun elsewhere is shown here as it runs", out.running.after !== null && out.running.title === "Installing · Peios Setup");
     out.ended = await eventually(seen, (s) => s.heading === "Installation complete" && s.showing, 40);
-    expect("and ends here too, in installerd's words", out.ended.after !== null && out.ended.lede === "Reboot to start Peios." && out.ended.status === "Finished");
+    expect("and ends here too, in installerd's words", out.ended.after !== null && out.ended.lede === "Reboot from the installed disk. When the machine restarts, remove the installation medium or choose the installed disk from the boot menu." && out.ended.status === "Finished");
     await sleep(4000);
     out.stayed = await seen();
     expect("and what it ended with stays on the page", out.stayed.heading === "Installation complete" && out.stayed.showing && out.stayed.statusIs !== "bad"
@@ -151,7 +151,7 @@ try {
     installerGxwi = startInstaller();
     out.reopened = await eventually(seen, (s) => s.heading === "Installation complete" && s.showing, 15);
     expect("an installer restarted on the finished page joins it there, with the restart still offered",
-        out.reopened.after !== null && out.reopened.lede === "Reboot to start Peios." && out.reopened.reboot === "Reboot now");
+        out.reopened.after !== null && out.reopened.lede === "Reboot from the installed disk. When the machine restarts, remove the installation medium or choose the installed disk from the boot menu." && out.reopened.reboot === "Reboot now");
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));
