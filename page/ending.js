@@ -39,6 +39,7 @@ export function hostOf(address) {
  */
 export function createEnding({ onChange, go = (url) => location.assign(url) }) {
     let active = false, timer = 0, since = 0;
+    let cycle = 0; // a stopped round must not act on a later recovery
     let there = null;   // the origin of the address given by hand, if any
     let state = { stage: "", words: "", onward: "/" };
 
@@ -55,16 +56,17 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
         }
     }
 
-    async function round() {
+    async function round(current) {
+        if (!active || current !== cycle) return;
         timer = 0;
-        if (!active) return;
         const [here, moved] = await Promise.all([
             ask("/hello"),
             there ? ask(`${there}/hello`, { mode: "no-cors" }) : null,
         ]);
-        if (!active) return;
+        if (!active || current !== cycle) return;
         if (here && here.status !== UNAVAILABLE) {
             const said = here.ok ? await here.json().catch(() => null) : null;
+            if (!active || current !== cycle) return;
             // Setup again: it has not gone yet, and the connection, tried
             // again meanwhile, will say so.
             if (!said?.setup) return arrive("/");
@@ -78,7 +80,7 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
                     : "The machine has not answered since setup finished. Its own screen says where it is.",
             });
         }
-        timer = setTimeout(round, EVERY);
+        timer = setTimeout(() => round(current), EVERY);
     }
 
     function arrive(url) {
@@ -95,6 +97,7 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
         const host = address ? hostOf(address) : null;
         there = host && host !== location.hostname && `[${location.hostname}]` !== host
             ? `${location.protocol}//${host}${location.port ? `:${location.port}` : ""}` : null;
+        const current = ++cycle;
         active = true;
         since = Date.now();
         set({
@@ -102,7 +105,7 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
             words: there ? `Following this machine to ${host}.` : "Waiting for the sign-in page.",
             onward: there ? `${there}/` : "/",
         });
-        round();
+        round(current);
     }
 
     /** The connection is back: setup had not gone, and the page goes on. */
