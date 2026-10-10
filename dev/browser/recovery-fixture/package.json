@@ -1,0 +1,13 @@
+{
+  "name": "peios-recovery-ui-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test --config=playwright.config.mjs",
+    "test:baseline": "node baseline.mjs",
+    "test:fixture": "node --test server.test.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.57.0"
+  }
+}

@@ -222,6 +222,23 @@ The conversation is `installerd`'s and outlives a browser, so a check that
 stops part way leaves it on whatever page it had reached. `dev/push.sh`
 starts it again from the first.
 
+### SDK-free recovery UI checks
+
+The recovery presentation has isolated tests that run the real `page/`
+JavaScript with fake transport and time. They do not start a daemon, install
+anything, restart a machine, or establish real network or certificate behavior:
+
+```sh
+node --experimental-vm-modules dev/browser/recovery-state.mjs
+```
+
+This zero-dependency check records source hashes and state snapshots in
+`out/recovery-state.json`. `SOURCE_ROOT=/path/to/page` runs the same assertions
+against another source tree, for example the unfixed baseline. Real-DOM browser
+checks and screenshots are documented in
+[`dev/browser/recovery-fixture/README.md`](dev/browser/recovery-fixture/README.md).
+These complement, rather than replace, the full host and VM checks above.
+
 ## License
 
 MIT. The fonts in `page/fonts/` are under the licences beside them.

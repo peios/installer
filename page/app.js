@@ -169,7 +169,7 @@ function drawStatus() {
     // A job's end is the conversation's: there is nothing to be connected to.
     const ended = view?.page?.kind === "progress" ? view.page.ended?.outcome : view?.page?.kind === "ended" ? view.page.outcome : null;
     const [text, how] =
-        ending.active ? [ending.state.stage === "lost" ? "Waiting for the machine" : "Setup has finished", ending.state.stage === "lost" ? "bad" : "wait"]
+        ending.active ? [ending.state.stage === "lost" || ended !== "complete" ? "Waiting for the machine" : "Setup has finished", ending.state.stage === "lost" ? "bad" : "wait"]
         : heard === "lost" ? ["Lost touch with this machine", "bad"]
         : !link ? ["Starting", "wait"]
         : view.waiting === "again" ? ["Starting again", "wait"]

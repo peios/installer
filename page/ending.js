@@ -75,7 +75,7 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
                 stage: "lost",
                 words: there
                     ? `Nothing has answered at ${there.replace(/^\w+:\/\//, "")}. The machine's own screen says where it is.`
-                    : "The machine has not answered since setup finished. Its own screen says where it is.",
+                    : "The machine has not answered. Its own screen says where it is.",
             });
         }
         timer = setTimeout(round, EVERY);
