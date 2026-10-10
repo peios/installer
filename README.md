@@ -198,8 +198,7 @@ node --experimental-vm-modules --test dev/browser/ending-state.mjs
 
 These test cancellation and state handling, not real network migration or
 certificate trust. `ENDING_SOURCE=/path/to/page/ending.js` selects another
-source version for a baseline regression run. The read-only Recovery controller
-PR workflow runs the same test command without installing packages.
+source version for a baseline regression run.
 
 A pretended installation takes about a quarter of a minute.
 `FAIL_AT=copy dev/host.sh` makes each one fail part way through that phase,
