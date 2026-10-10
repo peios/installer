@@ -204,17 +204,38 @@ fn full_install_flow_with_late_joiner() {
     };
     assert_eq!(finished(&mut a), "install.done");
     assert_eq!(finished(&mut late), "install.done");
-    let page = a.session.page().unwrap();
-    assert_eq!(
-        page.element("done.summary").unwrap().state["text"],
-        "Installation complete. Reboot to start Peios."
-    );
-    assert!(page.element("act.reboot").unwrap().enabled);
+    // A surface opened after completion replays the same instructions.
+    let mut done = Surface::connect(&socket, types::ALL);
+    write_msg(
+        &mut done.stream,
+        MsgType::Start,
+        &Start {
+            kind: "install".into(),
+        },
+    )
+    .unwrap();
+    let Event::Bound(b) = done.recv() else {
+        panic!("expected Bound")
+    };
+    assert!(b.attached);
+    assert!(matches!(done.recv(), Event::NewTurn));
+    assert_eq!(done.turn_id(), "install.done");
+
+    for s in [&a, &late, &done] {
+        let page = s.session.page().unwrap();
+        assert_eq!(
+            page.element("done.summary").unwrap().state["text"],
+            "Installation complete. Reboot from the installed disk. \
+             When the machine restarts, remove the installation medium \
+             or choose the installed disk from the boot menu."
+        );
+        assert!(page.element("act.reboot").unwrap().enabled);
+    }
 
     // Asked to restart, installerd does (the dry run pretends), and the
-    // conversation ends saying so, to both.
+    // conversation ends saying so, to every attached surface.
     a.answer("act.reboot", vec![]);
-    for s in [&mut a, &mut late] {
+    for s in [&mut a, &mut late, &mut done] {
         let Event::Ended(end) = s.recv() else {
             panic!("expected END")
         };
