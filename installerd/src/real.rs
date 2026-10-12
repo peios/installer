@@ -43,6 +43,7 @@ use crate::executor::{
     INSTALL_PHASES, REPAIR_BOOT_PHASES, REPAIR_FSCK_PHASES, REPAIR_SD_PHASES, UPGRADE_PHASES,
 };
 use crate::inspect;
+use crate::medium_packages::{self, LIVE_BOOT_PACKAGE, MEDIUM_REPO, REMOVALS_REL};
 
 /// How often a command that is being watched is looked in on.
 const WATCH_EVERY: Duration = Duration::from_millis(200);
@@ -54,11 +55,7 @@ const WATCH_EVERY: Duration = Duration::from_millis(200);
 const ROOT_SDDL: &str =
     "O:SYG:SYD:(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;WD)(A;OICIIO;GA;;;S-1-3-0)";
 
-const MEDIUM_REPO: &str = "peios-medium";
 const CMDLINE_TEMPLATE_REL: &str = "usr/share/disk-boot/cmdline";
-const LIVE_BOOT_PACKAGE: &str = "dev.peios.live-boot";
-const LIVE_BOOT_IRF_PACKAGE: &str = "dev.peios.live-boot-irf";
-const DISK_BOOT_PACKAGE: &str = "dev.peios.disk-boot";
 
 /// Where gxwid keeps this machine's key and certificate (gxwid(1)).
 const GXWI_KEYS: &str = "/var/state/gxwi";
@@ -674,13 +671,20 @@ impl Real {
     /// files" asked for.
     ///
     /// The one disk that still wants the swap is a half-finished
-    /// install, where the copy landed and boot setup died. That disk
-    /// still carries live-boot, and that is exactly the test.
+    /// install, where the copy landed and boot setup died. Its removal
+    /// checkpoint survives even if live-boot has already been removed;
+    /// older media are also recognised by the live-boot package.
     fn repair_boot(&self, p: &dyn Progress, root_part: &str) -> Result<(), String> {
         let root_s = self.root_mnt().to_string_lossy().into_owned();
         p.phase("phase.boot", 5);
-        if self.package_installed(&root_s, LIVE_BOOT_PACKAGE) {
-            p.log("the disk still carries the medium's boot package: finishing the install".into());
+        if self
+            .root_mnt()
+            .join(REMOVALS_REL)
+            .try_exists()
+            .map_err(|e| format!("checking medium-only package checkpoint: {e}"))?
+            || self.package_installed(&root_s, LIVE_BOOT_PACKAGE)
+        {
+            p.log("the disk still carries medium installation state: finishing the install".into());
             self.settle_seed_queues(p)?;
             self.swap_boot_packages(p)?;
         } else {
@@ -771,48 +775,15 @@ impl Real {
         Ok(now)
     }
 
-    /// Swap live-boot for disk-boot, from the medium's repository.
+    /// Remove the medium's declared temporary packages and install disk-boot.
     fn swap_boot_packages(&self, p: &dyn Progress) -> Result<(), String> {
-        let root_s = self.root_mnt().to_string_lossy().into_owned();
-        let irf_root = format!("{root_s}/boot/initramfs");
-        self.run(
-            p,
-            "peipkg",
-            &["--root", &root_s, "repo", "add", MEDIUM_REPO],
-        )?;
-        self.run(
-            p,
-            "peipkg",
-            &["--root", &root_s, "uninstall", LIVE_BOOT_PACKAGE, "--yes"],
-        )?;
-        self.run(
-            p,
-            "peipkg",
-            &[
-                "--root",
-                &irf_root,
-                "uninstall",
-                LIVE_BOOT_IRF_PACKAGE,
-                "--yes",
-            ],
-        )?;
-        self.run(
-            p,
-            "peipkg",
-            &[
-                "--root",
-                &root_s,
-                "install",
-                DISK_BOOT_PACKAGE,
-                "--yes",
-                "--allow-stale",
-            ],
-        )?;
-        self.run(
-            p,
-            "peipkg",
-            &["--root", &root_s, "repo", "remove", MEDIUM_REPO],
-        )
+        medium_packages::finish_copy(&self.root_mnt(), |args| {
+            if args.get(2) == Some(&"list") {
+                self.capture("peipkg", args)
+            } else {
+                self.run(p, "peipkg", args).map(|()| String::new())
+            }
+        })
     }
 
     /// Write the cmdline, rebuild the initramfs and place the UKI, all
