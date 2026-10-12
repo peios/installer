@@ -78,7 +78,7 @@ impl App {
             format!(" {}", self.title),
             self.theme.heading(),
         ));
-        f.render_widget(Paragraph::new(line), area);
+        f.render_widget(Paragraph::new(line).wrap(Wrap { trim: false }), area);
     }
 
     fn rule(&self, f: &mut Frame, area: Rect) {
@@ -86,7 +86,7 @@ impl App {
             self.theme.glyphs.rule.repeat(area.width as usize),
             self.theme.dim(),
         ));
-        f.render_widget(Paragraph::new(line), area);
+        f.render_widget(Paragraph::new(line).wrap(Wrap { trim: false }), area);
     }
 
     /// One line, in priority order: a protocol complaint; why the
@@ -241,7 +241,7 @@ impl App {
     /// focus changes: a field's note line is reserved whenever it has
     /// help or an error, so focus moving does not shift the page.
     fn height_of(&self, e: &Element, width: u16) -> Constraint {
-        let note = (e.error.is_some() || e.help.is_some()) as u16;
+        let note = note_height(e, width);
         let n = rows_of(e).len();
         let h = match e.r#type.as_str() {
             types::TEXT => wrap_count(text_of(e), width) + 1,
@@ -301,16 +301,16 @@ impl App {
         );
     }
 
-    /// The line under a field: its error, or its help while focused.
+    /// The note under a field: its error, or help when focused or disabled.
     fn note(&self, f: &mut Frame, area: Rect, e: &Element, focused: bool) {
         let line = if let Some(err) = &e.error {
             Line::from(Span::styled(err.clone(), self.theme.error()))
-        } else if let (true, Some(h)) = (focused, &e.help) {
+        } else if let (true, Some(h)) = (focused || !e.enabled, &e.help) {
             Line::from(Span::styled(h.clone(), self.theme.dim()))
         } else {
             return;
         };
-        f.render_widget(Paragraph::new(line), area);
+        f.render_widget(Paragraph::new(line).wrap(Wrap { trim: false }), area);
     }
 
     fn boxed(&self, focused: bool, enabled: bool) -> Block<'static> {
@@ -369,7 +369,7 @@ impl App {
             Line::from(spans)
         };
         f.render_widget(Paragraph::new(line), inner);
-        self.note(f, row(area, 4, 1), e, focused);
+        self.note(f, row(area, 4, note_height(e, area.width)), e, focused);
     }
 
     fn boolean(&self, f: &mut Frame, area: Rect, e: &Element, focused: bool) {
@@ -395,7 +395,7 @@ impl App {
             ),
         ]);
         f.render_widget(Paragraph::new(line), row(area, 0, 1));
-        self.note(f, row(area, 1, 1), e, focused);
+        self.note(f, row(area, 1, note_height(e, area.width)), e, focused);
     }
 
     /// A select or a table: a box of rows with one highlighted.
@@ -511,7 +511,12 @@ impl App {
             }
         }
         f.render_widget(Paragraph::new(lines), inner);
-        self.note(f, row(area, 1 + boxed.height, 1), e, focused);
+        self.note(
+            f,
+            row(area, 1 + boxed.height, note_height(e, area.width)),
+            e,
+            focused,
+        );
     }
 
     fn progress(&self, f: &mut Frame, area: Rect, e: &Element, ctx: &Ctx) {
@@ -831,6 +836,17 @@ fn capitalise(s: &str) -> String {
 }
 
 /// The `n`th row of an area, `h` tall.
+// Reserve enough room for either message so changing focus does not move
+// the form. Disabled controls cannot receive focus but still explain why.
+fn note_height(e: &Element, width: u16) -> u16 {
+    [&e.error, &e.help]
+        .into_iter()
+        .filter_map(|text| text.as_deref())
+        .map(|text| wrap_count(text, width))
+        .max()
+        .unwrap_or(0)
+}
+
 fn row(area: Rect, n: u16, h: u16) -> Rect {
     Rect {
         x: area.x,

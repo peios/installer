@@ -486,3 +486,37 @@ fn installation_completion_guidance_wraps_without_hiding_the_actions() {
         assert!(col(&lines, "[ Back to the start ]").is_some());
     }
 }
+
+#[test]
+fn disabled_selects_show_their_wrapped_help_without_focus() {
+    let a = app(
+        json!([
+            {"ref": "language", "type": "select", "name": "Language", "enabled": false,
+             "state": {"choices": []},
+             "help": "Choose this machine's language after setup, in System Settings, Language & Keyboard."},
+            {"ref": "keyboard", "type": "select", "name": "Keyboard layout", "enabled": false,
+             "state": {"choices": []},
+             "help": "Until then the console uses US layout. Choose another layout in System Settings after setup."},
+            {"ref": "next", "type": "action", "name": "Next", "primary": true}
+        ]),
+        json!([]),
+    );
+    assert_eq!(a.focused_ref().as_deref(), Some("next"));
+    for (width, height) in [(80, 24), (45, 32)] {
+        let lines = frame(&a, width, height);
+        let text = lines
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            text.contains("System Settings, Language & Keyboard."),
+            "{text}"
+        );
+        assert!(
+            text.contains("Choose another layout in System Settings after setup."),
+            "{text}"
+        );
+        assert!(col(&lines, "[ Next ]").is_some());
+    }
+}
