@@ -835,9 +835,9 @@ fn capitalise(s: &str) -> String {
     }
 }
 
-/// The `n`th row of an area, `h` tall.
-// Reserve enough room for either message so changing focus does not move
-// the form. Disabled controls cannot receive focus but still explain why.
+/// Rows reserved under a field: enough for either its error or its help,
+/// so changing focus does not move the form. Disabled controls cannot
+/// receive focus but still explain why.
 fn note_height(e: &Element, width: u16) -> u16 {
     [&e.error, &e.help]
         .into_iter()
@@ -847,6 +847,7 @@ fn note_height(e: &Element, width: u16) -> u16 {
         .unwrap_or(0)
 }
 
+/// The `n`th row of an area, `h` tall.
 fn row(area: Rect, n: u16, h: u16) -> Rect {
     Rect {
         x: area.x,
