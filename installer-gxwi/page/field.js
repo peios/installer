@@ -19,10 +19,15 @@
 // gather, when to let go, how far to even out, where to drain to and when to
 // stop, and draws one frame when asked.
 
-const PALETTE = [["#62d2ff", .55], ["#c8f1ff", .25], ["#9d8cff", .12], ["#4fd1c5", .08]];
+const PALETTE = [
+    ["#62d2ff", 0.55],
+    ["#c8f1ff", 0.25],
+    ["#9d8cff", 0.12],
+    ["#4fd1c5", 0.08],
+];
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const easeInOut = (k) => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 // A colour, by its place in the palette.
 const pick = () => {
     let r = Math.random();
@@ -38,31 +43,43 @@ const round = (v, places) => Math.round(v * 10 ** places) / 10 ** places;
  */
 export function createField(canvas, mark, reduced) {
     const ctx = canvas.getContext("2d");
-    let W = 0, H = 0;
+    let W = 0,
+        H = 0;
     let parts = [];
     // Where the intro has got to: drifting, gathering into the mark (from
     // `gatherAt`, over `gatherFor`), or let go.
-    let gatherAt = Infinity, gatherFor = 1;
-    let captured = false, released = false;
-    let markX = 0, markY = 0;
+    let gatherAt = Infinity,
+        gatherFor = 1;
+    let captured = false,
+        released = false;
+    let markX = 0,
+        markY = 0;
     // The pointer, from -1 to 1 across the viewport, and the same smoothed.
-    let mx = 0, my = 0, smx = 0, smy = 0;
+    let mx = 0,
+        my = 0,
+        smx = 0,
+        smy = 0;
     // How far the field is evened out, 0 to 1, and how far it is heading.
-    let spread = 0, spreadTo = 0;
+    let spread = 0,
+        spreadTo = 0;
     // What the field is doing once it is a backdrop: drifting ("ambient"),
     // draining into a place on the page ("stream"), stopped ("stall"),
     // gathering into the mark again ("gather"), or out ("dark").
     let mode = "ambient";
     // The gathering again: when it began, and when the stars began to fade
     // into the solid mark, if they have.
-    let regatherAt = 0, fadeAt = 0;
+    let regatherAt = 0,
+        fadeAt = 0;
     // The stream: where it goes (a function, asked each frame, since the
     // place moves with the page), how many stars are in it, how many it
     // settles at, and whether it has stopped taking new ones.
-    let into = null, streaming = 0, streamCap = 0, closed = false;
+    let into = null,
+        streaming = 0,
+        streamCap = 0,
+        closed = false;
     // The share of the stars a steady stream is made of. The rest drain in
     // once and wait unseen until they are let out again.
-    const STREAM_SHARE = .4;
+    const STREAM_SHARE = 0.4;
     // The clock `draw` was last given.
     let now = 0;
 
@@ -70,16 +87,17 @@ export function createField(canvas, mark, reduced) {
     // pointer, and as far toward its place in an even field as the field is
     // evened out.
     function drawnAt(p) {
-        let x = p.x + smx * p.z * 22, y = p.y + smy * p.z * 22;
-        if (spread > .001 && p.ex !== undefined) {
+        let x = p.x + smx * p.z * 22,
+            y = p.y + smy * p.z * 22;
+        if (spread > 0.001 && p.ex !== undefined) {
             x += (p.ex - x) * spread;
             y += (p.ey - y) * spread;
         }
         return [x, y];
     }
 
-    const driftX = (p, t) => p.sx + Math.sin(t * .0005 + p.ph) * 10 * p.z;
-    const driftY = (p, t) => p.sy + Math.cos(t * .00043 + p.ph) * 10 * p.z;
+    const driftX = (p, t) => p.sx + Math.sin(t * 0.0005 + p.ph) * 10 * p.z;
+    const driftY = (p, t) => p.sy + Math.cos(t * 0.00043 + p.ph) * 10 * p.z;
 
     function resize() {
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -103,14 +121,23 @@ export function createField(canvas, mark, reduced) {
         o.scale(s / 24, s / 24);
         o.fillStyle = "#fff";
         o.beginPath();
-        o.moveTo(8.5, 8); o.lineTo(16, 8); o.lineTo(16, 13); o.lineTo(12, 13); o.lineTo(12, 16.5); o.lineTo(8.5, 16.5);
+        o.moveTo(8.5, 8);
+        o.lineTo(16, 8);
+        o.lineTo(16, 13);
+        o.lineTo(12, 13);
+        o.lineTo(12, 16.5);
+        o.lineTo(8.5, 16.5);
         o.closePath();
         o.fill();
         const data = o.getImageData(0, 0, s, s).data;
         const points = [];
-        for (let y = 0; y < s; y++)
-            for (let x = 0; x < s; x++)
-                if (data[(y * s + x) * 4 + 3] > 140) points.push([r.left + x * r.width / s, r.top + y * r.height / s]);
+        for (let y = 0; y < s; y++) {
+            for (let x = 0; x < s; x++) {
+                if (data[(y * s + x) * 4 + 3] > 140) {
+                    points.push([r.left + (x * r.width) / s, r.top + (y * r.height) / s]);
+                }
+            }
+        }
         for (let i = points.length - 1; i > 0; i--) {
             const j = (Math.random() * (i + 1)) | 0;
             [points[i], points[j]] = [points[j], points[i]];
@@ -129,14 +156,24 @@ export function createField(canvas, mark, reduced) {
             const z = Math.random();
             const ci = pick();
             parts.push({
-                sx: Math.random() * W, sy: Math.random() * H, z,
-                tx: q[0] + (Math.random() - .5) * .8, ty: q[1] + (Math.random() - .5) * .8,
-                x: 0, y: 0, fx: 0, fy: 0, vx: 0, vy: 0, a: 0,
+                sx: Math.random() * W,
+                sy: Math.random() * H,
+                z,
+                tx: q[0] + (Math.random() - 0.5) * 0.8,
+                ty: q[1] + (Math.random() - 0.5) * 0.8,
+                x: 0,
+                y: 0,
+                fx: 0,
+                fy: 0,
+                vx: 0,
+                vy: 0,
+                a: 0,
                 delay: Math.random() * 450,
                 ph: Math.random() * Math.PI * 2,
-                ci, col: PALETTE[ci][0],
+                ci,
+                col: PALETTE[ci][0],
                 // A few near stars catch the light now and then.
-                glint: z > .55 && Math.random() < .0125,
+                glint: z > 0.55 && Math.random() < 0.0125,
             });
         }
         gatherAt = Infinity;
@@ -169,12 +206,14 @@ export function createField(canvas, mark, reduced) {
         released = true;
         for (const p of parts) {
             if (reduced) {
-                p.x = p.sx; p.y = p.sy; p.vx = p.vy = 0;
-                p.a = .1 + .5 * p.z * p.z;
+                p.x = p.sx;
+                p.y = p.sy;
+                p.vx = p.vy = 0;
+                p.a = 0.1 + 0.5 * p.z * p.z;
                 continue;
             }
-            const angle = Math.atan2(p.y - markY, p.x - markX) + (Math.random() - .5) * .9;
-            const speed = (3 + Math.random() * 10) * (.45 + p.z);
+            const angle = Math.atan2(p.y - markY, p.x - markX) + (Math.random() - 0.5) * 0.9;
+            const speed = (3 + Math.random() * 10) * (0.45 + p.z);
             p.vx = Math.cos(angle) * speed;
             p.vy = Math.sin(angle) * speed;
             p.a = 1;
@@ -188,31 +227,52 @@ export function createField(canvas, mark, reduced) {
     // and distances go by rank, square-rooted, so each direction fills evenly
     // from the middle to the edge.
     function evenTargets() {
-        const cx = W / 2, cy = H / 2, hw = W / 2 - 10, hh = H / 2 - 10;
+        const cx = W / 2,
+            cy = H / 2,
+            hw = W / 2 - 10,
+            hh = H / 2 - 10;
         // How far the edge of the screen is, in a direction.
-        const edge = (angle) => Math.min(hw / Math.max(1e-6, Math.abs(Math.cos(angle))), hh / Math.max(1e-6, Math.abs(Math.sin(angle))));
+        const edge = (angle) =>
+            Math.min(
+                hw / Math.max(1e-6, Math.abs(Math.cos(angle))),
+                hh / Math.max(1e-6, Math.abs(Math.sin(angle))),
+            );
         // The share of the screen's area that lies before each direction.
         const STEPS = 720;
         const before = new Float64Array(STEPS + 1);
-        for (let i = 0; i < STEPS; i++) before[i + 1] = before[i] + edge(-Math.PI + (i + .5) * 2 * Math.PI / STEPS) ** 2;
+        for (let i = 0; i < STEPS; i++) {
+            before[i + 1] = before[i] + edge(-Math.PI + ((i + 0.5) * 2 * Math.PI) / STEPS) ** 2;
+        }
         for (let i = 0; i <= STEPS; i++) before[i] /= before[STEPS];
         const angleAt = (share) => {
-            let lo = 0, hi = STEPS;
-            while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (before[mid] < share) lo = mid; else hi = mid; }
-            return -Math.PI + (lo + (share - before[lo]) / ((before[hi] - before[lo]) || 1)) * 2 * Math.PI / STEPS;
+            let lo = 0,
+                hi = STEPS;
+            while (hi - lo > 1) {
+                const mid = (lo + hi) >> 1;
+                if (before[mid] < share) lo = mid;
+                else hi = mid;
+            }
+            return (
+                -Math.PI +
+                ((lo + (share - before[lo]) / (before[hi] - before[lo] || 1)) * 2 * Math.PI) / STEPS
+            );
         };
-        const gap = Math.sqrt(W * H / parts.length);
+        const gap = Math.sqrt((W * H) / parts.length);
         const stars = parts
-            .map((p) => ({ p, angle: Math.atan2(p.y - cy, p.x - cx), out: Math.hypot(p.x - cx, p.y - cy) }))
+            .map((p) => ({
+                p,
+                angle: Math.atan2(p.y - cy, p.x - cx),
+                out: Math.hypot(p.x - cx, p.y - cy),
+            }))
             .sort((a, b) => a.angle - b.angle);
-        stars.forEach((star, i) => (star.to = angleAt((i + .5) / stars.length)));
+        stars.forEach((star, i) => (star.to = angleAt((i + 0.5) / stars.length)));
         const NEIGHBOURS = 28;
         for (let from = 0; from < stars.length; from += NEIGHBOURS) {
             const group = stars.slice(from, from + NEIGHBOURS).sort((a, b) => a.out - b.out);
             group.forEach(({ p, to }, rank) => {
                 const out = edge(to) * Math.sqrt((rank + Math.random()) / group.length);
-                p.ex = cx + Math.cos(to) * out + (Math.random() - .5) * gap * .5;
-                p.ey = cy + Math.sin(to) * out + (Math.random() - .5) * gap * .5;
+                p.ex = cx + Math.cos(to) * out + (Math.random() - 0.5) * gap * 0.5;
+                p.ey = cy + Math.sin(to) * out + (Math.random() - 0.5) * gap * 0.5;
             });
         }
     }
@@ -224,7 +284,7 @@ export function createField(canvas, mark, reduced) {
         if (reduced || !released || mode !== "ambient") return;
         // Setting out from rest, each star is given its place afresh; one
         // that is still falling back carries on toward the place it had.
-        if (to > 0 && spreadTo === 0 && spread < .02) evenTargets();
+        if (to > 0 && spreadTo === 0 && spread < 0.02) evenTargets();
         spreadTo = to;
     }
 
@@ -261,7 +321,7 @@ export function createField(canvas, mark, reduced) {
     // A star the stream has taken in sets out again, from far off.
     function respawn(p, place, t) {
         const angle = Math.random() * Math.PI * 2;
-        const out = Math.hypot(W, H) * (.55 + Math.random() * .35);
+        const out = Math.hypot(W, H) * (0.55 + Math.random() * 0.35);
         p.x = place.left + place.width / 2 + Math.cos(angle) * out;
         p.y = place.y + Math.sin(angle) * out;
         p.vx = p.vy = 0;
@@ -276,13 +336,14 @@ export function createField(canvas, mark, reduced) {
         there was a stream to let out. */
     function finale(from) {
         if (mode !== "stream") return false;
-        const cx = from.left + from.width / 2, cy = from.top + from.height / 2;
+        const cx = from.left + from.width / 2,
+            cy = from.top + from.height / 2;
         for (const p of parts) {
             let angle;
             if (p.st && now >= p.wait) {
                 // On its way in: thrown back the way it came.
-                angle = Math.atan2(p.y - cy, p.x - cx) + (Math.random() - .5) * .8;
-            } else if (Math.random() < .45) {
+                angle = Math.atan2(p.y - cy, p.x - cx) + (Math.random() - 0.5) * 0.8;
+            } else if (Math.random() < 0.45) {
                 // Taken in: out of wherever in the place it went.
                 p.x = from.left + Math.random() * from.width;
                 p.y = from.top + Math.random() * from.height;
@@ -295,7 +356,7 @@ export function createField(canvas, mark, reduced) {
                 p.st = false;
                 continue;
             }
-            const speed = (2 + Math.random() * 9) * (.45 + p.z);
+            const speed = (2 + Math.random() * 9) * (0.45 + p.z);
             p.vx = Math.cos(angle) * speed;
             p.vy = Math.sin(angle) * speed;
             p.a = 1;
@@ -345,8 +406,8 @@ export function createField(canvas, mark, reduced) {
                 [p.fx, p.fy] = mode === "ambient" ? drawnAt(p) : [p.x, p.y];
                 p.fa = p.a;
             }
-            p.tx = q[0] + (Math.random() - .5) * .8;
-            p.ty = q[1] + (Math.random() - .5) * .8;
+            p.tx = q[0] + (Math.random() - 0.5) * 0.8;
+            p.ty = q[1] + (Math.random() - 0.5) * 0.8;
             p.delay = Math.random() * 450;
             p.hid = p.st = false;
         });
@@ -387,8 +448,8 @@ export function createField(canvas, mark, reduced) {
             const q = points[i % points.length];
             p.x = q[0];
             p.y = q[1];
-            const angle = Math.atan2(p.y - markY, p.x - markX) + (Math.random() - .5) * .9;
-            const speed = (3 + Math.random() * 10) * (.45 + p.z);
+            const angle = Math.atan2(p.y - markY, p.x - markX) + (Math.random() - 0.5) * 0.9;
+            const speed = (3 + Math.random() * 10) * (0.45 + p.z);
             p.vx = Math.cos(angle) * speed;
             p.vy = Math.sin(angle) * speed;
             p.a = 1;
@@ -427,7 +488,15 @@ export function createField(canvas, mark, reduced) {
         const stars = [];
         for (const p of parts) {
             const [x, y] = drawnAt(p);
-            stars.push(round(x, 1), round(y, 1), round(p.z, 3), round(p.ph, 3), p.ci, p.glint ? 1 : 0, round(clamp(p.a, 0, 1), 3));
+            stars.push(
+                round(x, 1),
+                round(y, 1),
+                round(p.z, 3),
+                round(p.ph, 3),
+                p.ci,
+                p.glint ? 1 : 0,
+                round(clamp(p.a, 0, 1), 3),
+            );
         }
         return { w: W, h: H, t: now, stars };
     }
@@ -436,41 +505,45 @@ export function createField(canvas, mark, reduced) {
     // star's place in an even field drifts with it, so an evened field moves
     // as the cloud did.
     function drift(p, t) {
-        const dvx = Math.cos(p.ph + t * .00013) * .14 * (.3 + p.z);
-        const dvy = Math.sin(p.ph * 1.3 + t * .00011) * .1 * (.3 + p.z) - .04 * p.z;
-        p.vx += (dvx - p.vx) * .025;
-        p.vy += (dvy - p.vy) * .025;
+        const dvx = Math.cos(p.ph + t * 0.00013) * 0.14 * (0.3 + p.z);
+        const dvy = Math.sin(p.ph * 1.3 + t * 0.00011) * 0.1 * (0.3 + p.z) - 0.04 * p.z;
+        p.vx += (dvx - p.vx) * 0.025;
+        p.vy += (dvy - p.vy) * 0.025;
         p.x += p.vx;
         p.y += p.vy;
-        if (p.x < -30) p.x += W + 60; else if (p.x > W + 30) p.x -= W + 60;
-        if (p.y < -30) p.y += H + 60; else if (p.y > H + 30) p.y -= H + 60;
+        if (p.x < -30) p.x += W + 60;
+        else if (p.x > W + 30) p.x -= W + 60;
+        if (p.y < -30) p.y += H + 60;
+        else if (p.y > H + 30) p.y -= H + 60;
         if (p.ex !== undefined) {
             p.ex += p.vx;
             p.ey += p.vy;
-            if (p.ex < -30) p.ex += W + 60; else if (p.ex > W + 30) p.ex -= W + 60;
-            if (p.ey < -30) p.ey += H + 60; else if (p.ey > H + 30) p.ey -= H + 60;
+            if (p.ex < -30) p.ex += W + 60;
+            else if (p.ex > W + 30) p.ex -= W + 60;
+            if (p.ey < -30) p.ey += H + 60;
+            else if (p.ey > H + 30) p.ey -= H + 60;
         }
     }
 
     // A four-point sparkle, brightest for a moment every few seconds.
     function glint(p, x, y, t) {
-        const g = Math.pow(Math.max(0, Math.sin(t * .0011 + p.ph * 5)), 14);
-        if (g < .02) return;
+        const g = Math.pow(Math.max(0, Math.sin(t * 0.0011 + p.ph * 5)), 14);
+        if (g < 0.02) return;
         const L = 1.5 + g * (5 + p.z * 7);
-        ctx.globalAlpha = g * .95;
+        ctx.globalAlpha = g * 0.95;
         ctx.fillStyle = "#e8fbff";
-        ctx.fillRect(x - L, y - .5, L * 2, 1);
-        ctx.fillRect(x - .5, y - L, 1, L * 2);
-        ctx.globalAlpha = g * .5;
+        ctx.fillRect(x - L, y - 0.5, L * 2, 1);
+        ctx.fillRect(x - 0.5, y - L, 1, L * 2);
+        ctx.globalAlpha = g * 0.5;
         ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
     }
 
     /** One frame, at `t` ms on the intro's clock. */
     function draw(t) {
         now = t;
-        smx += (mx - smx) * .04;
-        smy += (my - smy) * .04;
-        spread += (spreadTo - spread) * .12;
+        smx += (mx - smx) * 0.04;
+        smy += (my - smy) * 0.04;
+        spread += (spreadTo - spread) * 0.12;
         ctx.clearRect(0, 0, W, H);
         ctx.globalCompositeOperation = "lighter";
         // Where the stream goes this frame. With nowhere to go, it is over.
@@ -480,7 +553,10 @@ export function createField(canvas, mark, reduced) {
         // The moment the gathering starts, each star sets off from wherever
         // its drift has taken it.
         if (!captured && !released && t >= gatherAt) {
-            for (const p of parts) { p.fx = driftX(p, t); p.fy = driftY(p, t); }
+            for (const p of parts) {
+                p.fx = driftX(p, t);
+                p.fy = driftY(p, t);
+            }
             captured = true;
         }
 
@@ -494,62 +570,71 @@ export function createField(canvas, mark, reduced) {
                 const e = easeInOut(clamp((t - regatherAt - p.delay) / 1500, 0, 1));
                 x = p.fx + (p.tx - p.fx) * e;
                 y = p.fy + (p.ty - p.fy) * e;
-                a = (p.fa + (.95 - p.fa) * e) * (fadeAt ? Math.max(0, 1 - (t - fadeAt) / 600) : 1);
-                s = (.7 + p.z * 1.5) * (1 - e) + 2.2 * e;
-                p.x = x; p.y = y; p.a = a;
+                a = (p.fa + (0.95 - p.fa) * e) * (fadeAt ? Math.max(0, 1 - (t - fadeAt) / 600) : 1);
+                s = (0.7 + p.z * 1.5) * (1 - e) + 2.2 * e;
+                p.x = x;
+                p.y = y;
+                p.a = a;
             } else if (released && mode === "stall") {
                 // Whatever was moving coasts to a stop, keeping only the
                 // faintest drift, and the field dims.
                 if (p.hid) continue;
-                p.vx += (Math.cos(p.ph + t * .00013) * .03 * (.3 + p.z) - p.vx) * .04;
-                p.vy += (Math.sin(p.ph * 1.3 + t * .00011) * .02 * (.3 + p.z) - p.vy) * .04;
+                p.vx += (Math.cos(p.ph + t * 0.00013) * 0.03 * (0.3 + p.z) - p.vx) * 0.04;
+                p.vy += (Math.sin(p.ph * 1.3 + t * 0.00011) * 0.02 * (0.3 + p.z) - p.vy) * 0.04;
                 p.x += p.vx;
                 p.y += p.vy;
-                if (p.x < -30) p.x += W + 60; else if (p.x > W + 30) p.x -= W + 60;
-                if (p.y < -30) p.y += H + 60; else if (p.y > H + 30) p.y -= H + 60;
-                p.a += ((.05 + .22 * p.z * p.z) - p.a) * .02;
+                if (p.x < -30) p.x += W + 60;
+                else if (p.x > W + 30) p.x -= W + 60;
+                if (p.y < -30) p.y += H + 60;
+                else if (p.y > H + 30) p.y -= H + 60;
+                p.a += (0.05 + 0.22 * p.z * p.z - p.a) * 0.02;
                 x = p.x;
                 y = p.y;
                 a = p.a;
-                s = .7 + p.z * 1.3;
+                s = 0.7 + p.z * 1.3;
             } else if (released && mode === "stream") {
                 if (!p.st) continue;
                 if (t < p.wait) {
                     // Not set off yet: it drifts on from where it was.
                     drift(p, t);
-                    p.a += ((.1 + .5 * p.z * p.z) - p.a) * .03;
+                    p.a += (0.1 + 0.5 * p.z * p.z - p.a) * 0.03;
                     x = p.x;
                     y = p.y;
                     a = p.a;
-                    s = .7 + p.z * 1.5;
+                    s = 0.7 + p.z * 1.5;
                 } else {
                     // Pulled straight at its own spot in the place, or at
                     // the one point they all make for while there is one.
                     const tx = place.edge ? place.ex : place.left + p.tu * place.width;
-                    const ty = place.y + (p.tv - .5) * place.h * .6;
-                    const dx = tx - p.x, dy = ty - p.y;
+                    const ty = place.y + (p.tv - 0.5) * place.h * 0.6;
+                    const dx = tx - p.x,
+                        dy = ty - p.y;
                     const d = Math.hypot(dx, dy) || 1;
-                    const pull = .38 * (.6 + p.z);
-                    p.vx = p.vx * .95 + dx / d * pull;
-                    p.vy = p.vy * .95 + dy / d * pull;
+                    const pull = 0.38 * (0.6 + p.z);
+                    p.vx = p.vx * 0.95 + (dx / d) * pull;
+                    p.vy = p.vy * 0.95 + (dy / d) * pull;
                     p.x += p.vx;
                     p.y += p.vy;
                     if (d < 12) {
                         // Taken in. It sets out again from far off, unless
                         // the stream is still bigger than it settles at, or
                         // the place is only keeping what it has.
-                        if (streaming > streamCap || closed) { p.st = false; streaming--; continue; }
+                        if (streaming > streamCap || closed) {
+                            p.st = false;
+                            streaming--;
+                            continue;
+                        }
                         respawn(p, place, t);
                     }
-                    p.a = Math.min(.95, p.a + .03);
+                    p.a = Math.min(0.95, p.a + 0.03);
                     x = p.x;
                     y = p.y;
                     a = p.a;
-                    s = .8 + p.z * 1.4;
+                    s = 0.8 + p.z * 1.4;
                     // A short tail, the way it came.
-                    ctx.globalAlpha = a * .45;
+                    ctx.globalAlpha = a * 0.45;
                     ctx.strokeStyle = p.col;
-                    ctx.lineWidth = s * .8;
+                    ctx.lineWidth = s * 0.8;
                     ctx.beginPath();
                     ctx.moveTo(x - p.vx * 3, y - p.vy * 3);
                     ctx.lineTo(x, y);
@@ -557,24 +642,28 @@ export function createField(canvas, mark, reduced) {
                 }
             } else if (released) {
                 if (!reduced) drift(p, t);
-                p.a += ((.1 + .5 * p.z * p.z) - p.a) * .03;
+                p.a += (0.1 + 0.5 * p.z * p.z - p.a) * 0.03;
                 [x, y] = drawnAt(p);
                 a = p.a;
-                s = .7 + p.z * 1.5;
+                s = 0.7 + p.z * 1.5;
             } else if (!captured) {
                 x = driftX(p, t);
                 y = driftY(p, t);
-                a = Math.min(1, t / 600) * (.15 + .55 * p.z);
-                s = .6 + p.z * 1.8;
-                p.x = x; p.y = y; p.a = a;
+                a = Math.min(1, t / 600) * (0.15 + 0.55 * p.z);
+                s = 0.6 + p.z * 1.8;
+                p.x = x;
+                p.y = y;
+                p.a = a;
             } else {
                 const e = easeInOut(clamp((t - gatherAt - p.delay) / gatherFor, 0, 1));
                 x = p.fx + (p.tx - p.fx) * e;
                 y = p.fy + (p.ty - p.fy) * e;
-                const base = .15 + .55 * p.z;
-                a = base + (.95 - base) * e;
-                s = (.6 + p.z * 1.8) * (1 - e) + 2.2 * e;
-                p.x = x; p.y = y; p.a = a;
+                const base = 0.15 + 0.55 * p.z;
+                a = base + (0.95 - base) * e;
+                s = (0.6 + p.z * 1.8) * (1 - e) + 2.2 * e;
+                p.x = x;
+                p.y = y;
+                p.a = a;
             }
             ctx.globalAlpha = a;
             ctx.fillStyle = p.col;
@@ -585,13 +674,30 @@ export function createField(canvas, mark, reduced) {
     }
 
     window.addEventListener("pointermove", (e) => {
-        mx = (e.clientX / W - .5) * 2;
-        my = (e.clientY / H - .5) * 2;
+        mx = (e.clientX / W - 0.5) * 2;
+        my = (e.clientY / H - 0.5) * 2;
     });
     window.addEventListener("resize", () => {
         resize();
         retarget();
     });
 
-    return { seed, gather, release, even, stream, hold, finale, stall, wake, regather, fade, darken, asleep, burst, draw, snapshot };
+    return {
+        seed,
+        gather,
+        release,
+        even,
+        stream,
+        hold,
+        finale,
+        stall,
+        wake,
+        regather,
+        fade,
+        darken,
+        asleep,
+        burst,
+        draw,
+        snapshot,
+    };
 }

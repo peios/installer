@@ -14,23 +14,36 @@ import { NOT_DRAWN, ONWARD, picture } from "./bits.js";
 
 // "Welcome to Peios", in each language's own words.
 const GREETINGS = [
-    "Willkommen bei Peios", "Bienvenido a Peios", "Bienvenue dans Peios", "Benvenuto in Peios", "Welkom bij Peios",
-    "Witamy w Peios", "Bem-vindo ao Peios", "Välkommen till Peios", "Peios'a hoş geldiniz", "Ласкаво просимо до Peios",
-    "Peiosへようこそ", "Peios에 오신 것을 환영합니다", "欢迎使用 Peios",
+    "Willkommen bei Peios",
+    "Bienvenido a Peios",
+    "Bienvenue dans Peios",
+    "Benvenuto in Peios",
+    "Welkom bij Peios",
+    "Witamy w Peios",
+    "Bem-vindo ao Peios",
+    "Välkommen till Peios",
+    "Peios'a hoş geldiniz",
+    "Ласкаво просимо до Peios",
+    "Peiosへようこそ",
+    "Peios에 오신 것을 환영합니다",
+    "欢迎使用 Peios",
 ];
 // The language a greeting is in, for it to be read and set as that language.
 const LANGS = ["de", "es", "fr", "it", "nl", "pl", "pt-BR", "sv", "tr", "uk", "ja", "ko", "zh-CN"];
 // How long each greeting stays, and how long the change between two takes.
-const EVERY = 2600, CHANGE = 420;
+const EVERY = 2600,
+    CHANGE = 420;
 
 /**
  * The welcome page. `turn` is where a page is drawn; `el` and `rise` make its
  * parts; `ask` asks setup for something; `toast` says something in passing.
  */
 export function createWelcomePage({ turn, el, rise, ask, toast, reduced }) {
-    let parts = null;   // the page's own elements, while it is the page drawn
-    let page = null;    // what setup last said is on it
-    let cycle = 0, swap = 0, at = 0;
+    let parts = null; // the page's own elements, while it is the page drawn
+    let page = null; // what setup last said is on it
+    let cycle = 0,
+        swap = 0,
+        at = 0;
 
     function build() {
         const next = el("button", "btn go-on", [el("span"), picture(ONWARD)], { type: "button" });
@@ -54,7 +67,11 @@ export function createWelcomePage({ turn, el, rise, ask, toast, reduced }) {
             parts.lede,
             rise(2, "div", "fields", [
                 parts.language,
-                el("p", "note", "Your keyboard is this device's own, so there is no layout to choose here."),
+                el(
+                    "p",
+                    "note",
+                    "Your keyboard is this device's own, so there is no layout to choose here.",
+                ),
             ]),
             rise(3, "div", "nav", [parts.next]),
         );
@@ -66,14 +83,19 @@ export function createWelcomePage({ turn, el, rise, ask, toast, reduced }) {
         if (!language) return parts.language.replaceChildren();
         const chosen = language.choices[0]?.[1] ?? "English";
         const box = el("div", "select", [el("span", "sv", chosen)], {
-            id: "welcome-language", role: "textbox", "aria-readonly": "true", "aria-labelledby": "welcome-language-label",
+            id: "welcome-language",
+            role: "textbox",
+            "aria-readonly": "true",
+            "aria-labelledby": "welcome-language-label",
             ...(language.help ? { "aria-describedby": "welcome-language-help" } : {}),
             ...(language.enabled ? {} : { "aria-disabled": "true" }),
         });
         parts.language.replaceChildren(
             el("label", "", language.name, { id: "welcome-language-label" }),
             box,
-            ...(language.help ? [el("p", "note", language.help, { id: "welcome-language-help" })] : []),
+            ...(language.help
+                ? [el("p", "note", language.help, { id: "welcome-language-help" })]
+                : []),
         );
     }
 
@@ -82,14 +104,16 @@ export function createWelcomePage({ turn, el, rise, ask, toast, reduced }) {
     function fit() {
         const { greet } = parts;
         greet.style.fontSize = "";
-        const room = parts.title.clientWidth, need = greet.scrollWidth;
-        if (room && need > room) greet.style.fontSize = `${Math.floor(room / need * 100)}%`;
+        const room = parts.title.clientWidth,
+            need = greet.scrollWidth;
+        if (room && need > room) greet.style.fontSize = `${Math.floor((room / need) * 100)}%`;
     }
 
     function greet(text, lang) {
         const { greet } = parts;
         greet.textContent = text;
-        if (lang) greet.lang = lang; else greet.removeAttribute("lang");
+        if (lang) greet.lang = lang;
+        else greet.removeAttribute("lang");
         fit();
     }
 

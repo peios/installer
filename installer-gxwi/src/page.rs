@@ -6,6 +6,8 @@
 //! runs in it. Everything it needs is in this binary: a machine being
 //! installed may have no route out, so nothing is fetched from anywhere else.
 
+use std::sync::mpsc;
+
 use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -13,8 +15,6 @@ use axum::http::header::{self, HeaderValue};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{any, get};
-use std::sync::mpsc;
-
 use tokio::sync::watch;
 
 use crate::Conversation;
@@ -28,6 +28,45 @@ const TEXT: &str = "text/plain; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const SCRIPT: &str = "text/javascript; charset=utf-8";
 const FONT: &str = "font/woff2";
+
+/// Immutable resources bundled into every frontend binary.
+const ASSETS: &[(&str, &str, &[u8])] = &[
+    ("/style.css", CSS, include_bytes!("../page/style.css")),
+    ("/app.js", SCRIPT, include_bytes!("../page/app.js")),
+    ("/bits.js", SCRIPT, include_bytes!("../page/bits.js")),
+    ("/account.js", SCRIPT, include_bytes!("../page/account.js")),
+    ("/confirm.js", SCRIPT, include_bytes!("../page/confirm.js")),
+    ("/disk.js", SCRIPT, include_bytes!("../page/disk.js")),
+    ("/ending.js", SCRIPT, include_bytes!("../page/ending.js")),
+    ("/field.js", SCRIPT, include_bytes!("../page/field.js")),
+    ("/intro.js", SCRIPT, include_bytes!("../page/intro.js")),
+    ("/manual.js", SCRIPT, include_bytes!("../page/manual.js")),
+    ("/naming.js", SCRIPT, include_bytes!("../page/naming.js")),
+    ("/network.js", SCRIPT, include_bytes!("../page/network.js")),
+    ("/outro.js", SCRIPT, include_bytes!("../page/outro.js")),
+    (
+        "/progress.js",
+        SCRIPT,
+        include_bytes!("../page/progress.js"),
+    ),
+    ("/restart.js", SCRIPT, include_bytes!("../page/restart.js")),
+    ("/welcome.js", SCRIPT, include_bytes!("../page/welcome.js")),
+    (
+        "/fonts/manrope.woff2",
+        FONT,
+        include_bytes!("../page/fonts/manrope.woff2"),
+    ),
+    (
+        "/fonts/schibsted-grotesk.woff2",
+        FONT,
+        include_bytes!("../page/fonts/schibsted-grotesk.woff2"),
+    ),
+    (
+        "/fonts/jetbrains-mono.woff2",
+        FONT,
+        include_bytes!("../page/fonts/jetbrains-mono.woff2"),
+    ),
+];
 
 /// Only what is served from here runs, styles or is fetched, and the page
 /// talks to nothing but this program.
@@ -51,29 +90,26 @@ struct Served {
     tell: mpsc::Sender<Heard>,
 }
 
-pub fn routes(conversation: Conversation, view: watch::Receiver<View>, said: Said, tell: mpsc::Sender<Heard>) -> Router {
-    let part = |content_type, bytes: &'static [u8]| get(move || async move { file(content_type, bytes) });
-    Router::new()
-        .route("/", get(move || async move { with_policy(file(HTML, index(conversation).as_bytes()), policy(conversation)) }))
-        .route("/style.css", part(CSS, include_bytes!("../page/style.css")))
-        .route("/app.js", part(SCRIPT, include_bytes!("../page/app.js")))
-        .route("/bits.js", part(SCRIPT, include_bytes!("../page/bits.js")))
-        .route("/account.js", part(SCRIPT, include_bytes!("../page/account.js")))
-        .route("/confirm.js", part(SCRIPT, include_bytes!("../page/confirm.js")))
-        .route("/disk.js", part(SCRIPT, include_bytes!("../page/disk.js")))
-        .route("/ending.js", part(SCRIPT, include_bytes!("../page/ending.js")))
-        .route("/field.js", part(SCRIPT, include_bytes!("../page/field.js")))
-        .route("/intro.js", part(SCRIPT, include_bytes!("../page/intro.js")))
-        .route("/manual.js", part(SCRIPT, include_bytes!("../page/manual.js")))
-        .route("/naming.js", part(SCRIPT, include_bytes!("../page/naming.js")))
-        .route("/network.js", part(SCRIPT, include_bytes!("../page/network.js")))
-        .route("/outro.js", part(SCRIPT, include_bytes!("../page/outro.js")))
-        .route("/progress.js", part(SCRIPT, include_bytes!("../page/progress.js")))
-        .route("/restart.js", part(SCRIPT, include_bytes!("../page/restart.js")))
-        .route("/welcome.js", part(SCRIPT, include_bytes!("../page/welcome.js")))
-        .route("/fonts/manrope.woff2", part(FONT, include_bytes!("../page/fonts/manrope.woff2")))
-        .route("/fonts/schibsted-grotesk.woff2", part(FONT, include_bytes!("../page/fonts/schibsted-grotesk.woff2")))
-        .route("/fonts/jetbrains-mono.woff2", part(FONT, include_bytes!("../page/fonts/jetbrains-mono.woff2")))
+pub fn routes(
+    conversation: Conversation,
+    view: watch::Receiver<View>,
+    said: Said,
+    tell: mpsc::Sender<Heard>,
+) -> Router {
+    let mut router = Router::new();
+    for &(path, content_type, bytes) in ASSETS {
+        router = router.route(path, get(move || async move { file(content_type, bytes) }));
+    }
+    router
+        .route(
+            "/",
+            get(move || async move {
+                with_policy(
+                    file(HTML, index(conversation).as_bytes()),
+                    policy(conversation),
+                )
+            }),
+        )
         // The state, live. `any`, because a websocket arrives as a GET over
         // HTTP/1.1 and as a CONNECT over HTTP/2, which is how GXWI sends it.
         .route("/live", any(live))
@@ -87,15 +123,25 @@ pub fn routes(conversation: Conversation, view: watch::Receiver<View>, said: Sai
 /// the last of it; the whole is what is wanted when a job has gone wrong, by
 /// someone who is at another machine and has nowhere else to get it from.
 async fn log(State(served): State<Served>) -> Response {
-    let mut text = served.said.lock().unwrap_or_else(|e| e.into_inner()).join("\n");
+    let mut text = served
+        .said
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .join("\n");
     if !text.is_empty() {
         text.push('\n');
     }
     let mut response = text.into_response();
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(TEXT));
-    headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=\"peios-setup.log\""));
-    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment; filename=\"peios-setup.log\""),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
@@ -106,7 +152,15 @@ fn index(conversation: Conversation) -> &'static str {
     match conversation {
         Conversation::Install => INDEX,
         // Once, for the life of the process.
-        Conversation::Oobe => Box::leak(INDEX.replacen("<html lang=\"en\">", "<html lang=\"en\" data-conversation=\"oobe\">", 1).into_boxed_str()),
+        Conversation::Oobe => Box::leak(
+            INDEX
+                .replacen(
+                    "<html lang=\"en\">",
+                    "<html lang=\"en\" data-conversation=\"oobe\">",
+                    1,
+                )
+                .into_boxed_str(),
+        ),
     }
 }
 
@@ -116,7 +170,11 @@ fn index(conversation: Conversation) -> &'static str {
 /// answering here is neither.
 async fn hello(State(served): State<Served>) -> Response {
     let view = served.view.borrow();
-    let program = format!("{}/{}", view.conversation.program(), env!("CARGO_PKG_VERSION"));
+    let program = format!(
+        "{}/{}",
+        view.conversation.program(),
+        env!("CARGO_PKG_VERSION")
+    );
     let who = match view.conversation {
         Conversation::Install => "installer",
         Conversation::Oobe => "setup",
@@ -125,7 +183,10 @@ async fn hello(State(served): State<Served>) -> Response {
     drop(view);
     let mut response = said.to_string().into_response();
     let headers = response.headers_mut();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
@@ -133,7 +194,11 @@ async fn hello(State(served): State<Served>) -> Response {
 /// Everyone who reaches the machine is sent here, wherever they were going:
 /// an address left over from a desktop means nothing to an installer.
 async fn elsewhere(method: Method) -> Response {
-    if method == Method::GET { Redirect::to("/").into_response() } else { StatusCode::NOT_FOUND.into_response() }
+    if method == Method::GET {
+        Redirect::to("/").into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
 }
 
 fn policy(conversation: Conversation) -> &'static str {
@@ -144,7 +209,10 @@ fn policy(conversation: Conversation) -> &'static str {
 }
 
 fn with_policy(mut response: Response, policy: &'static str) -> Response {
-    response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(policy));
+    response.headers_mut().insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(policy),
+    );
     response
 }
 
@@ -152,9 +220,18 @@ fn file(content_type: &'static str, bytes: &'static [u8]) -> Response {
     let mut response = bytes.into_response();
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
-    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(POLICY));
-    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
-    headers.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(POLICY),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
     // A new build is a new page: nothing is kept without asking again.
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     response
@@ -207,13 +284,17 @@ mod tests {
     /// the page down with it, in the browser and nowhere else.
     #[test]
     fn every_script_of_the_pages_is_served() {
-        let routes = include_str!("page.rs");
         let page = concat!(env!("CARGO_MANIFEST_DIR"), "/page");
         for entry in std::fs::read_dir(page).unwrap() {
             let name = entry.unwrap().file_name().into_string().unwrap();
             if name.ends_with(".js") {
-                let route = format!(".route(\"/{name}\", part(SCRIPT, include_bytes!(\"../page/{name}\")))");
-                assert!(routes.contains(&route), "page/{name} is not served");
+                let path = format!("/{name}");
+                let (_, content_type, bytes) = super::ASSETS
+                    .iter()
+                    .find(|(route, _, _)| *route == path)
+                    .unwrap_or_else(|| panic!("page/{name} is not served"));
+                assert_eq!(*content_type, super::SCRIPT);
+                assert_eq!(*bytes, std::fs::read(format!("{page}/{name}")).unwrap());
             }
         }
     }

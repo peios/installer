@@ -26,21 +26,33 @@ const KEY = "gxwi.field";
 const VERSION = 1;
 // How long "Setup is complete" is left to be read before anything goes, and
 // how long the going takes.
-const HOLD = 2200, FADE = 700;
-const AHEAD = ["/.gxwi/logon.css", "/.gxwi/fonts/manrope.woff2", "/.gxwi/fonts/schibsted-grotesk.woff2", "/.gxwi/fonts/jetbrains-mono.woff2"];
+const HOLD_TIME_MS = 2200,
+    FADE_TIME_MS = 700;
+const AHEAD = [
+    "/.gxwi/logon.css",
+    "/.gxwi/fonts/manrope.woff2",
+    "/.gxwi/fonts/schibsted-grotesk.woff2",
+    "/.gxwi/fonts/jetbrains-mono.woff2",
+];
 
 /**
  * `stage` is the whole page, `glows` the backdrop's glows, `field` the stars;
  * `go` takes the browser somewhere else.
  */
 export function createOutro({ stage, glows, field, reduced, go = (url) => location.assign(url) }) {
-    let completeAt = 0, fetched = false, leaving = false;
+    let completeAt = 0,
+        fetched = false,
+        leaving = false;
 
     /** Asks for what the sign-in page will be drawn in, once. */
     function ahead() {
         if (fetched) return;
         fetched = true;
-        for (const url of AHEAD) fetch(url).catch(() => { /* drawn when it comes, then */ });
+        for (const url of AHEAD) {
+            fetch(url).catch(() => {
+                /* drawn when it comes, then */
+            });
+        }
     }
 
     /** Setup has said it is complete: from now, it is left to be seen. */
@@ -56,11 +68,24 @@ export function createOutro({ stage, glows, field, reduced, go = (url) => locati
         if (!snapshot) return;
         const phases = glows.map((glow) => {
             const running = glow.getAnimations?.().find((a) => a.animationName);
-            return running ? (Number(running.currentTime) || 0) - (running.effect.getTiming().delay || 0) : 0;
+            return running
+                ? (Number(running.currentTime) || 0) - (running.effect.getTiming().delay || 0)
+                : 0;
         });
         try {
-            sessionStorage.setItem(KEY, JSON.stringify({ v: VERSION, at: Date.now(), ...snapshot, glows: phases, rise: true }));
-        } catch { /* no storage: the sign-in page starts a field of its own */ }
+            sessionStorage.setItem(
+                KEY,
+                JSON.stringify({
+                    v: VERSION,
+                    at: Date.now(),
+                    ...snapshot,
+                    glows: phases,
+                    rise: true,
+                }),
+            );
+        } catch {
+            /* no storage: the sign-in page starts a field of its own */
+        }
     }
 
     /** Goes on to `url`, once setup has been seen to be complete. */
@@ -69,18 +94,30 @@ export function createOutro({ stage, glows, field, reduced, go = (url) => locati
         leaving = true;
         ahead();
         const here = new URL(url, location.href).origin === location.origin;
-        const held = completeAt ? Math.max(0, HOLD - (performance.now() - completeAt)) : 0;
-        setTimeout(() => {
-            // The lockup is where the sign-in page has its own only with the
-            // page at its top.
-            window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
-            stage.classList.add("leaving");
-            setTimeout(() => {
-                if (here) handOver();
-                go(url);
-            }, reduced ? 0 : FADE);
-        }, reduced ? 0 : held);
+        const held = completeAt ? Math.max(0, HOLD_TIME_MS - (performance.now() - completeAt)) : 0;
+        setTimeout(
+            () => {
+                // The lockup is where the sign-in page has its own only with the
+                // page at its top.
+                window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+                stage.classList.add("leaving");
+                setTimeout(
+                    () => {
+                        if (here) handOver();
+                        go(url);
+                    },
+                    reduced ? 0 : FADE_TIME_MS,
+                );
+            },
+            reduced ? 0 : held,
+        );
     }
 
-    return { complete, leave, get leaving() { return leaving; } };
+    return {
+        complete,
+        leave,
+        get leaving() {
+            return leaving;
+        },
+    };
 }

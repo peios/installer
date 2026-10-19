@@ -26,12 +26,17 @@ import { createWelcomePage } from "./welcome.js";
 const $ = (id) => document.getElementById(id);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const firstBoot = document.documentElement.dataset.conversation === "oobe";
-const WORDS = firstBoot ? {
-    reaching: "Reaching setup", silent: "Setup is not answering", unbuilt: "This step is not drawn in the browser yet.",
-} : {
-    reaching: "Reaching the installer", silent: "The installer is not answering",
-    unbuilt: "This step is not drawn by the graphical installer yet.",
-};
+const WORDS = firstBoot
+    ? {
+          reaching: "Reaching setup",
+          silent: "Setup is not answering",
+          unbuilt: "This step is not drawn in the browser yet.",
+      }
+    : {
+          reaching: "Reaching the installer",
+          silent: "The installer is not answering",
+          unbuilt: "This step is not drawn by the graphical installer yet.",
+      };
 const els = {
     stage: $("stage"),
     introStack: $("intro-stack"),
@@ -88,8 +93,14 @@ let heard = "opening"; // this browser's own line to the installer: opening, ope
 let socket = null;
 
 function listen() {
-    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live`);
-    socket.onopen = () => { heard = "open"; ending.stop(); draw(); };
+    socket = new WebSocket(
+        `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live`,
+    );
+    socket.onopen = () => {
+        heard = "open";
+        ending.stop();
+        draw();
+    };
     socket.onmessage = (message) => {
         // Once the machine is restarting, what was said is over.
         if (restart?.active) return;
@@ -106,7 +117,12 @@ function listen() {
         // Setup applying what it was told, or done: its last acts take this
         // page's ground away, and the page follows the machine to what
         // comes after it.
-        if (firstBoot && view?.page?.kind === "progress" && view.page.job === "setup" && view.page.ended?.outcome !== "failed") {
+        if (
+            firstBoot &&
+            view?.page?.kind === "progress" &&
+            view.page.job === "setup" &&
+            view.page.ended?.outcome !== "failed"
+        ) {
             ending.begin(view.page);
         }
         draw();
@@ -147,17 +163,24 @@ function toast(...content) {
 function drawRelease() {
     const release = view?.release;
     for (const where of [els.release, els.edition]) {
-        if (!release || (!release.variant && !release.version)) { where.replaceChildren(); continue; }
+        if (!release || (!release.variant && !release.version)) {
+            where.replaceChildren();
+            continue;
+        }
         where.replaceChildren(release.variant, el("span", "", release.version));
     }
 }
 
 // What the installer did to get here, a line at a time as the intro allows.
-let linesAllowed = 0, linesShown = [];
+let linesAllowed = 0,
+    linesShown = [];
 function drawTicker() {
     const lines = (view?.trail ?? []).slice(0, linesAllowed);
     const same = linesShown.every((line, i) => lines[i] && line === lines[i].join(" "));
-    if (!same) { els.ticker.replaceChildren(); linesShown = []; }
+    if (!same) {
+        els.ticker.replaceChildren();
+        linesShown = [];
+    }
     for (const [what, to] of lines.slice(linesShown.length)) {
         els.ticker.append(el("li", "", [el("span", "k", what), ` ${to}`]));
         linesShown.push(`${what} ${to}`);
@@ -167,17 +190,34 @@ function drawTicker() {
 function drawStatus() {
     const link = view?.link;
     // A job's end is the conversation's: there is nothing to be connected to.
-    const ended = view?.page?.kind === "progress" ? view.page.ended?.outcome : view?.page?.kind === "ended" ? view.page.outcome : null;
-    const [text, how] =
-        ending.active ? [ending.state.stage === "lost" || ended !== "complete" ? "Waiting for the machine" : "Setup has finished", ending.state.stage === "lost" ? "bad" : "wait"]
-        : heard === "lost" ? ["Lost touch with this machine", "bad"]
-        : !link ? ["Starting", "wait"]
-        : view.waiting === "again" ? ["Starting again", "wait"]
-        : ended === "complete" ? ["Finished", ""]
-        : ended ? ["Stopped", "bad"]
-        : link.state === "connected" ? [`Connected to ${link.daemon}`, ""]
-        : link.state === "lost" ? [WORDS.silent, "bad"]
-        : [WORDS.reaching, "wait"];
+    const ended =
+        view?.page?.kind === "progress"
+            ? view.page.ended?.outcome
+            : view?.page?.kind === "ended"
+              ? view.page.outcome
+              : null;
+    const [text, how] = ending.active
+        ? [
+              ending.state.stage === "lost" || ended !== "complete"
+                  ? "Waiting for the machine"
+                  : "Setup has finished",
+              ending.state.stage === "lost" ? "bad" : "wait",
+          ]
+        : heard === "lost"
+          ? ["Lost touch with this machine", "bad"]
+          : !link
+            ? ["Starting", "wait"]
+            : view.waiting === "again"
+              ? ["Starting again", "wait"]
+              : ended === "complete"
+                ? ["Finished", ""]
+                : ended
+                  ? ["Stopped", "bad"]
+                  : link.state === "connected"
+                    ? [`Connected to ${link.daemon}`, ""]
+                    : link.state === "lost"
+                      ? [WORDS.silent, "bad"]
+                      : [WORDS.reaching, "wait"];
     els.statusText.textContent = text;
     els.status.classList.toggle("bad", how === "bad");
     els.status.classList.toggle("wait", how === "wait");
@@ -191,7 +231,8 @@ function pageWanted() {
     if (ending.active && view?.page) return view.page;
     if (heard === "lost") {
         return {
-            kind: "away", title: "Lost touch with this machine",
+            kind: "away",
+            title: "Lost touch with this machine",
             lede: "Peios Setup is trying again. If the machine is restarting, this page carries on when it is back.",
         };
     }
@@ -199,8 +240,10 @@ function pageWanted() {
     if (view.page) return view.page;
     if (view.link.state === "lost") {
         return {
-            kind: "lost", title: WORDS.silent,
-            lede: "Peios Setup is trying again.", why: view.link.why,
+            kind: "lost",
+            title: WORDS.silent,
+            lede: "Peios Setup is trying again.",
+            why: view.link.why,
         };
     }
     return { kind: "starting", title: "Peios Setup", lede: `${WORDS.reaching}.` };
@@ -229,13 +272,15 @@ function fill(page) {
     if (page.kind === "confirm") return confirmPage.draw(page, view?.waiting);
     if (page.kind === "progress") return progressPage.draw(page, view?.waiting);
     const parts =
-        page.kind === "unbuilt" ? {
-            title: page.title || "The next step",
-            lede: WORDS.unbuilt,
-            why: page.id,
-        }
-        : page.kind === "ended" ? { title: ENDED[page.outcome] ?? "Finished", lede: page.message }
-        : page;
+        page.kind === "unbuilt"
+            ? {
+                  title: page.title || "The next step",
+                  lede: WORDS.unbuilt,
+                  why: page.id,
+              }
+            : page.kind === "ended"
+              ? { title: ENDED[page.outcome] ?? "Finished", lede: page.message }
+              : page;
     turn.replaceChildren(
         rise(0, "h1", "", parts.title),
         rise(1, "p", "lede", parts.lede),
@@ -245,27 +290,36 @@ function fill(page) {
 
 // The first page: what to do with this machine. One action is highlighted,
 // following the pointer and the focus; arrows walk them and numbers choose.
-let actions = [], modeAs = "";
+let actions = [],
+    modeAs = "";
 function fillMode(page, already) {
     // The one pressed is shown as under way until installerd answers.
-    const mark = () => actions.forEach((button, n) => button.classList.toggle("pending", view?.waiting === page.actions[n].ref));
+    const mark = () =>
+        actions.forEach((button, n) =>
+            button.classList.toggle("pending", view?.waiting === page.actions[n].ref),
+        );
     const as = JSON.stringify(page);
     if (already && as === modeAs) return mark();
     modeAs = as;
     const help = rise(2 + page.actions.length, "p", "menu-help", "", { id: "menu-help" });
     actions = page.actions.map((action, n) => {
-        const button = el("button", `act${action.primary ? " primary" : ""}`, [
-            el("span", "key", String(n + 1), { "aria-hidden": "true" }),
-            el("span", "name", action.name),
-            svg("0 0 18 18", "M3.5 9h11M10 4.5 14.5 9 10 13.5", "go"),
-        ], { type: "button", "aria-keyshortcuts": String(n + 1) });
+        const button = el(
+            "button",
+            `act${action.primary ? " primary" : ""}`,
+            [
+                el("span", "key", String(n + 1), { "aria-hidden": "true" }),
+                el("span", "name", action.name),
+                svg("0 0 18 18", "M3.5 9h11M10 4.5 14.5 9 10 13.5", "go"),
+            ],
+            { type: "button", "aria-keyshortcuts": String(n + 1) },
+        );
         if (!action.enabled) {
             button.setAttribute("aria-disabled", "true");
             button.setAttribute("aria-describedby", "menu-help");
         }
         const highlight = () => {
             for (const other of actions) other.classList.toggle("hl", other === button);
-            help.textContent = action.enabled ? "" : action.help ?? "";
+            help.textContent = action.enabled ? "" : (action.help ?? "");
         };
         button.addEventListener("pointermove", (e) => {
             const r = button.getBoundingClientRect();
@@ -286,12 +340,17 @@ function fillMode(page, already) {
     turn.replaceChildren(
         rise(0, "h1", "", page.title),
         rise(1, "p", "lede", page.intro),
-        el("ol", "menu", actions.map((button, n) => rise(2 + n, "li", "", [button]))),
+        el(
+            "ol",
+            "menu",
+            actions.map((button, n) => rise(2 + n, "li", "", [button])),
+        ),
         help,
     );
-    const first = actions.find((button, n) => page.actions[n].primary && page.actions[n].enabled)
-        ?? actions.find((button, n) => page.actions[n].enabled)
-        ?? actions[0];
+    const first =
+        actions.find((button, n) => page.actions[n].primary && page.actions[n].enabled) ??
+        actions.find((button, n) => page.actions[n].enabled) ??
+        actions[0];
     first?.classList.add("hl");
     mark();
 }
@@ -300,15 +359,38 @@ function fillMode(page, already) {
 const field = createField($("field"), els.introLockup.querySelector(".mark"), reduced);
 const diskPage = createDiskPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 const confirmPage = createConfirmPage({
-    turn, stage: els.stage, el, rise, ask, toast: (text) => toast(text), say, field, flash: els.flash, reduced,
+    turn,
+    stage: els.stage,
+    el,
+    rise,
+    ask,
+    toast: (text) => toast(text),
+    say,
+    field,
+    flash: els.flash,
+    reduced,
 });
 const progressPage = createProgressPage({
-    turn, stage: els.stage, el, rise, ask, say, retitle, field, reduced, daemon: firstBoot ? "oobed" : "installerd",
+    turn,
+    stage: els.stage,
+    el,
+    rise,
+    ask,
+    say,
+    retitle,
+    field,
+    reduced,
+    daemon: firstBoot ? "oobed" : "installerd",
 });
 // Where the page goes once setup has finished: what it says of that is drawn
 // on setup's job page, and said. It goes there by giving way to GXWI's
 // sign-in page, which takes up its stars.
-const outro = createOutro({ stage: els.stage, glows: [...document.querySelectorAll(".aurora i:not(.ember)")], field, reduced });
+const outro = createOutro({
+    stage: els.stage,
+    glows: [...document.querySelectorAll(".aurora i:not(.ember)")],
+    field,
+    reduced,
+});
 const ending = createEnding({
     onChange: ({ words, onward }) => {
         progressPage.following(words, onward);
@@ -317,10 +399,31 @@ const ending = createEnding({
     },
     go: (url) => outro.leave(url),
 });
-const welcomePage = createWelcomePage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
-const networkPage = createNetworkPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
+const welcomePage = createWelcomePage({
+    turn,
+    el,
+    rise,
+    ask,
+    toast: (text) => toast(text),
+    reduced,
+});
+const networkPage = createNetworkPage({
+    turn,
+    el,
+    rise,
+    ask,
+    toast: (text) => toast(text),
+    reduced,
+});
 const manualPage = createManualPage({ turn, el, rise, ask, reduced });
-const accountPage = createAccountPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
+const accountPage = createAccountPage({
+    turn,
+    el,
+    rise,
+    ask,
+    toast: (text) => toast(text),
+    reduced,
+});
 const namingPage = createNamingPage({ turn, el, rise, ask, toast: (text) => toast(text), reduced });
 
 function menuKeys(e) {
@@ -338,7 +441,8 @@ function menuKeys(e) {
 
 /** Names the tab for a page headed `heading`. */
 function retitle(heading) {
-    document.title = heading && heading !== "Peios Setup" ? `${heading} · Peios Setup` : "Peios Setup";
+    document.title =
+        heading && heading !== "Peios Setup" ? `${heading} · Peios Setup` : "Peios Setup";
 }
 
 // A page arriving: its heading is said and names the tab, and the keyboard
@@ -350,7 +454,9 @@ function arrived() {
     const heading = (h1?.getAttribute("aria-label") ?? h1?.textContent ?? "").trim();
     retitle(heading);
     if (heading) say(heading);
-    if (shown?.kind === "mode") actions.find((button) => button.classList.contains("hl"))?.focus({ preventScroll: true });
+    if (shown?.kind === "mode") {
+        actions.find((button) => button.classList.contains("hl"))?.focus({ preventScroll: true });
+    }
     if (shown?.kind === "disk") diskPage.focus();
     if (shown?.kind === "confirm") confirmPage.focus();
     if (shown?.kind === "progress") progressPage.focus();
@@ -365,13 +471,26 @@ function arrived() {
 // side it arrives from: a later page from the right, an earlier one from the
 // left. The pages that are not steps (starting, lost, an ending) count as
 // later.
-const ORDER = { mode: 0, disk: 1, confirm: 2, progress: 3, welcome: 0, network: 1, manual: 2, account: 3, naming: 4 };
+const ORDER = {
+    mode: 0,
+    disk: 1,
+    confirm: 2,
+    progress: 3,
+    welcome: 0,
+    network: 1,
+    manual: 2,
+    account: 3,
+    naming: 4,
+};
 const order = (page) => ORDER[page?.kind] ?? 9;
 
 // What is on the page now, and whether the intro has landed: until it has,
 // nothing here can be seen, so a page is drawn without ceremony.
-let shown = null, shownAs = "";
-let landed = false, moving = false, lingering = 0;
+let shown = null,
+    shownAs = "";
+let landed = false,
+    moving = false,
+    lingering = 0;
 
 // What is drawn, as one string: the page, and what on it is under way.
 const drawnAs = (page) => JSON.stringify([page, view?.waiting ?? null]);
@@ -399,24 +518,31 @@ function drawPage() {
     els.page.style.setProperty("--dir", order(wanted) < order(shown) ? -1 : 1);
     turn.classList.remove("in", "first");
     turn.classList.add("out");
-    setTimeout(() => {
-        const next = pageWanted();
-        turn.classList.remove("out");
-        fill(next);
-        [shown, shownAs] = [next, drawnAs(next)];
-        void turn.offsetWidth;
-        turn.classList.add("in");
-        moving = false;
-        arrived();
-        // What changed while this was under way is drawn now.
-        drawPage();
-    }, reduced ? 0 : 420);
+    setTimeout(
+        () => {
+            const next = pageWanted();
+            turn.classList.remove("out");
+            fill(next);
+            [shown, shownAs] = [next, drawnAs(next)];
+            void turn.offsetWidth;
+            turn.classList.add("in");
+            moving = false;
+            arrived();
+            // What changed while this was under way is drawn now.
+            drawPage();
+        },
+        reduced ? 0 : 420,
+    );
 }
 
 function draw() {
     // installerd has taken the restart, or this lost touch while it was
     // being asked for: the machine is going, and the page goes with it.
-    if (!restart?.active && view && (view.restarting || (heard === "lost" && view.waiting === "act.reboot"))) {
+    if (
+        !restart?.active &&
+        view &&
+        (view.restarting || (heard === "lost" && view.waiting === "act.reboot"))
+    ) {
         restart.begin({
             boot: view.boot,
             installed: view.page?.disk,
@@ -428,7 +554,14 @@ function draw() {
     }
     if (restart?.active) return;
     // Setup complete: the moment it is left to be seen begins.
-    if (firstBoot && view?.page?.kind === "progress" && view.page.job === "setup" && view.page.ended?.outcome === "complete") outro.complete();
+    if (
+        firstBoot &&
+        view?.page?.kind === "progress" &&
+        view.page.job === "setup" &&
+        view.page.ended?.outcome === "complete"
+    ) {
+        outro.complete();
+    }
     drawRelease();
     drawTicker();
     drawStatus();
@@ -437,9 +570,19 @@ function draw() {
 
 // ---- the intro ----
 const intro = createIntro({
-    els, field, reduced,
-    onLines: (n) => { if (!restart?.active) { linesAllowed = n; drawTicker(); } },
-    onLanded: () => { landed = true; arrived(); },
+    els,
+    field,
+    reduced,
+    onLines: (n) => {
+        if (!restart?.active) {
+            linesAllowed = n;
+            drawTicker();
+        }
+    },
+    onLanded: () => {
+        landed = true;
+        arrived();
+    },
 });
 // What happens to the page once the machine is restarting.
 const restart = createRestart({ els, el, rise, field, intro, say, retitle, reduced });
@@ -458,7 +601,10 @@ els.stage.addEventListener("pointerdown", (e) => {
     if (!intro.settled && !e.target.closest("button")) intro.skip();
 });
 $("skip").addEventListener("click", () => intro.skip());
-$("replay").addEventListener("click", () => { landed = false; intro.start(); });
+$("replay").addEventListener("click", () => {
+    landed = false;
+    intro.start();
+});
 
 draw();
 listen();
@@ -468,9 +614,17 @@ let woke = false;
 try {
     woke = sessionStorage.getItem(WOKE) === "1";
     sessionStorage.removeItem(WOKE);
-} catch { /* no storage: the intro plays from the top */ }
+} catch {
+    /* no storage: the intro plays from the top */
+}
 // The lockups are measured only once the faces have arrived.
 let begun = false;
-const begin = () => { if (!begun) { begun = true; if (woke) intro.wake(); else intro.start(); } };
+const begin = () => {
+    if (!begun) {
+        begun = true;
+        if (woke) intro.wake();
+        else intro.start();
+    }
+};
 (document.fonts ? document.fonts.ready : Promise.resolve()).then(begin);
 setTimeout(begin, 1500);

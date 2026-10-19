@@ -12,15 +12,36 @@
 // whatever whoever made the disk wrote there. All of it is put on the page as
 // text, never as markup.
 import {
-    ALERT, BACK, NOT_DRAWN, ONWARD, becomesLegend, diskBar, glyph, icon, legend, listText, partitionsText, picture, plural, sizeText,
+    ALERT,
+    BACK,
+    NOT_DRAWN,
+    ONWARD,
+    becomesLegend,
+    diskBar,
+    glyph,
+    icon,
+    legend,
+    listText,
+    partitionsText,
+    picture,
+    plural,
+    sizeText,
 } from "./bits.js";
 
 /** `/dev/sda2` as a person says it. */
 const short = (device) => device.replace(/^\/dev\//, "");
 
 const TICK = icon("0 0 12 12", 2, '<path d="M2.5 6.2 5 8.5l4.5-5"/>');
-const RESCAN = icon("0 0 16 16", 1.6, '<path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.5 2.5v3h-3"/>');
-const CUSTOM = icon("0 0 16 16", 1.6, '<rect x="2" y="3.5" width="12" height="9" rx="2"/><path d="M6.5 3.5v9"/>');
+const RESCAN = icon(
+    "0 0 16 16",
+    1.6,
+    '<path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.5 2.5v3h-3"/>',
+);
+const CUSTOM = icon(
+    "0 0 16 16",
+    1.6,
+    '<rect x="2" y="3.5" width="12" height="9" rx="2"/><path d="M6.5 3.5v9"/>',
+);
 
 /**
  * The disk page. `turn` is where a page is drawn; `el` and `rise` make its
@@ -28,11 +49,14 @@ const CUSTOM = icon("0 0 16 16", 1.6, '<rect x="2" y="3.5" width="12" height="9"
  * passing.
  */
 export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
-    let parts = null;   // the page's own elements, while it is the page drawn
-    let page = null;    // what the installer last said is on it
-    let rowsAs = "", planAs = "";
-    let hint = "";      // something said in passing, until a disk is chosen
-    let scanning = 0, scanTimer = 0, wipeTimer = 0;
+    let parts = null; // the page's own elements, while it is the page drawn
+    let page = null; // what the installer last said is on it
+    let rowsAs = "",
+        planAs = "";
+    let hint = ""; // something said in passing, until a disk is chosen
+    let scanning = 0,
+        scanTimer = 0,
+        wipeTimer = 0;
 
     const rows = () => [...parts.disks.querySelectorAll(".disk")];
     const enabled = () => rows().filter((row) => row.getAttribute("aria-disabled") !== "true");
@@ -45,19 +69,34 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
     }
 
     function build() {
-        const say = (text) => { hint = text; drawHelp(); };
-        const custom = button("link", [picture(CUSTOM), el("span")], () => say(page.custom?.help ?? ""));
+        const say = (text) => {
+            hint = text;
+            drawHelp();
+        };
+        const custom = button("link", [picture(CUSTOM), el("span")], () =>
+            say(page.custom?.help ?? ""),
+        );
         custom.setAttribute("aria-describedby", "disk-help");
-        for (const on of ["pointerenter", "focus"]) custom.addEventListener(on, () => say(page.custom?.help ?? ""));
+        for (const on of ["pointerenter", "focus"]) {
+            custom.addEventListener(on, () => say(page.custom?.help ?? ""));
+        }
         parts = {
             title: rise(0, "h1", ""),
             lede: rise(1, "p", "lede"),
             disks: el("div", "disks", null, { role: "radiogroup" }),
             trouble: rise(5, "p", "trouble", [picture(ALERT), el("span")]),
-            rescan: button("link", [picture(RESCAN), el("span")], () => page.rescan?.enabled && ask({ press: page.rescan.ref })),
+            rescan: button(
+                "link",
+                [picture(RESCAN), el("span")],
+                () => page.rescan?.enabled && ask({ press: page.rescan.ref }),
+            ),
             custom,
             help: el("p", "help", "", { id: "disk-help", "aria-live": "polite" }),
-            back: button("btn quiet", [picture(BACK), el("span")], () => page.back?.enabled && ask({ press: page.back.ref })),
+            back: button(
+                "btn quiet",
+                [picture(BACK), el("span")],
+                () => page.back?.enabled && ask({ press: page.back.ref }),
+            ),
             next: button("btn go-on", [el("span"), picture(ONWARD)], () => {
                 if (!page.next?.enabled) return say(page.next?.help ?? "");
                 if (!page.chosen) return say("Choose a disk first.");
@@ -72,7 +111,10 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
         parts.disks.addEventListener("keydown", keys);
         turn.replaceChildren(
             el("div", "col", [
-                parts.title, parts.lede, parts.disks, parts.trouble,
+                parts.title,
+                parts.lede,
+                parts.disks,
+                parts.trouble,
                 rise(6, "div", "aux", [parts.rescan, parts.custom, parts.help]),
                 rise(7, "div", "nav", [parts.back, parts.next]),
             ]),
@@ -85,23 +127,37 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
     function row(disk, n) {
         const partitions = disk.detail?.partitions ?? [];
         const system = partitions.find((p) => p.holds && p.type !== "esp")?.holds;
-        const has = disk.enabled ? system ?? (partitions.length ? plural(partitions.length, "partition") : "") : "";
-        const node = el("button", "disk", [
-            el("span", "glyph", [glyph(disk.bus)]),
-            el("span", "who", [
-                el("span", "model", disk.model),
-                el("span", "where", [
-                    [disk.device, disk.bus, has].filter(Boolean).join(" · "),
-                    ...(disk.note ? [el("span", "chip", disk.note)] : []),
-                ], { id: `disk-where-${n}` }),
-            ]),
-            el("span", "size", disk.size),
-            el("span", "tick", [picture(TICK)]),
-        ], {
-            type: "button", role: "radio",
-            // Named by what it is and how big; the rest describes it.
-            "aria-label": `${disk.model}, ${disk.size}`, "aria-describedby": `disk-where-${n}`,
-        });
+        const has = disk.enabled
+            ? (system ?? (partitions.length ? plural(partitions.length, "partition") : ""))
+            : "";
+        const node = el(
+            "button",
+            "disk",
+            [
+                el("span", "glyph", [glyph(disk.bus)]),
+                el("span", "who", [
+                    el("span", "model", disk.model),
+                    el(
+                        "span",
+                        "where",
+                        [
+                            [disk.device, disk.bus, has].filter(Boolean).join(" · "),
+                            ...(disk.note ? [el("span", "chip", disk.note)] : []),
+                        ],
+                        { id: `disk-where-${n}` },
+                    ),
+                ]),
+                el("span", "size", disk.size),
+                el("span", "tick", [picture(TICK)]),
+            ],
+            {
+                type: "button",
+                role: "radio",
+                // Named by what it is and how big; the rest describes it.
+                "aria-label": `${disk.model}, ${disk.size}`,
+                "aria-describedby": `disk-where-${n}`,
+            },
+        );
         node.dataset.value = disk.value;
         if (!disk.enabled) node.setAttribute("aria-disabled", "true");
         node.addEventListener("click", () => disk.enabled && choose(disk.value));
@@ -124,7 +180,11 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
                 parts.disks.append(rise(3, "p", "no-disks", page.empty || "No disks found."));
             }
             rowsAs = as;
-            if (held !== undefined) (rows().find((r) => r.dataset.value === held) ?? enabled()[0])?.focus({ preventScroll: true });
+            if (held !== undefined) {
+                (rows().find((r) => r.dataset.value === held) ?? enabled()[0])?.focus({
+                    preventScroll: true,
+                });
+            }
         }
         // A radio group is one stop for Tab: the chosen disk, or the first
         // that can be chosen. The arrows move between them.
@@ -138,7 +198,8 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
     function keys(e) {
         const at = e.target.closest?.(".disk");
         if (!at || e.metaKey || e.ctrlKey || e.altKey) return;
-        const all = enabled(), i = all.indexOf(at);
+        const all = enabled(),
+            i = all.indexOf(at);
         const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
         if (step && all.length) {
             e.preventDefault();
@@ -155,7 +216,8 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
     function drawHelp() {
         // installerd's word for an answer with no disk in it is "required",
         // which is its to say and ours to put as a sentence.
-        const text = hint || (page.error === "required" ? "Choose a disk first." : page.error ?? "");
+        const text =
+            hint || (page.error === "required" ? "Choose a disk first." : (page.error ?? ""));
         parts.help.textContent = text;
         parts.help.classList.toggle("on", !!text);
     }
@@ -173,25 +235,40 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
             const left = reduced ? 0 : Math.max(0, 900 - (Date.now() - scanning));
             scanning = 0;
             const { disks, rescan } = parts;
-            scanTimer = setTimeout(() => { disks.classList.remove("scanning"); rescan.classList.remove("spin"); }, left);
+            scanTimer = setTimeout(() => {
+                disks.classList.remove("scanning");
+                rescan.classList.remove("spin");
+            }, left);
         }
     }
 
     // ---- the panel beside the disks ----
     function layout(detail, disk) {
-        const partitions = detail.partitions ?? [], becomes = detail.becomes ?? [];
+        const partitions = detail.partitions ?? [],
+            becomes = detail.becomes ?? [];
         const bar = diskBar(el, detail, (p) => role(p, detail));
         // What it becomes is drawn over what it is, and wiped into view.
-        if (becomes.length) wipeTimer = setTimeout(() => bar.classList.add("wiped"), reduced ? 0 : 260);
-        bar.setAttribute("aria-label", becomes.length
-            ? `${disk.device} as it will be: ${partitionsText(becomes)}`
-            : `${disk.device} as it is: ${partitionsText(partitions)}`);
+        if (becomes.length) {
+            wipeTimer = setTimeout(() => bar.classList.add("wiped"), reduced ? 0 : 260);
+        }
+        bar.setAttribute(
+            "aria-label",
+            becomes.length
+                ? `${disk.device} as it will be: ${partitionsText(becomes)}`
+                : `${disk.device} as it is: ${partitionsText(partitions)}`,
+        );
         return bar;
     }
     // A partition of a disk that is being kept: the Peios system on it and
     // what that starts from are picked out, the rest is just there.
     const role = (p, detail) =>
-        !detail.system ? "was" : p.device === detail.system.on ? "r-root" : p.type === "esp" ? "r-esp" : "was";
+        !detail.system
+            ? "was"
+            : p.device === detail.system.on
+              ? "r-root"
+              : p.type === "esp"
+                ? "r-esp"
+                : "was";
 
     function becoming(disk, detail) {
         const out = [];
@@ -200,11 +277,25 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
         // What a person would miss of it is installerd's to say, and it says
         // the same on the page that asks whether they are sure.
         const lost = detail?.erases ?? [];
-        const including = lost.length ? `, including ${listText(lost)}`
-            : partitions.length ? `, including its ${plural(partitions.length, "partition")}` : "";
-        out.push(el("p", "erase", [picture(ALERT), el("span", "", `Everything on ${disk.device} will be erased${including}.`)]));
+        const including = lost.length
+            ? `, including ${listText(lost)}`
+            : partitions.length
+              ? `, including its ${plural(partitions.length, "partition")}`
+              : "";
+        out.push(
+            el("p", "erase", [
+                picture(ALERT),
+                el("span", "", `Everything on ${disk.device} will be erased${including}.`),
+            ]),
+        );
         if (detail?.becomes) {
-            out.push(el("p", "note", "The root is formatted with its security descriptor already in place, so it is protected from the moment it exists."));
+            out.push(
+                el(
+                    "p",
+                    "note",
+                    "The root is formatted with its security descriptor already in place, so it is protected from the moment it exists.",
+                ),
+            );
         }
         return out;
     }
@@ -217,29 +308,58 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
             // The system's own two are called what they are to it; the rest
             // by what they call themselves.
             const called = { "r-root": "Peios root", "r-esp": "EFI system partition" };
-            out.push(legend(el, partitions.map((p) => [
-                role(p, detail), called[role(p, detail)] ?? p.title,
-                `${p.used != null ? `${sizeText(p.used)} of ` : ""}${sizeText(p.bytes)}${p.fs ? ` · ${p.fs}` : ""}`,
-            ])));
+            out.push(
+                legend(
+                    el,
+                    partitions.map((p) => [
+                        role(p, detail),
+                        called[role(p, detail)] ?? p.title,
+                        `${p.used != null ? `${sizeText(p.used)} of ` : ""}${sizeText(p.bytes)}${p.fs ? ` · ${p.fs}` : ""}`,
+                    ]),
+                ),
+            );
         }
         const { system, upgrade } = detail;
         if (system) {
             const on = partitions.find((p) => p.device === system.on);
             if (upgrade) {
                 // What is on the disk, and what this medium would move it to.
-                const side = (className, label, version) => el("div", className, [el("small", "", label), el("b", "", version)]);
-                out.push(el("div", `rel mini${upgrade.blocked ? " alone" : ""}`, [
-                    side("rel-v", "On the disk", system.version),
-                    ...(upgrade.blocked ? [] : [el("div", "rel-line", [el("i")]), side("rel-v to", "This medium", upgrade.version)]),
-                ]));
-                out.push(el("p", "note", `${system.text}, on ${short(system.on)}.${upgrade.blocked ? ` ${upgrade.blocked}` : ""}`));
+                const side = (className, label, version) =>
+                    el("div", className, [el("small", "", label), el("b", "", version)]);
+                out.push(
+                    el("div", `rel mini${upgrade.blocked ? " alone" : ""}`, [
+                        side("rel-v", "On the disk", system.version),
+                        ...(upgrade.blocked
+                            ? []
+                            : [
+                                  el("div", "rel-line", [el("i")]),
+                                  side("rel-v to", "This medium", upgrade.version),
+                              ]),
+                    ]),
+                );
+                out.push(
+                    el(
+                        "p",
+                        "note",
+                        `${system.text}, on ${short(system.on)}.${upgrade.blocked ? ` ${upgrade.blocked}` : ""}`,
+                    ),
+                );
             } else {
-                out.push(el("p", "note", [
-                    el("b", "", system.text), `, on ${short(system.on)}${on?.used != null ? `, with ${sizeText(on.used)} in use` : ""}.`,
-                ]));
+                out.push(
+                    el("p", "note", [
+                        el("b", "", system.text),
+                        `, on ${short(system.on)}${on?.used != null ? `, with ${sizeText(on.used)} in use` : ""}.`,
+                    ]),
+                );
             }
         } else if (detail.no_system) {
-            out.push(el("p", "note", `No Peios system here: ${detail.no_system}.${page.purpose === "upgrade" ? " Nothing to upgrade." : ""}`));
+            out.push(
+                el(
+                    "p",
+                    "note",
+                    `No Peios system here: ${detail.no_system}.${page.purpose === "upgrade" ? " Nothing to upgrade." : ""}`,
+                ),
+            );
         }
         return out;
     }
@@ -255,14 +375,24 @@ export function createDiskPage({ turn, el, rise, ask, toast, reduced }) {
         if (!disk) {
             parts.body.replaceChildren(
                 el("div", "layout empty"),
-                el("p", "plan-empty", !page.disks.some((d) => d.enabled) ? "Nothing to show until a disk turns up."
-                    : install ? "Choose a disk to see how it will be laid out." : "Choose a disk to see what is on it."),
+                el(
+                    "p",
+                    "plan-empty",
+                    !page.disks.some((d) => d.enabled)
+                        ? "Nothing to show until a disk turns up."
+                        : install
+                          ? "Choose a disk to see how it will be laid out."
+                          : "Choose a disk to see what is on it.",
+                ),
             );
             return;
         }
         const detail = disk.detail;
         parts.body.replaceChildren(
-            el("div", "plan-title", [el("b", "", disk.model), el("span", "", `${disk.device} · ${disk.size}`)]),
+            el("div", "plan-title", [
+                el("b", "", disk.model),
+                el("span", "", `${disk.device} · ${disk.size}`),
+            ]),
             ...(install ? becoming(disk, detail) : holding(disk, detail)),
         );
         parts.body.classList.remove("swap");

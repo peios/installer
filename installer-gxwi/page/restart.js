@@ -29,17 +29,19 @@ import { AGAIN, CLOCK, ONWARD, WOKE, picture } from "./bits.js";
 
 // How often the address is asked, how long one asking may take, and how long
 // before the page says the machine has not come back.
-const EVERY = 1500, ASKING = 4000, PATIENCE = 3 * 60 * 1000;
+const POLL_INTERVAL_MS = 1500,
+    REQUEST_TIMEOUT_MS = 4000,
+    WAIT_TIMEOUT_MS = 3 * 60 * 1000;
 // How long something that is neither the installer nor setup must go on
 // answering before it is taken for Peios without setup in a browser.
-const SETTLE = 10 * 1000;
+const SETTLE_TIME_MS = 10 * 1000;
 // What GXWI answers with while the overlay it is to send everyone to is not
 // up yet: setup, on its way.
 const UNAVAILABLE = 503;
 // The going down, in ms from the restart being taken.
-const T = { centre: 480, formed: 2450, drawn: 2700, fade: 3400, away: 4000 };
+const RESTART_TIMING_MS = { centre: 480, formed: 2450, drawn: 2700, fade: 3400, away: 4000 };
 // Coming back: the burst, the name, and the landing.
-const BACK = { name: 500, land: 1900 };
+const RETURN_TIMING_MS = { name: 500, land: 1900 };
 
 /**
  * `els` are the page's fixed parts (stage, page, turn, ticker, status,
@@ -56,17 +58,21 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
     let at = "";
     let timers = [];
     let asking = 0;
-    let away = false;       // the going down has finished: the mark is asleep
-    let gone = false;       // nothing at all has answered since the restart
-    let boot = "";          // the boot the restart was asked on
-    let since = 0;          // when the waiting began
-    let disk = null;        // what Peios was installed on, as the job said
+    let away = false; // the going down has finished: the mark is asleep
+    let gone = false; // nothing at all has answered since the restart
+    let boot = ""; // the boot the restart was asked on
+    let since = 0; // when the waiting began
+    let disk = null; // what Peios was installed on, as the job said
     let closedSaid = false;
-    let answer = null;      // what came back, while the going down finishes
-    let other = 0;          // since when something else has been answering
+    let answer = null; // what came back, while the going down finishes
+    let other = 0; // since when something else has been answering
 
     const later = (ms, fn) => timers.push(setTimeout(fn, reduced ? 0 : ms));
-    const stop = () => { timers.forEach(clearTimeout); timers = []; clearTimeout(asking); };
+    const stop = () => {
+        timers.forEach(clearTimeout);
+        timers = [];
+        clearTimeout(asking);
+    };
 
     // A line in the corner, as the intro's were. The last is the one being
     // done; `waiting` gives it the dots of something still under way.
@@ -113,7 +119,7 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         line("reboot", "asked of installerd");
         say("Restarting the machine.");
         retitle("Restarting");
-        later(T.centre, () => {
+        later(RESTART_TIMING_MS.centre, () => {
             leave?.();
             turn.classList.remove("out");
             turn.replaceChildren();
@@ -121,10 +127,10 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
             intro.recall();
             field.regather();
         });
-        later(T.formed, () => introLockup.classList.add("formed"));
-        later(T.drawn, () => introLockup.classList.add("drawn"));
-        later(T.fade, () => field.fade());
-        later(T.away, () => {
+        later(RESTART_TIMING_MS.formed, () => introLockup.classList.add("formed"));
+        later(RESTART_TIMING_MS.drawn, () => introLockup.classList.add("drawn"));
+        later(RESTART_TIMING_MS.fade, () => field.fade());
+        later(RESTART_TIMING_MS.away, () => {
             field.darken();
             introLockup.classList.add("sleeping");
             stage.classList.remove("aurora-on");
@@ -147,16 +153,27 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
     // Asks the address who is there. Nothing, if nothing answers in time.
     async function hello() {
         const stopAsking = new AbortController();
-        const late = setTimeout(() => stopAsking.abort(), ASKING);
+        const late = setTimeout(() => stopAsking.abort(), REQUEST_TIMEOUT_MS);
         try {
-            const response = await fetch("/hello", { cache: "no-store", redirect: "manual", signal: stopAsking.signal });
+            const response = await fetch("/hello", {
+                cache: "no-store",
+                redirect: "manual",
+                signal: stopAsking.signal,
+            });
             let said = null;
             if (response.ok) {
-                try { said = await response.json(); } catch { said = null; }
+                try {
+                    said = await response.json();
+                } catch {
+                    said = null;
+                }
             }
             return {
-                answered: true, installer: typeof said?.installer === "string", setup: typeof said?.setup === "string",
-                coming: response.status === UNAVAILABLE, boot: said?.boot,
+                answered: true,
+                installer: typeof said?.installer === "string",
+                setup: typeof said?.setup === "string",
+                coming: response.status === UNAVAILABLE,
+                boot: said?.boot,
             };
         } catch {
             return { answered: false };
@@ -168,25 +185,30 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
     async function ask() {
         const heard = await hello();
         if (!active || (at !== "down" && at !== "lost")) return;
-        let back = null, elsewhere = false;
-        if (!heard.answered) gone = true;
-        else if (heard.installer) back = heard.boot === boot ? null : "again";
+        let back = null,
+            elsewhere = false;
+        if (!heard.answered) {
+            gone = true;
+        } else if (heard.installer) {
+            back = heard.boot === boot ? null : "again";
+        }
         // Setup is never on the medium, so it answering is the machine back.
-        else if (heard.setup) back = "setup";
-        else if (gone && !heard.coming) {
+        else if (heard.setup) {
+            back = "setup";
+        } else if (gone && !heard.coming) {
             elsewhere = true;
             other ||= Date.now();
-            if (Date.now() - other >= SETTLE) back = "running";
+            if (Date.now() - other >= SETTLE_TIME_MS) back = "running";
         }
         if (!elsewhere) other = 0;
         if (back) {
             if (at === "lost") return landFromLost(back);
             answer = back;
             if (away) return comeBack(back);
-        } else if (at === "down" && away && Date.now() - since > PATIENCE) {
+        } else if (at === "down" && away && Date.now() - since > WAIT_TIMEOUT_MS) {
             return lost();
         }
-        asking = setTimeout(ask, EVERY);
+        asking = setTimeout(ask, POLL_INTERVAL_MS);
     }
 
     // It answered: the mark bursts as the intro's did, the name comes back
@@ -200,8 +222,8 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         introLockup.classList.add("popped");
         stage.classList.add("aurora-on");
         field.burst();
-        later(BACK.name, () => introLockup.classList.add("word-in"));
-        later(BACK.land, () => land(what));
+        later(RETURN_TIMING_MS.name, () => introLockup.classList.add("word-in"));
+        later(RETURN_TIMING_MS.land, () => land(what));
     }
 
     // A page arrives under the lockup as it glides to the corner.
@@ -229,7 +251,7 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         stage.classList.add("stalled");
         introLockup.classList.remove("sleeping");
         land("lost");
-        asking = setTimeout(ask, EVERY * 2);
+        asking = setTimeout(ask, POLL_INTERVAL_MS * 2);
     }
 
     // First-boot setup answered: its page is this page's next, and is loaded
@@ -240,7 +262,11 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         stop();
         at = "setup";
         say("Peios is running. First-boot setup is starting.");
-        try { sessionStorage.setItem(WOKE, "1"); } catch { /* it plays the intro from the top */ }
+        try {
+            sessionStorage.setItem(WOKE, "1");
+        } catch {
+            /* it plays the intro from the top */
+        }
         location.replace("/");
     }
 
@@ -292,14 +318,19 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
         retitle(heading);
         say([heading, turn.querySelector(".lede")?.textContent].filter(Boolean).join(". "));
         (turn.querySelector(".btn") ?? turn.querySelector("h1"))?.focus({ preventScroll: true });
-        statusOf(...{
-            running: [`Peios is running at ${location.hostname}`, ""],
-            again: ["The installer is running again", "wait"],
-            lost: ["Waiting for the machine", "wait"],
-        }[at] ?? ["", ""]);
+        statusOf(
+            ...({
+                running: [`Peios is running at ${location.hostname}`, ""],
+                again: ["The installer is running again", "wait"],
+                lost: ["Waiting for the machine", "wait"],
+            }[at] ?? ["", ""]),
+        );
     }
 
-    const where = () => (disk?.device ? `${disk.model ? `${disk.model} (${disk.device})` : disk.device}` : "the disk it was installed on");
+    const where = () =>
+        disk?.device
+            ? `${disk.model ? `${disk.model} (${disk.device})` : disk.device}`
+            : "the disk it was installed on";
 
     function fill(what) {
         turn.dataset.kind = what;
@@ -312,24 +343,47 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
             turn.replaceChildren(
                 rise(0, "h1", "", "Peios is running"),
                 rise(1, "p", "lede", `The machine restarted from ${where()}.`),
-                rise(2, "p", "lede", "First-boot setup is waiting on the machine's own screen: a language and keyboard, the network, "
-                    + "your account and a name for the machine. Once it is done, sign in here with the account you made."),
-                rise(3, "div", "nav ends", [button("go-on", ONWARD, "Sign in", () => location.assign("/"))]),
+                rise(
+                    2,
+                    "p",
+                    "lede",
+                    "First-boot setup is waiting on the machine's own screen: a language and keyboard, the network, " +
+                        "your account and a name for the machine. Once it is done, sign in here with the account you made.",
+                ),
+                rise(3, "div", "nav ends", [
+                    button("go-on", ONWARD, "Sign in", () => location.assign("/")),
+                ]),
             );
         } else if (what === "again") {
             turn.replaceChildren(
                 rise(0, "h1", "", "It started the installer again"),
-                rise(1, "p", "lede", `The machine started from the install medium instead of ${where()}. `
-                    + "Peios is installed there, and its first-boot setup has not run."),
-                rise(2, "p", "lede", "Take the medium out and restart the machine, or choose the disk from the firmware's boot menu "
-                    + "as it starts: often F12, F11 or Esc."),
-                rise(3, "div", "nav ends", [button("quiet", AGAIN, "Back to the installer", () => location.reload())]),
+                rise(
+                    1,
+                    "p",
+                    "lede",
+                    `The machine started from the install medium instead of ${where()}. ` +
+                        "Peios is installed there, and its first-boot setup has not run.",
+                ),
+                rise(
+                    2,
+                    "p",
+                    "lede",
+                    "Take the medium out and restart the machine, or choose the disk from the firmware's boot menu " +
+                        "as it starts: often F12, F11 or Esc.",
+                ),
+                rise(3, "div", "nav ends", [
+                    button("quiet", AGAIN, "Back to the installer", () => location.reload()),
+                ]),
             );
         } else {
             const minutes = Math.max(1, Math.round((Date.now() - since) / 60000));
             const address = el("input", "input", "", {
-                id: "lost-addr", placeholder: "192.168.1.61", spellcheck: "false", autocomplete: "off",
-                "aria-label": "The machine's address", "aria-describedby": "lost-err",
+                id: "lost-addr",
+                placeholder: "192.168.1.61",
+                spellcheck: "false",
+                autocomplete: "off",
+                "aria-label": "The machine's address",
+                "aria-describedby": "lost-err",
             });
             const wrong = el("p", "err", "", { id: "lost-err" });
             const go = () => {
@@ -340,34 +394,74 @@ export function createRestart({ els, el, rise, field, intro, say, retitle, reduc
                     wrong.textContent = "An address, like 192.168.1.61, or the machine's name.";
                     return address.focus();
                 }
-                location.assign(`${location.protocol}//${to}${location.port ? `:${location.port}` : ""}/`);
+                location.assign(
+                    `${location.protocol}//${to}${location.port ? `:${location.port}` : ""}/`,
+                );
             };
-            address.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
-            address.addEventListener("input", () => { address.removeAttribute("aria-invalid"); wrong.textContent = ""; });
+            address.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    go();
+                }
+            });
+            address.addEventListener("input", () => {
+                address.removeAttribute("aria-invalid");
+                wrong.textContent = "";
+            });
             const cases = [
-                ["A message about Secure Boot", "The firmware won't start Peios' boot file, because it isn't signed with a key the firmware trusts. "
-                    + "Turn Secure Boot off in the firmware's settings, then restart."],
-                ["“No bootable device”, or nothing at all", "The firmware isn't trying the disk. Open its boot menu as the machine starts "
-                    + "(often F12, F11 or Esc) and choose the disk Peios is on."],
-                ["“Welcome to Peios”", "Peios is up, and its first-boot setup is waiting there. It may have come back at another address; "
-                    + "if you know it, go there:"],
-            ].map(([title, body], i) => el("li", "", [
-                el("b", "", title),
-                el("p", "", body),
-                ...(i === 2 ? [el("div", "addr", [address, button("quiet sm", ONWARD, "Go", go)]), wrong] : []),
-            ]));
+                [
+                    "A message about Secure Boot",
+                    "The firmware won't start Peios' boot file, because it isn't signed with a key the firmware trusts. " +
+                        "Turn Secure Boot off in the firmware's settings, then restart.",
+                ],
+                [
+                    "“No bootable device”, or nothing at all",
+                    "The firmware isn't trying the disk. Open its boot menu as the machine starts " +
+                        "(often F12, F11 or Esc) and choose the disk Peios is on.",
+                ],
+                [
+                    "“Welcome to Peios”",
+                    "Peios is up, and its first-boot setup is waiting there. It may have come back at another address; " +
+                        "if you know it, go there:",
+                ],
+            ].map(([title, body], i) =>
+                el("li", "", [
+                    el("b", "", title),
+                    el("p", "", body),
+                    ...(i === 2
+                        ? [
+                              el("div", "addr", [address, button("quiet sm", ONWARD, "Go", go)]),
+                              wrong,
+                          ]
+                        : []),
+                ]),
+            );
             turn.replaceChildren(
                 el("div", "col", [
                     rise(0, "h1", "", "The machine hasn't come back"),
-                    rise(1, "p", "lede", `It was asked to restart ${minutes === 1 ? "a minute" : `${minutes} minutes`} ago, and nothing has answered `
-                        + `at ${location.hostname} since. This page runs on another device, so it can't see the machine's screen, `
-                        + "and what that screen shows says what happened."),
+                    rise(
+                        1,
+                        "p",
+                        "lede",
+                        `It was asked to restart ${minutes === 1 ? "a minute" : `${minutes} minutes`} ago, and nothing has answered ` +
+                            `at ${location.hostname} since. This page runs on another device, so it can't see the machine's screen, ` +
+                            "and what that screen shows says what happened.",
+                    ),
                     rise(2, "div", "nav ends", [button("go-on", CLOCK, "Keep waiting", waitAgain)]),
                 ]),
-                rise(3, "aside", "", [el("p", "plan-label", "What the machine's screen might show"), el("ol", "cases", cases)]),
+                rise(3, "aside", "", [
+                    el("p", "plan-label", "What the machine's screen might show"),
+                    el("ol", "cases", cases),
+                ]),
             );
         }
     }
 
-    return { begin, closed, get active() { return active; } };
+    return {
+        begin,
+        closed,
+        get active() {
+            return active;
+        },
+    };
 }

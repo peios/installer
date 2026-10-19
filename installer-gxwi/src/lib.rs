@@ -80,6 +80,57 @@ impl Conversation {
 /// command line.
 #[tokio::main]
 pub async fn run(conversation: Conversation) {
+    let Some(Options { socket, listen }) = options(conversation) else {
+        return;
+    };
+    let program = conversation.program();
+    let die = |message: &str| -> ! { fail(program, message) };
+
+    let boot = std::fs::read_to_string(BOOT_ID)
+        .map(|id| id.trim().to_string())
+        .unwrap_or_default();
+    let (show, view) = watch::channel(view::View::starting(conversation, release::read(), boot));
+    // Everything the conversation is to hear of, from the daemon and from
+    // browsers alike, in the order it came.
+    let (tell, inbox) = std::sync::mpsc::channel();
+    // What the job under way has said of itself, whole.
+    let said = setup::Said::default();
+    let app = page::routes(conversation, view, said.clone(), tell.clone());
+    std::thread::Builder::new()
+        .name("setup".into())
+        .spawn(move || setup::keep(conversation, &socket, &show, &said, &tell, &inbox))
+        .unwrap_or_else(|e| die(&format!("setup thread: {e}")));
+
+    if let Some(address) = listen {
+        let listener = tokio::net::TcpListener::bind(&address)
+            .await
+            .unwrap_or_else(|e| die(&format!("listen {address}: {e}")));
+        eprintln!("{program}: serving on http://{address}, which is for working on the page only");
+        axum::serve(listener, app)
+            .await
+            .unwrap_or_else(|e| die(&format!("serve: {e}")));
+        return;
+    }
+
+    let listener = inherited_listener(program);
+    // Only SYSTEM can reach the socket, by the descriptor gxwid put on it, so
+    // there is nobody to check for here.
+    axum::serve(listener, app)
+        .await
+        .unwrap_or_else(|e| die(&format!("serve: {e}")));
+}
+
+struct Options {
+    socket: PathBuf,
+    listen: Option<String>,
+}
+
+fn fail(program: &str, message: &str) -> ! {
+    eprintln!("{program}: {message}");
+    std::process::exit(1);
+}
+
+fn options(conversation: Conversation) -> Option<Options> {
     let program = conversation.program();
     let daemon = conversation.daemon();
     let usage = format!(
@@ -94,53 +145,58 @@ Started by GXWI as its overlay, which hands it the socket it serves on.
   -h, --help             print this",
         socket = conversation.socket(),
     );
-    let die = |message: &str| -> ! {
-        eprintln!("{program}: {message}");
-        std::process::exit(1);
-    };
+    let die = |message: &str| -> ! { fail(program, message) };
     let (mut socket, mut listen) = (PathBuf::from(conversation.socket()), None);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--socket" => socket = args.next().unwrap_or_else(|| die("--socket needs a path")).into(),
-            "--listen" => listen = Some(args.next().unwrap_or_else(|| die("--listen needs an address and port"))),
-            "-V" | "--version" => return println!("{program} {}", env!("CARGO_PKG_VERSION")),
-            "-h" | "--help" => return println!("{usage}"),
+            "--socket" => {
+                socket = args
+                    .next()
+                    .unwrap_or_else(|| die("--socket needs a path"))
+                    .into()
+            }
+            "--listen" => {
+                listen = Some(
+                    args.next()
+                        .unwrap_or_else(|| die("--listen needs an address and port")),
+                )
+            }
+            "-V" | "--version" => {
+                println!("{program} {}", env!("CARGO_PKG_VERSION"));
+                return None;
+            }
+            "-h" | "--help" => {
+                println!("{usage}");
+                return None;
+            }
             other => die(&format!("unknown argument {other}\n{usage}")),
         }
     }
 
-    let boot = std::fs::read_to_string(BOOT_ID).map(|id| id.trim().to_string()).unwrap_or_default();
-    let (show, view) = watch::channel(view::View::starting(conversation, release::read(), boot));
-    // Everything the conversation is to hear of, from the daemon and from
-    // browsers alike, in the order it came.
-    let (tell, inbox) = std::sync::mpsc::channel();
-    // What the job under way has said of itself, whole.
-    let said = setup::Said::default();
-    let app = page::routes(conversation, view, said.clone(), tell.clone());
-    std::thread::Builder::new()
-        .name("setup".into())
-        .spawn(move || setup::keep(conversation, &socket, &show, &said, &tell, &inbox))
-        .unwrap_or_else(|e| die(&format!("setup thread: {e}")));
+    Some(Options { socket, listen })
+}
 
-    if let Some(address) = listen {
-        let listener = tokio::net::TcpListener::bind(&address).await.unwrap_or_else(|e| die(&format!("listen {address}: {e}")));
-        eprintln!("{program}: serving on http://{address}, which is for working on the page only");
-        axum::serve(listener, app).await.unwrap_or_else(|e| die(&format!("serve: {e}")));
-        return;
-    }
-
-    if std::env::var("LISTEN_FDS").ok().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0) < 1 {
-        die(&format!("no socket was handed over: {program} is started by GXWI as its overlay, not by hand"));
+fn inherited_listener(program: &str) -> tokio::net::UnixListener {
+    let die = |message: &str| -> ! { fail(program, message) };
+    if std::env::var("LISTEN_FDS")
+        .ok()
+        .and_then(|n| n.parse::<u32>().ok())
+        .unwrap_or(0)
+        < 1
+    {
+        die(&format!(
+            "no socket was handed over: {program} is started by GXWI as its overlay, not by hand"
+        ));
     }
     // SAFETY: peinit placed this descriptor for us and nothing else owns it.
     let listener = unsafe { UnixListener::from_raw_fd(LISTENER_FD) };
     // gxwid bound this socket, so it still answers in gxwid's name. gxwid
     // waits for it to answer in ours before it sends anyone here.
-    ImpersonationLevel::restamp_listener(listener.as_fd()).unwrap_or_else(|e| die(&format!("restamp: {e}")));
-    listener.set_nonblocking(true).unwrap_or_else(|e| die(&format!("listener: {e}")));
-    let listener = tokio::net::UnixListener::from_std(listener).unwrap_or_else(|e| die(&format!("listener: {e}")));
-    // Only SYSTEM can reach the socket, by the descriptor gxwid put on it, so
-    // there is nobody to check for here.
-    axum::serve(listener, app).await.unwrap_or_else(|e| die(&format!("serve: {e}")));
+    ImpersonationLevel::restamp_listener(listener.as_fd())
+        .unwrap_or_else(|e| die(&format!("restamp: {e}")));
+    listener
+        .set_nonblocking(true)
+        .unwrap_or_else(|e| die(&format!("listener: {e}")));
+    tokio::net::UnixListener::from_std(listener).unwrap_or_else(|e| die(&format!("listener: {e}")))
 }

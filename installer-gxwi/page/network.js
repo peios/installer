@@ -15,14 +15,30 @@
 // would be changed on it is what this page is carried over.
 import { BACK, NOT_DRAWN, ONWARD, icon, picture } from "./bits.js";
 
-const RESCAN = icon("0 0 16 16", 1.6, '<path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.5 2.5v3h-3"/>');
-const WIFI = icon("0 0 16 16", 1.6, '<path d="M1.75 6a9 9 0 0 1 12.5 0M4 8.5a5.75 5.75 0 0 1 8 0M6.25 11a2.5 2.5 0 0 1 3.5 0"/><path d="M8 13.25h.01"/>');
-const MANUAL = icon("0 0 16 16", 1.6, '<path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/>');
+const RESCAN = icon(
+    "0 0 16 16",
+    1.6,
+    '<path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.5 2.5v3h-3"/>',
+);
+const WIFI = icon(
+    "0 0 16 16",
+    1.6,
+    '<path d="M1.75 6a9 9 0 0 1 12.5 0M4 8.5a5.75 5.75 0 0 1 8 0M6.25 11a2.5 2.5 0 0 1 3.5 0"/><path d="M8 13.25h.01"/>',
+);
+const MANUAL = icon(
+    "0 0 16 16",
+    1.6,
+    '<path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/>',
+);
 const big = (body) => icon("0 0 24 24", 1.5, body);
 // An interface, by what kind it is: a wireless one by its name (`wl…`), any
 // other as a port a cable goes into.
-const PORT = big('<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M8 18.5v-4h8v4M10 14.5v-2h4v2"/>');
-const RADIO = big('<path d="M3 9.5a13 13 0 0 1 18 0M6 12.75a8.5 8.5 0 0 1 12 0M9 16a4 4 0 0 1 6 0"/><path d="M12 19.25h.01"/>');
+const PORT = big(
+    '<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M8 18.5v-4h8v4M10 14.5v-2h4v2"/>',
+);
+const RADIO = big(
+    '<path d="M3 9.5a13 13 0 0 1 18 0M6 12.75a8.5 8.5 0 0 1 12 0M9 16a4 4 0 0 1 6 0"/><path d="M12 19.25h.01"/>',
+);
 const OTHERS = { "network.wifi": WIFI };
 
 // Where an interface has got to, in a word or two, and how it is shown:
@@ -38,7 +54,11 @@ const STATES = {
 
 /** An address without the length of its prefix, and without the brackets
     an IPv6 address has in a location. */
-const bare = (address) => address.replace(/\/\d+$/, "").replace(/^\[(.*)\]$/, "$1").toLowerCase();
+const bare = (address) =>
+    address
+        .replace(/\/\d+$/, "")
+        .replace(/^\[(.*)\]$/, "$1")
+        .toLowerCase();
 /** An IPv6 link-local address (fe80::/10), which every interface has and
     nothing beyond the link it is on can reach: not worth a person's reading. */
 const linkLocal = (address) => /^fe[89ab][0-9a-f]:/i.test(bare(address));
@@ -48,11 +68,12 @@ const linkLocal = (address) => /^fe[89ab][0-9a-f]:/i.test(bare(address));
  * parts; `ask` asks setup for something; `toast` says something in passing.
  */
 export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
-    let parts = null;   // the page's own elements, while it is the page drawn
-    let page = null;    // what setup last said is on it
-    let listAs = "", othersAs = "";
-    let hint = "";      // why something cannot be pressed, while it is pointed at
-    let checking = 0, checkTimer = 0;
+    let parts = null; // the page's own elements, while it is the page drawn
+    let page = null; // what setup last said is on it
+    let listAs = "",
+        othersAs = "";
+    let checking = 0,
+        checkTimer = 0;
 
     function button(className, content, press) {
         const node = el("button", className, content, { type: "button" });
@@ -67,17 +88,40 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
             list: el("div", "nets"),
             words: rise(2, "p", "net-words"),
             note: rise(4, "p", "note"),
-            refresh: button("link", [picture(RESCAN), el("span")], () => page.refresh?.enabled && ask({ press: page.refresh.ref })),
-            manual: button("link", [picture(MANUAL), el("span")], () => page.manual?.enabled && ask({ press: page.manual.ref })),
+            refresh: button(
+                "link",
+                [picture(RESCAN), el("span")],
+                () => page.refresh?.enabled && ask({ press: page.refresh.ref }),
+            ),
+            manual: button(
+                "link",
+                [picture(MANUAL), el("span")],
+                () => page.manual?.enabled && ask({ press: page.manual.ref }),
+            ),
             others: el("span", "others"),
             // The address kept for the end of setup, and what can be done
             // about it before then.
-            planned: rise(3, "div", "planned", null, { role: "note", "aria-labelledby": "planned-label" }),
+            planned: rise(3, "div", "planned", null, {
+                role: "note",
+                "aria-labelledby": "planned-label",
+            }),
             plannedWords: el("p", "planned-words"),
-            change: button("btn quiet sm", [el("span")], () => page.manual?.enabled && ask({ press: page.manual.ref })),
-            unplan: button("btn quiet sm", [el("span")], () => page.unplan?.enabled && ask({ press: page.unplan.ref })),
+            change: button(
+                "btn quiet sm",
+                [el("span")],
+                () => page.manual?.enabled && ask({ press: page.manual.ref }),
+            ),
+            unplan: button(
+                "btn quiet sm",
+                [el("span")],
+                () => page.unplan?.enabled && ask({ press: page.unplan.ref }),
+            ),
             help: el("p", "help", "", { id: "network-help", "aria-live": "polite" }),
-            back: button("btn quiet", [picture(BACK), el("span")], () => page.back?.enabled && ask({ press: page.back.ref })),
+            back: button(
+                "btn quiet",
+                [picture(BACK), el("span")],
+                () => page.back?.enabled && ask({ press: page.back.ref }),
+            ),
             next: button("btn go-on", [el("span"), picture(ONWARD)], () => {
                 if (!page.next?.enabled) return say(page.next?.help ?? "");
                 // The page it leads to is not drawn yet, and an answer would
@@ -87,20 +131,26 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
             }),
         };
         parts.planned.append(
-            el("p", "planned-label", [el("i", "net-dot"), "Kept for the end of setup"], { id: "planned-label" }),
+            el("p", "planned-label", [el("i", "net-dot"), "Kept for the end of setup"], {
+                id: "planned-label",
+            }),
             parts.plannedWords,
             el("div", "planned-acts", [parts.change, parts.unplan]),
         );
         turn.replaceChildren(
-            parts.title, parts.lede, parts.list, parts.words, parts.planned, parts.note,
+            parts.title,
+            parts.lede,
+            parts.list,
+            parts.words,
+            parts.planned,
+            parts.note,
             rise(5, "div", "aux", [parts.refresh, parts.manual, parts.others, parts.help]),
             rise(6, "div", "nav", [parts.back, parts.next]),
         );
-        listAs = othersAs = hint = "";
+        listAs = othersAs = "";
     }
 
     function say(text) {
-        hint = text;
         parts.help.textContent = text;
         parts.help.classList.toggle("on", !!text);
     }
@@ -111,18 +161,24 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
         const as = JSON.stringify(page.others);
         if (as === othersAs) return;
         othersAs = as;
-        parts.others.replaceChildren(...page.others.map((action) => {
-            const why = () => say(action.enabled ? "" : action.help ?? "");
-            const node = button("link", [picture(OTHERS[action.ref] ?? MANUAL), el("span", "", action.name)], () => {
-                if (!action.enabled) return why();
-                if (action.unbuilt) return toast(NOT_DRAWN);
-                ask({ press: action.ref });
-            });
-            node.setAttribute("aria-describedby", "network-help");
-            if (!action.enabled) node.setAttribute("aria-disabled", "true");
-            for (const on of ["pointerenter", "focus"]) node.addEventListener(on, why);
-            return node;
-        }));
+        parts.others.replaceChildren(
+            ...page.others.map((action) => {
+                const why = () => say(action.enabled ? "" : (action.help ?? ""));
+                const node = button(
+                    "link",
+                    [picture(OTHERS[action.ref] ?? MANUAL), el("span", "", action.name)],
+                    () => {
+                        if (!action.enabled) return why();
+                        if (action.unbuilt) return toast(NOT_DRAWN);
+                        ask({ press: action.ref });
+                    },
+                );
+                node.setAttribute("aria-describedby", "network-help");
+                if (!action.enabled) node.setAttribute("aria-disabled", "true");
+                for (const on of ["pointerenter", "focus"]) node.addEventListener(on, why);
+                return node;
+            }),
+        );
     }
 
     // One interface: what it is, where it has got to, and what it has, and
@@ -136,23 +192,32 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
         if (net.gateway) facts.push(el("span", "", `via ${net.gateway}`));
         if (net.dns?.length) facts.push(el("span", "", `DNS ${net.dns.join(", ")}`));
         const hardware = [net.hardware, net.driver].filter(Boolean).join(" · ");
-        const node = rise(2 + Math.min(n, 3), "div", `net ${how}`.trim(), [
-            el("span", "glyph", [picture(wireless ? RADIO : PORT)]),
-            el("span", "who", [
-                el("span", "model", [
-                    net.name,
-                    ...(net.network ? [el("span", "net-on", ` on ${net.network}`)] : []),
+        const node = rise(
+            2 + Math.min(n, 3),
+            "div",
+            `net ${how}`.trim(),
+            [
+                el("span", "glyph", [picture(wireless ? RADIO : PORT)]),
+                el("span", "who", [
+                    el("span", "model", [
+                        net.name,
+                        ...(net.network ? [el("span", "net-on", ` on ${net.network}`)] : []),
+                    ]),
+                    el("span", "where", [
+                        ...(hardware ? [el("span", "", hardware)] : []),
+                        ...(here ? [el("span", "chip here", "Your way in")] : []),
+                        ...(kept ? [el("span", "chip later", `${kept} at the end`)] : []),
+                    ]),
+                    ...(facts.length ? [el("span", "net-facts", facts)] : []),
+                    ...(net.warning ? [el("span", "net-warn", net.warning)] : []),
                 ]),
-                el("span", "where", [
-                    ...(hardware ? [el("span", "", hardware)] : []),
-                    ...(here ? [el("span", "chip here", "Your way in")] : []),
-                    ...(kept ? [el("span", "chip later", `${kept} at the end`)] : []),
-                ]),
-                ...(facts.length ? [el("span", "net-facts", facts)] : []),
-                ...(net.warning ? [el("span", "net-warn", net.warning)] : []),
-            ]),
-            el("span", "net-state", [el("i", "net-dot"), el("span", "", said)]),
-        ], { role: "listitem", "aria-label": `${net.name}: ${said}${here ? ", the way this page reaches the machine" : ""}` });
+                el("span", "net-state", [el("i", "net-dot"), el("span", "", said)]),
+            ],
+            {
+                role: "listitem",
+                "aria-label": `${net.name}: ${said}${here ? ", the way this page reaches the machine" : ""}`,
+            },
+        );
         return node;
     }
 
@@ -165,9 +230,16 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
         listAs = as;
         parts.list.setAttribute("role", "list");
         parts.list.setAttribute("aria-label", "Network interfaces");
-        parts.list.replaceChildren(...nets.map((net, n) => row(
-            net, n, (net.addresses ?? []).some((a) => bare(a) === host), kept?.interface === net.name ? kept.address : null,
-        )));
+        parts.list.replaceChildren(
+            ...nets.map((net, n) =>
+                row(
+                    net,
+                    n,
+                    (net.addresses ?? []).some((a) => bare(a) === host),
+                    kept?.interface === net.name ? kept.address : null,
+                ),
+            ),
+        );
         parts.list.hidden = !nets.length;
     }
 
@@ -200,7 +272,10 @@ export function createNetworkPage({ turn, el, rise, ask, toast, reduced }) {
             const left = reduced ? 0 : Math.max(0, 900 - (Date.now() - checking));
             checking = 0;
             const { list, refresh } = parts;
-            checkTimer = setTimeout(() => { list.classList.remove("scanning"); refresh.classList.remove("spin"); }, left);
+            checkTimer = setTimeout(() => {
+                list.classList.remove("scanning");
+                refresh.classList.remove("spin");
+            }, left);
         }
     }
 

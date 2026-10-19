@@ -130,7 +130,11 @@ pub fn keep(
             Ok(()) => {
                 loop {
                     match inbox.recv() {
-                        Ok(Heard::Asked(Asked { seq: 0, again: true, .. })) => break,
+                        Ok(Heard::Asked(Asked {
+                            seq: 0,
+                            again: true,
+                            ..
+                        })) => break,
                         // Anything else is asked of a page that has gone, or
                         // is the last of a connection that is over.
                         Ok(_) => {}
@@ -169,7 +173,8 @@ fn converse(
     inbox: &mpsc::Receiver<Heard>,
     connection: u64,
 ) -> Result<(), String> {
-    let mut stream = UnixStream::connect(socket).map_err(|e| format!("connect {}: {e}", socket.display()))?;
+    let mut stream =
+        UnixStream::connect(socket).map_err(|e| format!("connect {}: {e}", socket.display()))?;
     // What this program calls itself to the daemon, which only records it.
     let surface = format!("{}/{}", conversation.program(), env!("CARGO_PKG_VERSION"));
     let hello = Hello {
@@ -229,7 +234,10 @@ fn talk(
     // page it leads to, which oobed sends without it.
     let mut account: Option<String> = None;
     loop {
-        let (kind, body) = match inbox.recv().map_err(|_| format!("nothing is listening to {daemon}"))? {
+        let (kind, body) = match inbox
+            .recv()
+            .map_err(|_| format!("nothing is listening to {daemon}"))?
+        {
             Heard::Said(from, kind, body) if from == connection => (kind, body),
             Heard::Gone(from, why) if from == connection => return Err(why),
             // The last words of a connection already given up.
@@ -239,10 +247,15 @@ fn talk(
                 continue;
             }
         };
-        match session.handle(kind, body).map_err(|e| format!("{daemon} said something unreadable: {e}"))? {
+        match session
+            .handle(kind, body)
+            .map_err(|e| format!("{daemon} said something unreadable: {e}"))?
+        {
             Event::Welcome(welcome) => {
                 let daemon = welcome.daemon.unwrap_or_else(|| daemon.into());
-                let start = Start { kind: conversation.kind().into() };
+                let start = Start {
+                    kind: conversation.kind().into(),
+                };
                 write_msg(stream, MsgType::Start, &start).map_err(|e| format!("start: {e}"))?;
                 view.send_modify(|view| {
                     view.did("welcome", daemon.clone());
@@ -255,39 +268,21 @@ fn talk(
             }),
             Event::Refused(refused) => {
                 let message = refused.message.unwrap_or_default();
-                return Err(format!("{daemon} refused the conversation ({:?}) {message}", refused.reason));
+                return Err(format!(
+                    "{daemon} refused the conversation ({:?}) {message}",
+                    refused.reason
+                ));
             }
             event @ (Event::NewTurn | Event::Updated) => {
                 let Some(page) = session.page() else { continue };
-                let turn = &page.turn;
-                if matches!(event, Event::NewTurn) {
-                    // Nothing, but on a page come back to, which arrives
-                    // with the disk that was chosen on it.
-                    chosen = view::assumed(turn);
-                } else {
-                    // A rescan may have taken the chosen disk away.
-                    chosen = chosen.filter(|disk| view::can_choose(turn, disk));
-                }
-                // What the job said stays, to be saved, on the page it goes
-                // on to once it has finished.
-                let done = view::is_done(turn);
-                if !done {
-                    hear(said, turn, matches!(event, Event::NewTurn));
-                }
-                view.send_modify(|view| {
-                    if matches!(event, Event::NewTurn) {
-                        let class = if turn.class.is_empty() { String::new() } else { format!("  class={}", turn.class.join(",")) };
-                        view.did("turn", format!("{}{class}", turn.id.as_deref().unwrap_or("?")));
-                    }
-                    view.seq = turn.seq;
-                    // Either is installerd's answer to whatever was pressed.
-                    view.waiting = None;
-                    view.page = Some(if done {
-                        Page::done(view.page.take(), turn)
-                    } else {
-                        Page::of(turn, chosen.as_deref()).for_account(account.as_deref())
-                    });
-                });
+                update_page(
+                    &page.turn,
+                    matches!(event, Event::NewTurn),
+                    &mut chosen,
+                    account.as_deref(),
+                    view,
+                    said,
+                );
             }
             Event::Ended(end) => {
                 view.send_modify(|view| {
@@ -308,17 +303,70 @@ fn talk(
                 // Before there is a page, it is about how this program opened
                 // the conversation, and there is no going on from that.
                 if session.page().is_none() {
-                    return Err(format!("{daemon} says this program broke the protocol ({:?}) {message}", error.code));
+                    return Err(format!(
+                        "{daemon} says this program broke the protocol ({:?}) {message}",
+                        error.code
+                    ));
                 }
                 // With one, it is installerd turning down what was pressed.
                 // The page stands as it was.
-                eprintln!("{}: {daemon} turned an answer down ({:?}) {message}", conversation.program(), error.code);
+                eprintln!(
+                    "{}: {daemon} turned an answer down ({:?}) {message}",
+                    conversation.program(),
+                    error.code
+                );
                 view.send_modify(|view| view.waiting = None);
             }
             // This program never asks for a listing.
             Event::Listing(_) => {}
         }
     }
+}
+
+/// Apply one daemon turn and its log as a single shared view update.
+fn update_page(
+    turn: &msip::msg::Turn,
+    another: bool,
+    chosen: &mut Option<String>,
+    account: Option<&str>,
+    view: &watch::Sender<View>,
+    said: &Said,
+) {
+    if another {
+        // Nothing, but on a page come back to, which arrives
+        // with the disk that was chosen on it.
+        *chosen = view::assumed(turn);
+    } else {
+        // A rescan may have taken the chosen disk away.
+        *chosen = chosen.take().filter(|disk| view::can_choose(turn, disk));
+    }
+    // What the job said stays, to be saved, on the page it goes
+    // on to once it has finished.
+    let done = view::is_done(turn);
+    if !done {
+        hear(said, turn, another);
+    }
+    view.send_modify(|view| {
+        if another {
+            let class = if turn.class.is_empty() {
+                String::new()
+            } else {
+                format!("  class={}", turn.class.join(","))
+            };
+            view.did(
+                "turn",
+                format!("{}{class}", turn.id.as_deref().unwrap_or("?")),
+            );
+        }
+        view.seq = turn.seq;
+        // Either is installerd's answer to whatever was pressed.
+        view.waiting = None;
+        view.page = Some(if done {
+            Page::done(view.page.take(), turn)
+        } else {
+            Page::of(turn, chosen.as_deref()).for_account(account)
+        });
+    });
 }
 
 /// Keeps what the job on `turn` has said of itself. A page's log only grows,
@@ -330,7 +378,9 @@ fn hear(said: &Said, turn: &msip::msg::Turn, another: bool) {
     if another || lines.len() < said.len() {
         said.clear();
     }
-    let new = lines[said.len()..].iter().map(|line| line.as_str().unwrap_or_default().to_string());
+    let new = lines[said.len()..]
+        .iter()
+        .map(|line| line.as_str().unwrap_or_default().to_string());
     said.extend(new);
 }
 
@@ -346,7 +396,9 @@ fn ask(
     view: &watch::Sender<View>,
     asked: Asked,
 ) -> Result<(), String> {
-    let Some(page) = session.page() else { return Ok(()) };
+    let Some(page) = session.page() else {
+        return Ok(());
+    };
     let turn = &page.turn;
     // One answer at a time: while one is on its way the page is as good as
     // gone, since installerd is about to say what becomes of it.
@@ -379,7 +431,9 @@ fn ask(
         if let Some(name) = answered_account(turn, &values) {
             *account = Some(name);
         }
-        let Some(answer) = session.answer(Some(&action), values) else { return Ok(()) };
+        let Some(answer) = session.answer(Some(&action), values) else {
+            return Ok(());
+        };
         write_msg(stream, MsgType::Answer, &answer).map_err(|e| format!("answer: {e}"))?;
         view.send_modify(|view| view.waiting = Some(action));
     }
@@ -393,7 +447,10 @@ fn answered_account(turn: &msip::msg::Turn, values: &Map<String, Value>) -> Opti
     if turn.id.as_deref() != Some("oobe.account") {
         return None;
     }
-    values.get("account.name").and_then(Value::as_str).map(|name| name.trim().to_string())
+    values
+        .get("account.name")
+        .and_then(Value::as_str)
+        .map(|name| name.trim().to_string())
 }
 
 #[cfg(test)]
@@ -408,9 +465,13 @@ mod tests {
             }))
             .unwrap()
         };
-        let values = serde_json::json!({ "account.name": "  Jack Palfrey ", "account.password": "one" });
+        let values =
+            serde_json::json!({ "account.name": "  Jack Palfrey ", "account.password": "one" });
         let values = values.as_object().unwrap();
-        assert_eq!(answered_account(&turn("oobe.account"), values).as_deref(), Some("Jack Palfrey"));
+        assert_eq!(
+            answered_account(&turn("oobe.account"), values).as_deref(),
+            Some("Jack Palfrey")
+        );
         // Another page's field of the same name is not the account.
         assert_eq!(answered_account(&turn("oobe.naming"), values), None);
         assert_eq!(answered_account(&turn("oobe.account"), &Map::new()), None);
@@ -420,15 +481,42 @@ mod tests {
     fn what_a_browser_asks_for_is_read_whichever_it_is() {
         let none = Map::new();
         let press: Asked = serde_json::from_str(r#"{ "seq": 3, "press": "nav.back" }"#).unwrap();
-        assert_eq!(press, Asked { seq: 3, press: Some("nav.back".into()), choose: None, values: none.clone(), again: false });
+        assert_eq!(
+            press,
+            Asked {
+                seq: 3,
+                press: Some("nav.back".into()),
+                choose: None,
+                values: none.clone(),
+                again: false
+            }
+        );
         let choose: Asked = serde_json::from_str(r#"{ "seq": 3, "choose": "/dev/sda" }"#).unwrap();
-        assert_eq!(choose, Asked { seq: 3, press: None, choose: Some("/dev/sda".into()), values: none.clone(), again: false });
+        assert_eq!(
+            choose,
+            Asked {
+                seq: 3,
+                press: None,
+                choose: Some("/dev/sda".into()),
+                values: none.clone(),
+                again: false
+            }
+        );
         // What was filled in goes with the action that takes it.
         let filled: Asked = serde_json::from_str(r#"{ "seq": 3, "press": "manual.save", "values": { "manual.address": "10.0.0.5/24" } }"#).unwrap();
         assert_eq!(filled.values["manual.address"], "10.0.0.5/24");
         // Starting again is asked of no page: the conversation is over.
         let again: Asked = serde_json::from_str(r#"{ "seq": 0, "again": true }"#).unwrap();
-        assert_eq!(again, Asked { seq: 0, press: None, choose: None, values: none, again: true });
+        assert_eq!(
+            again,
+            Asked {
+                seq: 0,
+                press: None,
+                choose: None,
+                values: none,
+                again: true
+            }
+        );
         // It must say which page it was looking at.
         assert!(serde_json::from_str::<Asked>(r#"{ "press": "nav.back" }"#).is_err());
         assert!(serde_json::from_str::<Asked>("press nav.back").is_err());
@@ -445,10 +533,18 @@ mod tests {
         let said = Said::default();
         let kept = || said.lock().unwrap().clone();
         hear(&said, &page("install.progress", &["one"]), true);
-        hear(&said, &page("install.progress", &["one", "two", "three"]), false);
+        hear(
+            &said,
+            &page("install.progress", &["one", "two", "three"]),
+            false,
+        );
         assert_eq!(kept(), ["one", "two", "three"]);
         // The same again adds nothing.
-        hear(&said, &page("install.progress", &["one", "two", "three"]), false);
+        hear(
+            &said,
+            &page("install.progress", &["one", "two", "three"]),
+            false,
+        );
         assert_eq!(kept().len(), 3);
         // Another job's page starts it afresh, and a page that is no job's
         // leaves nothing.

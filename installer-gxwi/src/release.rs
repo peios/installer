@@ -20,7 +20,9 @@ pub struct Release {
 }
 
 pub fn read() -> Release {
-    std::fs::read_to_string(OS_RELEASE).map(|text| from(&text)).unwrap_or_default()
+    std::fs::read_to_string(OS_RELEASE)
+        .map(|text| from(&text))
+        .unwrap_or_default()
 }
 
 /// os-release is shell assignments, one to a line, quoted or not.
@@ -32,7 +34,10 @@ fn from(text: &str) -> Release {
             .map(|(_, value)| value.trim().trim_matches(['"', '\'']).to_string())
             .unwrap_or_default()
     };
-    Release { version: value("VERSION_ID"), variant: value("VARIANT") }
+    Release {
+        version: value("VERSION_ID"),
+        variant: value("VARIANT"),
+    }
 }
 
 #[cfg(test)]
@@ -43,7 +48,13 @@ mod tests {
     fn the_release_is_read_from_the_systems_own_statement() {
         let text = "NAME=\"Peios\"\nID=peios\nVERSION_ID=\"2026.8\"\nVERSION=\"2026.8 (Experimental)\"\n\
                     VARIANT=\"Experimental\"\nVARIANT_ID=experimental\n";
-        assert_eq!(from(text), Release { version: "2026.8".into(), variant: "Experimental".into() });
+        assert_eq!(
+            from(text),
+            Release {
+                version: "2026.8".into(),
+                variant: "Experimental".into()
+            }
+        );
     }
 
     #[test]

@@ -9,15 +9,26 @@
 // looking is shown it under way.
 //
 // What the disk says of itself is put on the page as text, never as markup.
-import { BACK, NOT_DRAWN, becomesLegend, diskBar, glyph, icon, partitionsText, picture } from "./bits.js";
+import {
+    BACK,
+    NOT_DRAWN,
+    becomesLegend,
+    diskBar,
+    glyph,
+    icon,
+    partitionsText,
+    picture,
+} from "./bits.js";
 
 // How long the button is held, how long letting go takes to undo it, and how
 // long a second press has to follow a first for the two to count as one.
-const HOLD_MS = 1500, DRAIN_MS = 380, AGAIN_MS = 5000;
+const HOLD_MS = 1500,
+    DRAIN_MS = 380,
+    AGAIN_MS = 5000;
 // How long the page stays once it is begun, for that to be seen.
 const LINGER_MS = 900;
 // How warm the page is on arrival, before anything is held.
-const WARM = .35;
+const WARM = 0.35;
 
 const MARK = icon("0 0 16 16", 2, '<path d="M8 3.5v5.5M8 12.5h.01"/>');
 const ERASE = icon("0 0 18 18", 1.6, '<path d="M3 5h12M7.5 5V3.5h3V5M4.5 5l.8 9.5h7.4l.8-9.5"/>');
@@ -28,20 +39,46 @@ const ERASE = icon("0 0 18 18", 1.6, '<path d="M3 5h12M7.5 5V3.5h3V5M4.5 5l.8 9.
  * installer for something; `toast` says something in passing and `say` says
  * it to a screen reader; `field` is the stars, and `flash` lights the screen.
  */
-export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, field, flash, reduced }) {
-    let parts = null;   // the page's own elements, while it is the page drawn
-    let page = null;    // what the installer last said is on it
+export function createConfirmPage({
+    turn,
+    stage,
+    el,
+    rise,
+    ask,
+    toast,
+    say,
+    field,
+    flash,
+    reduced,
+}) {
+    let parts = null; // the page's own elements, while it is the page drawn
+    let page = null; // what the installer last said is on it
     let diskAs = "";
     // The hold: how far it has got (0 to 1), whether the button is down, and
     // whether it got all the way. `heard` is whether the installer has been
     // seen to take it.
-    let k = 0, holding = false, committed = false, heard = false;
-    let frame = 0, last = 0, askedAt = 0, askTimer = 0, commitTimer = 0, committedAt = 0;
+    let k = 0,
+        holding = false,
+        committed = false,
+        heard = false;
+    let frame = 0,
+        last = 0,
+        askedAt = 0,
+        askTimer = 0,
+        commitTimer = 0,
+        committedAt = 0;
 
     const here = () => parts?.title.isConnected;
-    const hint = (text) => { parts.hint.textContent = text; };
+    const hint = (text) => {
+        parts.hint.textContent = text;
+    };
     // What the button says of itself when nothing is happening to it.
-    const resting = () => page.begin?.enabled === false ? page.begin.help ?? "" : page.begin?.destructive ? "Press and hold" : "";
+    const resting = () =>
+        page.begin?.enabled === false
+            ? (page.begin.help ?? "")
+            : page.begin?.destructive
+              ? "Press and hold"
+              : "";
 
     // Everything that follows the hold does so from here: the button fills,
     // what the disk becomes is wiped in over what it is, the page warms, and
@@ -73,7 +110,12 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
         if (holding || k > 0) frame = requestAnimationFrame(tick);
         else frame = last = 0;
     }
-    const run = () => { if (!frame) { last = 0; frame = requestAnimationFrame(tick); } };
+    const run = () => {
+        if (!frame) {
+            last = 0;
+            frame = requestAnimationFrame(tick);
+        }
+    };
 
     function start() {
         if (committed || !here() || !page.begin?.enabled || !turn.classList.contains("in")) return;
@@ -108,7 +150,9 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
         ask({ press: page.begin.ref });
         // If the installer never takes it (the page had moved on under this
         // browser), the button is given back.
-        commitTimer = setTimeout(() => { if (committed && !heard) reset(); }, 4000);
+        commitTimer = setTimeout(() => {
+            if (committed && !heard) reset();
+        }, 4000);
     }
 
     // It is under way: asked for from this browser, or by someone else
@@ -127,14 +171,17 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
     }
 
     function build() {
-        const backName = el("span"), beginName = el("span");
+        const backName = el("span"),
+            beginName = el("span");
         const back = el("button", "btn quiet", [picture(BACK), backName], { type: "button" });
         back.addEventListener("click", () => page.back?.enabled && ask({ press: page.back.ref }));
 
-        const destroy = el("button", "destroy", [
-            el("span", "fill"),
-            el("span", "label", [picture(ERASE), beginName]),
-        ], { type: "button", "aria-describedby": "hold-hint confirm-summary" });
+        const destroy = el(
+            "button",
+            "destroy",
+            [el("span", "fill"), el("span", "label", [picture(ERASE), beginName])],
+            { type: "button", "aria-describedby": "hold-hint confirm-summary" },
+        );
         // An action that destroys nothing is pressed like any other.
         const isHeld = () => page.begin?.destructive;
         destroy.addEventListener("pointerdown", (e) => {
@@ -143,7 +190,9 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
             destroy.focus();
             start();
         });
-        for (const on of ["pointerup", "pointerleave", "pointercancel", "blur"]) destroy.addEventListener(on, stop);
+        for (const on of ["pointerup", "pointerleave", "pointercancel", "blur"]) {
+            destroy.addEventListener(on, stop);
+        }
         destroy.addEventListener("contextmenu", (e) => e.preventDefault());
         destroy.addEventListener("keydown", (e) => {
             if ((e.key !== " " && e.key !== "Enter") || !isHeld()) return;
@@ -179,13 +228,19 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
         parts = {
             title: el("span"),
             summary: rise(1, "p", "lede", "", { id: "confirm-summary" }),
-            back, backName, destroy, beginName,
+            back,
+            backName,
+            destroy,
+            beginName,
             hint: el("p", "hold-hint", "", { id: "hold-hint" }),
             disk: rise(2, "aside", "erased"),
         };
         turn.replaceChildren(
             el("div", "col", [
-                rise(0, "h1", "", [el("span", "danger-badge", [picture(MARK)], { "aria-hidden": "true" }), parts.title]),
+                rise(0, "h1", "", [
+                    el("span", "danger-badge", [picture(MARK)], { "aria-hidden": "true" }),
+                    parts.title,
+                ]),
                 parts.summary,
                 rise(3, "div", "nav", [back, el("div", "hold-group", [destroy, parts.hint])]),
             ]),
@@ -210,14 +265,20 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
         const out = [
             el("div", "erased-head", [
                 el("span", "glyph", [glyph(disk.bus)]),
-                el("div", "plan-title", [el("b", "", disk.model), el("span", "", [disk.device, disk.size].filter(Boolean).join(" · "))]),
+                el("div", "plan-title", [
+                    el("b", "", disk.model),
+                    el("span", "", [disk.device, disk.size].filter(Boolean).join(" · ")),
+                ]),
             ]),
         ];
         if (detail.bytes) {
             const bar = diskBar(el, detail);
             bar.classList.add("confirm-layout");
-            bar.setAttribute("aria-label", `${disk.device} as it is: ${partitionsText(detail.partitions ?? [])}.`
-                + (becomes.length ? ` As it will be: ${partitionsText(becomes)}.` : ""));
+            bar.setAttribute(
+                "aria-label",
+                `${disk.device} as it is: ${partitionsText(detail.partitions ?? [])}.` +
+                    (becomes.length ? ` As it will be: ${partitionsText(becomes)}.` : ""),
+            );
             out.push(bar);
         }
         if (becomes.length) out.push(becomesLegend(el, becomes));
@@ -262,7 +323,9 @@ export function createConfirmPage({ turn, stage, el, rise, ask, toast, say, fiel
     /** How long the page asks to stay before another takes its place, in ms:
         a moment once it is begun, for that to be seen. */
     function linger() {
-        return committed && !reduced && here() ? Math.max(0, LINGER_MS - (performance.now() - committedAt)) : 0;
+        return committed && !reduced && here()
+            ? Math.max(0, LINGER_MS - (performance.now() - committedAt))
+            : 0;
     }
 
     /** The page is setting off. A hold under way is let go and what it did

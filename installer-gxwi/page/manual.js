@@ -20,10 +20,11 @@ const TICK = icon("0 0 12 12", 2, '<path d="M2.5 6.2 5 8.5l4.5-5"/>');
  * parts; `ask` asks setup for something.
  */
 export function createManualPage({ turn, el, rise, ask, reduced }) {
-    let parts = null;   // the page's own elements, while it is the page drawn
-    let page = null;    // what setup last said is on it
-    let chosen = null;  // the interface chosen here, until Save
-    let rowsAs = "", errorsAs = "";
+    let parts = null; // the page's own elements, while it is the page drawn
+    let page = null; // what setup last said is on it
+    let chosen = null; // the interface chosen here, until Save
+    let rowsAs = "",
+        errorsAs = "";
 
     function button(className, content, press) {
         const node = el("button", className, content, { type: "button" });
@@ -45,17 +46,26 @@ export function createManualPage({ turn, el, rise, ask, reduced }) {
         parts = {
             title: rise(0, "h1", ""),
             lede: rise(1, "p", "lede"),
-            when: rise(1, "p", "when", [picture(CLOCK), el("span", "", "Applied when setup finishes, not now.")]),
+            when: rise(1, "p", "when", [
+                picture(CLOCK),
+                el("span", "", "Applied when setup finishes, not now."),
+            ]),
             list: el("div", "ifaces", null, { role: "radiogroup", "aria-label": "Interface" }),
             listError: el("p", "field-error", "", { id: "manual-interface-error" }),
             form: rise(3, "div", "fields"),
             fields: {},
-            back: button("btn quiet", [picture(BACK), el("span")], () => page.back?.enabled && ask({ press: page.back.ref })),
+            back: button(
+                "btn quiet",
+                [picture(BACK), el("span")],
+                () => page.back?.enabled && ask({ press: page.back.ref }),
+            ),
             save: button("btn go-on", [el("span")], save),
         };
         parts.list.addEventListener("keydown", keys);
         turn.replaceChildren(
-            parts.title, parts.lede, parts.when,
+            parts.title,
+            parts.lede,
+            parts.when,
             rise(2, "div", "iface-wrap", [parts.list, parts.listError]),
             parts.form,
             rise(4, "div", "nav", [parts.back, parts.save]),
@@ -68,12 +78,17 @@ export function createManualPage({ turn, el, rise, ask, reduced }) {
     // One interface: what it is now, and whether it can be chosen.
     function row(iface) {
         const cells = iface.cells ?? {};
-        const node = el("button", "iface", [
-            el("span", "iface-name", cells.name ?? iface.value),
-            el("span", "iface-now", [cells.state, cells.address].filter(Boolean).join(" · ")),
-            ...(iface.note ? [el("span", "chip", iface.note)] : []),
-            el("span", "tick", [picture(TICK)]),
-        ], { type: "button", role: "radio" });
+        const node = el(
+            "button",
+            "iface",
+            [
+                el("span", "iface-name", cells.name ?? iface.value),
+                el("span", "iface-now", [cells.state, cells.address].filter(Boolean).join(" · ")),
+                ...(iface.note ? [el("span", "chip", iface.note)] : []),
+                el("span", "tick", [picture(TICK)]),
+            ],
+            { type: "button", role: "radio" },
+        );
         node.dataset.value = iface.value;
         if (!iface.enabled) node.setAttribute("aria-disabled", "true");
         node.addEventListener("click", () => iface.enabled && choose(iface.value));
@@ -125,13 +140,25 @@ export function createManualPage({ turn, el, rise, ask, reduced }) {
             if (!made) {
                 const id = `field-${field.ref.replace(/\W/g, "-")}`;
                 const input = el("input", "input", "", {
-                    id, type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false",
+                    id,
+                    type: "text",
+                    autocomplete: "off",
+                    autocapitalize: "off",
+                    spellcheck: "false",
                     inputmode: field.ref === "manual.dns" ? "text" : "decimal",
                     "aria-describedby": `${id}-help ${id}-error`,
                 });
                 input.value = field.default ?? "";
-                input.addEventListener("input", () => { input.removeAttribute("aria-invalid"); made.error.textContent = ""; });
-                input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } });
+                input.addEventListener("input", () => {
+                    input.removeAttribute("aria-invalid");
+                    made.error.textContent = "";
+                });
+                input.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") {
+                        e.preventDefault();
+                        save();
+                    }
+                });
                 made = {
                     input,
                     label: el("label", "", "", { for: id }),
@@ -177,8 +204,11 @@ export function createManualPage({ turn, el, rise, ask, reduced }) {
         const errors = JSON.stringify([page.error, page.fields.map((f) => f.error)]);
         if (errors !== errorsAs) {
             errorsAs = errors;
-            const wrong = page.error ? rows().find((r) => r.tabIndex === 0)
-                : Object.values(parts.fields).find(({ input }) => input.getAttribute("aria-invalid") === "true")?.input;
+            const wrong = page.error
+                ? rows().find((r) => r.tabIndex === 0)
+                : Object.values(parts.fields).find(
+                      ({ input }) => input.getAttribute("aria-invalid") === "true",
+                  )?.input;
             // Into the middle, with what is wrong with it under it: the
             // bottom bar would cover a field only scrolled to the edge.
             wrong?.focus({ preventScroll: true });
@@ -190,7 +220,11 @@ export function createManualPage({ turn, el, rise, ask, reduced }) {
         interfaces if none is chosen yet. */
     function focus() {
         if (!parts) return;
-        if (!chosen) return rows().find((r) => r.tabIndex === 0)?.focus({ preventScroll: true });
+        if (!chosen) {
+            return rows()
+                .find((r) => r.tabIndex === 0)
+                ?.focus({ preventScroll: true });
+        }
         parts.fields["manual.address"]?.input.focus({ preventScroll: true });
     }
 

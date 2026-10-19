@@ -21,7 +21,9 @@
 
 // How often the machine is asked, how long one asking may take, and how long
 // before the page says nothing has answered.
-const EVERY = 1500, ASKING = 4000, PATIENCE = 2 * 60 * 1000;
+const POLL_INTERVAL_MS = 1500,
+    REQUEST_TIMEOUT_MS = 4000,
+    WAIT_TIMEOUT_MS = 2 * 60 * 1000;
 // What GXWI answers with while an overlay it is to send everyone to is not up:
 // setup, on its way back.
 const UNAVAILABLE = 503;
@@ -38,9 +40,11 @@ export function hostOf(address) {
  * `go` takes the browser somewhere else.
  */
 export function createEnding({ onChange, go = (url) => location.assign(url) }) {
-    let active = false, timer = 0, since = 0;
+    let active = false,
+        timer = 0,
+        since = 0;
     let cycle = 0; // a stopped round must not act on a later recovery
-    let there = null;   // the origin of the address given by hand, if any
+    let there = null; // the origin of the address given by hand, if any
     let state = { stage: "", words: "", onward: "/" };
 
     function set(next) {
@@ -50,7 +54,11 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
 
     async function ask(url, options) {
         try {
-            return await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(ASKING), ...options });
+            return await fetch(url, {
+                cache: "no-store",
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+                ...options,
+            });
         } catch {
             return null; // nothing answered
         }
@@ -72,7 +80,7 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
             if (!said?.setup) return arrive("/");
         }
         if (moved) return arrive(`${there}/`);
-        if (Date.now() - since > PATIENCE && state.stage !== "lost") {
+        if (Date.now() - since > WAIT_TIMEOUT_MS && state.stage !== "lost") {
             set({
                 stage: "lost",
                 words: there
@@ -80,12 +88,19 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
                     : "The machine has not answered. Its own screen says where it is.",
             });
         }
-        timer = setTimeout(() => round(current), EVERY);
+        timer = setTimeout(() => round(current), POLL_INTERVAL_MS);
     }
 
     function arrive(url) {
         active = false;
-        set({ stage: "going", words: url === "/" ? "Taking you to sign in." : `Taking you to this machine at ${url.replace(/^\w+:\/\/|\/$/g, "")}.`, onward: url });
+        set({
+            stage: "going",
+            words:
+                url === "/"
+                    ? "Taking you to sign in."
+                    : `Taking you to this machine at ${url.replace(/^\w+:\/\/|\/$/g, "")}.`,
+            onward: url,
+        });
         go(url);
     }
 
@@ -95,8 +110,10 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
         const network = page.phases?.find((phase) => phase.ref === "phase.network");
         const address = network?.detail?.address;
         const host = address ? hostOf(address) : null;
-        there = host && host !== location.hostname && `[${location.hostname}]` !== host
-            ? `${location.protocol}//${host}${location.port ? `:${location.port}` : ""}` : null;
+        there =
+            host && host !== location.hostname && `[${location.hostname}]` !== host
+                ? `${location.protocol}//${host}${location.port ? `:${location.port}` : ""}`
+                : null;
         const current = ++cycle;
         active = true;
         since = Date.now();
@@ -117,8 +134,13 @@ export function createEnding({ onChange, go = (url) => location.assign(url) }) {
     }
 
     return {
-        begin, stop,
-        get active() { return active || state.stage === "going" || state.stage === "lost"; },
-        get state() { return state; },
+        begin,
+        stop,
+        get active() {
+            return active || state.stage === "going" || state.stage === "lost";
+        },
+        get state() {
+            return state;
+        },
     };
 }

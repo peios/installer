@@ -7,17 +7,28 @@
 // page is drawn underneath, waiting to be shown.
 
 // The timeline, in ms from the start.
-const T = {
+const INTRO_TIMING_MS = {
     // when each line of what the installer did may appear in the corner
     lines: [250, 800, 1400, 2000, 2700, 3400],
-    gather: 650, gatherFor: 1500,
-    formed: 2450, outline: 2700, aurora: 3500, burst: 3600,
-    word: 4000, named: 4550, settle: 6000,
+    gather: 650,
+    gatherFor: 1500,
+    formed: 2450,
+    outline: 2700,
+    aurora: 3500,
+    burst: 3600,
+    word: 4000,
+    named: 4550,
+    settle: 6000,
 };
 // Waking from a restart: the lines, the burst, the name, and the settling.
-const WAKE = { lines: [150, 450, 750, 1050, 1350, 1650], burst: 700, word: 1200, settle: 2600 };
+const WAKE_TIMING_MS = {
+    lines: [150, 450, 750, 1050, 1350, 1650],
+    burst: 700,
+    word: 1200,
+    settle: 2600,
+};
 // How long the lockup takes to reach the corner once it sets off.
-const GLIDE = 1080;
+const GLIDE_TIME_MS = 1080;
 
 /**
  * @param els      stage, introStack, introLockup, headLockup, edition, page, turn
@@ -28,14 +39,21 @@ const GLIDE = 1080;
  */
 export function createIntro({ els, field, reduced, onLines, onLanded }) {
     const { stage, introStack, introLockup, headLockup, edition, page, turn } = els;
-    let cues = [], timers = [];
-    let t0 = 0, raf = 0;
+    let cues = [],
+        timers = [];
+    let t0 = 0,
+        raf = 0;
     let settled = false;
 
     function frame(ts) {
         raf = requestAnimationFrame(frame);
         const t = ts - t0;
-        for (const cue of cues) if (!cue.done && t >= cue.at) { cue.done = true; cue.run(); }
+        for (const cue of cues) {
+            if (!cue.done && t >= cue.at) {
+                cue.done = true;
+                cue.run();
+            }
+        }
         field.draw(t);
     }
 
@@ -50,33 +68,51 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         introLockup.style.transform = `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.height / from.height})`;
         stage.classList.add("settled");
         turn.classList.add("in");
-        timers.push(setTimeout(() => {
-            headLockup.classList.add("shown");
-            edition.classList.add("shown");
-            introLockup.classList.add("gone");
-            page.classList.add("live");
-            onLanded();
-        }, reduced ? 0 : GLIDE));
+        timers.push(
+            setTimeout(
+                () => {
+                    headLockup.classList.add("shown");
+                    edition.classList.add("shown");
+                    introLockup.classList.add("gone");
+                    page.classList.add("live");
+                    onLanded();
+                },
+                reduced ? 0 : GLIDE_TIME_MS,
+            ),
+        );
     }
 
     function makeCues() {
         return [
-            ...T.lines.map((at, i) => ({ at, run: () => onLines(i + 1) })),
-            { at: T.formed, run: () => introLockup.classList.add("formed") },
-            { at: T.outline, run: () => introLockup.classList.add("drawn") },
-            { at: T.aurora, run: () => stage.classList.add("aurora-on") },
-            { at: T.burst, run: () => { field.release(); introLockup.classList.add("popped"); } },
-            { at: T.word, run: () => introLockup.classList.add("word-in") },
-            { at: T.named, run: () => introStack.classList.add("named") },
-            { at: T.settle, run: settle },
-        ].sort((a, b) => a.at - b.at).map((cue) => ({ ...cue, done: false }));
+            ...INTRO_TIMING_MS.lines.map((at, i) => ({ at, run: () => onLines(i + 1) })),
+            { at: INTRO_TIMING_MS.formed, run: () => introLockup.classList.add("formed") },
+            { at: INTRO_TIMING_MS.outline, run: () => introLockup.classList.add("drawn") },
+            { at: INTRO_TIMING_MS.aurora, run: () => stage.classList.add("aurora-on") },
+            {
+                at: INTRO_TIMING_MS.burst,
+                run: () => {
+                    field.release();
+                    introLockup.classList.add("popped");
+                },
+            },
+            { at: INTRO_TIMING_MS.word, run: () => introLockup.classList.add("word-in") },
+            { at: INTRO_TIMING_MS.named, run: () => introStack.classList.add("named") },
+            { at: INTRO_TIMING_MS.settle, run: settle },
+        ]
+            .sort((a, b) => a.at - b.at)
+            .map((cue) => ({ ...cue, done: false }));
     }
 
     /** Straight to the end: everything the intro would have done is done at once. */
     function skip() {
         if (settled) return;
         stage.classList.add("instant");
-        for (const cue of cues) if (!cue.done && cue.run !== settle) { cue.done = true; cue.run(); }
+        for (const cue of cues) {
+            if (!cue.done && cue.run !== settle) {
+                cue.done = true;
+                cue.run();
+            }
+        }
         void stage.offsetWidth;
         stage.classList.remove("instant");
         for (const cue of cues) cue.done = true;
@@ -104,7 +140,7 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         stage.classList.remove("instant");
         settled = false;
         field.seed();
-        field.gather(T.gather, T.gatherFor);
+        field.gather(INTRO_TIMING_MS.gather, INTRO_TIMING_MS.gatherFor);
         cues = makeCues();
         t0 = performance.now();
         raf = requestAnimationFrame(frame);
@@ -136,16 +172,27 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         settled = false;
         field.asleep();
         cues = [
-            ...WAKE.lines.map((at, i) => ({ at, run: () => onLines(i + 1) })),
-            { at: WAKE.burst, run: () => {
-                introLockup.classList.remove("sleeping");
-                introLockup.classList.add("popped");
-                stage.classList.add("aurora-on");
-                field.burst();
-            } },
-            { at: WAKE.word, run: () => { introLockup.classList.add("word-in"); introStack.classList.add("named"); } },
-            { at: WAKE.settle, run: settle },
-        ].sort((a, b) => a.at - b.at).map((cue) => ({ ...cue, done: false }));
+            ...WAKE_TIMING_MS.lines.map((at, i) => ({ at, run: () => onLines(i + 1) })),
+            {
+                at: WAKE_TIMING_MS.burst,
+                run: () => {
+                    introLockup.classList.remove("sleeping");
+                    introLockup.classList.add("popped");
+                    stage.classList.add("aurora-on");
+                    field.burst();
+                },
+            },
+            {
+                at: WAKE_TIMING_MS.word,
+                run: () => {
+                    introLockup.classList.add("word-in");
+                    introStack.classList.add("named");
+                },
+            },
+            { at: WAKE_TIMING_MS.settle, run: settle },
+        ]
+            .sort((a, b) => a.at - b.at)
+            .map((cue) => ({ ...cue, done: false }));
         t0 = performance.now();
         raf = requestAnimationFrame(frame);
         if (reduced) skip();
@@ -173,13 +220,27 @@ export function createIntro({ els, field, reduced, onLines, onLanded }) {
         const to = headLockup.getBoundingClientRect();
         introLockup.style.transformOrigin = "0 0";
         introLockup.style.transform = `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.height / from.height})`;
-        timers.push(setTimeout(() => {
-            headLockup.classList.add("shown");
-            edition.classList.add("shown");
-            introLockup.classList.add("gone");
-            then();
-        }, reduced ? 0 : GLIDE));
+        timers.push(
+            setTimeout(
+                () => {
+                    headLockup.classList.add("shown");
+                    edition.classList.add("shown");
+                    introLockup.classList.add("gone");
+                    then();
+                },
+                reduced ? 0 : GLIDE_TIME_MS,
+            ),
+        );
     }
 
-    return { start, wake, skip, recall, reland, get settled() { return settled; } };
+    return {
+        start,
+        wake,
+        skip,
+        recall,
+        reland,
+        get settled() {
+            return settled;
+        },
+    };
 }
