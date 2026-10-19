@@ -1,0 +1,163 @@
+// The pages the installer shows when things are not as usual, on the host.
+//
+//     node dev/browser/states.mjs
+//
+// It starts its own installerd (--dry-run, as the machine dev/desktop.json
+// describes) and its own installer-gxwi, so it needs no VM and nothing else
+// running, and then takes each away and puts it back while a browser watches:
+//
+//   - another front end moves the conversation on, to a page drawn here,
+//     back, and then to one that is not drawn yet, and back;
+//   - installerd goes, and comes back;
+//   - the installer itself goes, and comes back;
+//   - another front end sees an install through, to installerd's page of what
+//     came of it;
+//   - the installer goes while that page is up, and comes back.
+//
+// installerd and msip-drive come from ../installer (cargo +1.98.1 build -p
+// installerd -p msip-drive) and installer-gxwi from this checkout (cargo
+// +1.98.1 build).
+import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { browser, eventually, sleep } from "./chrome.mjs";
+
+const root = new URL("../../", import.meta.url).pathname;
+const installer = join(root, "../installer/target/x86_64-unknown-linux-musl/debug");
+const run = mkdtempSync(join(tmpdir(), "installer-gxwi-"));
+const socket = join(run, "installerd.sock");
+const address = "127.0.0.1:7791";
+const site = `http://${address}/`;
+// installer-gxwi links libpeios, which is found beside the sibling checkout.
+const env = { ...process.env, LD_LIBRARY_PATH: join(root, "../libpeios/target/debug") };
+
+const startInstallerd = () => spawn(join(installer, "installerd"),
+    ["--dry-run", "--inventory", join(root, "dev/desktop.json"), "--socket", socket], { stdio: "ignore" });
+const startInstaller = () => spawn(join(root, "target/debug/installer-gxwi"), ["--socket", socket, "--listen", address], { stdio: "ignore", env });
+/** Another front end to the same conversation, pressing one action and leaving. */
+const press = (action, ...more) => {
+    try {
+        execFileSync(join(installer, "msip-drive"), ["--socket", socket, ...more, "--press", action], { stdio: "ignore", timeout: 5000 });
+    } catch {
+        // It has nothing to press on the page it arrives at and says so, which is how it leaves.
+    }
+};
+
+let installerd = startInstallerd();
+await sleep(400);
+let installerGxwi = startInstaller();
+const chrome = await browser(9371);
+const { send, js, picture } = chrome;
+
+const seen = () => js(`({
+    heading: document.querySelector("#turn h1")?.textContent ?? null,
+    lede: document.querySelector("#turn .lede")?.textContent ?? null,
+    why: document.querySelector("#turn .why")?.textContent ?? null,
+    actions: document.querySelectorAll("#turn .act").length,
+    disks: document.querySelectorAll("#turn .disk").length,
+    showing: document.getElementById("turn").classList.contains("in") && document.getElementById("page").classList.contains("live"),
+    status: document.getElementById("status-text").textContent,
+    statusIs: document.getElementById("status").className.replace("status", "").trim(),
+    title: document.title,
+    said: document.getElementById("say").textContent,
+    reboot: document.querySelector('#turn [data-way="reboot"]:not([hidden])')?.textContent ?? null,
+})`);
+const onFirstPage = (s) => s.heading === "Peios Setup" && s.actions === 3 && s.showing && s.status.startsWith("Connected to installerd");
+
+const out = {};
+const failed = [];
+const expect = (what, holds) => { if (!holds) failed.push(what); };
+
+try {
+    await send("Page.navigate", { url: site });
+    await sleep(1200);
+    await chrome.key("x", "KeyX", 88);
+    out.first = await eventually(seen, onFirstPage);
+    expect("the first page is showing", out.first.after !== null);
+
+    // Another front end answers the first page. The conversation is
+    // installerd's and shared, so this browser is taken along.
+    press("act.install");
+    out.taken = await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing);
+    expect("answered elsewhere, the next page arrives here too", out.taken.after !== null && out.taken.disks === 5);
+    expect("and names the tab", out.taken.title === "Choose a disk · Peios Setup");
+
+    press("nav.back");
+    await eventually(seen, onFirstPage);
+
+    // And then to a page that is not drawn here yet: what an upgrade goes
+    // on to from its disks.
+    press("act.upgrade");
+    await eventually(seen, (s) => s.heading === "Upgrade: choose a disk" && s.showing);
+    press("nav.next", "--set", "disk.target=/dev/sdc");
+    out.unbuilt = await eventually(seen, (s) => s.heading === "Ready to upgrade" && s.showing);
+    await picture("states-1-unbuilt.png");
+    expect("a page not drawn here yet is named and said to be one",
+        out.unbuilt.after !== null && out.unbuilt.lede?.includes("not drawn") && out.unbuilt.why === "upgrade.confirm" && out.unbuilt.actions === 0);
+    press("nav.back");
+    out.back = await eventually(seen, (s) => s.heading === "Upgrade: choose a disk" && s.showing && s.disks === 5);
+    expect("going back elsewhere brings the disks back here", out.back.after !== null);
+    press("nav.back");
+    out.home = await eventually(seen, onFirstPage);
+    expect("and then the first page", out.home.after !== null && out.home.title === "Peios Setup");
+
+    // installerd goes.
+    installerd.kill();
+    out.lost = await eventually(seen, (s) => s.heading === "The installer is not answering" && s.showing);
+    await picture("states-2-lost.png");
+    expect("with installerd gone the page says so, and why", out.lost.after !== null && out.lost.statusIs === "bad" && /installerd closed the connection|connect /.test(out.lost.why ?? ""));
+    expect("and says it to a screen reader, and in the tab", out.lost.said === "The installer is not answering" && out.lost.title.startsWith("The installer is not answering"));
+    installerd = startInstallerd();
+    out.found = await eventually(seen, onFirstPage);
+    expect("and carries on when it is back", out.found.after !== null && out.found.statusIs === "");
+
+    // The installer itself goes: the page has nobody to hear from.
+    installerGxwi.kill();
+    out.away = await eventually(seen, (s) => s.heading === "Lost touch with this machine" && s.showing);
+    await picture("states-3-away.png");
+    expect("with the installer gone the page says it has lost touch", out.away.after !== null && out.away.statusIs === "bad" && out.away.said === "Lost touch with this machine");
+    installerGxwi = startInstaller();
+    out.again = await eventually(seen, onFirstPage, 15);
+    expect("and carries on when that is back", out.again.after !== null);
+
+    out.problems = chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p));
+    expect("the page reports no errors but the connections it lost", out.problems.length === 0);
+
+    // Another front end sees an install through (a pretended one), and
+    // installerd goes on to its page of what came of it. That stays, with
+    // nothing lost, until someone restarts the machine or goes back.
+    press("act.install");
+    await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing);
+    press("nav.next", "--set", "disk.target=/dev/sdc");
+    await eventually(seen, (s) => s.heading === "Ready to install" && s.showing);
+    // It stays to the end of the job, which is how it leaves.
+    const driving = spawn(join(installer, "msip-drive"), ["--socket", socket, "--press", "act.begin"], { stdio: "ignore" });
+    out.running = await eventually(seen, (s) => s.heading === "Installing" && s.showing, 10);
+    expect("an installation begun elsewhere is shown here as it runs", out.running.after !== null && out.running.title === "Installing · Peios Setup");
+    out.ended = await eventually(seen, (s) => s.heading === "Installation complete" && s.showing, 40);
+    expect("and ends here too, in installerd's words", out.ended.after !== null && out.ended.lede === "Reboot from the installed disk. When the machine restarts, remove the installation medium or choose the installed disk from the boot menu." && out.ended.status === "Finished");
+    await sleep(4000);
+    out.stayed = await seen();
+    expect("and what it ended with stays on the page", out.stayed.heading === "Installation complete" && out.stayed.showing && out.stayed.statusIs !== "bad"
+        && chrome.problems.filter((p) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(p)).length === 0);
+    driving.kill();
+
+    // The installer goes while that page is up, and comes back: it joins the
+    // conversation on installerd's page, never having seen the job, and
+    // draws the job as finished with nothing of it to show but the way on.
+    installerGxwi.kill();
+    await eventually(seen, (s) => s.heading === "Lost touch with this machine" && s.showing);
+    installerGxwi = startInstaller();
+    out.reopened = await eventually(seen, (s) => s.heading === "Installation complete" && s.showing, 15);
+    expect("an installer restarted on the finished page joins it there, with the restart still offered",
+        out.reopened.after !== null && out.reopened.lede === "Reboot from the installed disk. When the machine restarts, remove the installation medium or choose the installed disk from the boot menu." && out.reopened.reboot === "Reboot now");
+} finally {
+    out.failed = failed;
+    console.log(JSON.stringify(out, null, 1));
+    chrome.close();
+    installerGxwi.kill();
+    installerd.kill();
+    rmSync(run, { recursive: true, force: true });
+    process.exit(failed.length ? 1 : 0);
+}

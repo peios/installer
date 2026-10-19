@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Makes the graphical installer GXWI's overlay: everyone who opens the",
+    "machine's address is sent to it, with no logon, as the live medium's",
+    "peios account, which has no credential.",
+    "",
+    "For an install medium only. An image lists it in [registry]",
+    "live_autoapply, which installerd never copies to the disk it installs",
+    "(settle_seed_queues), and never in autoapply: on an installed machine",
+    "the address would stay the installer, not the logon page.",
+    "",
+    "Shipped by dev.peios.installer-gxwi into /usr/share/regim/."
+  ],
+  "keys": [
+    {
+      "path": "Machine\\Software",
+      "values": []
+    },
+    {
+      "path": "Machine\\Software\\GXWI",
+      "values": [
+        {
+          "name": "OverlayUsername",
+          "type": "sz",
+          "data": "peios"
+        },
+        {
+          "name": "OverlaySession",
+          "type": "sz",
+          "data": "/usr/bin/installer-gxwi"
+        }
+      ]
+    }
+  ]
+}

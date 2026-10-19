@@ -1,0 +1,164 @@
+# A peiso layer for trying the installer and first-boot setup end to end in
+# the dev VM, before either is packaged: the Experimental medium with this
+# checkout's programs, and those of ../installer and ../gxwi, put where their
+# packages will put them. dev/image.sh builds them and layers this over
+# ../dist/release's spec; dev/boot.sh boots what it makes when IMAGE names it.
+#
+# The medium's own system is what the installer copies onto the disk, so the
+# system installed from this medium has them too: an oobed that offers setup
+# in a browser, the oobe-gxwi it offers, and a gxwid with overlays. None of
+# them is signed or known to peipkg (an injected file has no package). Never
+# layer this over a release.
+#
+# Paths are relative to this file, and the programs are the release builds
+# dev/image.sh makes.
+
+# First-boot setup, and the program that draws it in a browser, where oobed
+# looks for it.
+[[file]]
+src  = "../../installer/target/x86_64-unknown-linux-musl/release/oobed"
+dest = "usr/sbin/oobed"
+
+[[file]]
+src  = "../target/release/oobe-gxwi"
+dest = "usr/bin/oobe-gxwi"
+
+# The installer and installerd, for the medium to be an installer without a
+# push, though dev/push.sh still takes their place.
+[[file]]
+src  = "../../installer/target/x86_64-unknown-linux-musl/release/installerd"
+dest = "usr/sbin/installerd"
+
+[[file]]
+src  = "../target/release/installer-gxwi"
+dest = "usr/bin/installer-gxwi"
+
+# GXWI with overlays, which the release does not have yet.
+[[file]]
+src  = "../../gxwi/target/release/gxwid"
+dest = "usr/bin/gxwid"
+
+[[file]]
+src  = "../../gxwi/target/x86_64-unknown-linux-musl/release/gxwi-server"
+dest = "usr/bin/gxwi-server"
+
+# The desktop as it stands in ../fenestra and ../fenesh, over the packaged
+# ones: what the first logon after setup arrives at.
+[[file]]
+src  = "../../fenestra/target/release/fenestra"
+dest = "usr/bin/fenestra"
+
+[[file]]
+src  = "../../fenesh/target/release/fenesh"
+dest = "usr/bin/fenesh"
+
+# Get started, which fenesh opens on a person's first desktop, with its
+# declaration and icon.
+[[file]]
+src  = "../../fenesh/target/release/fenesh-welcome"
+dest = "usr/bin/fenesh-welcome"
+
+[[file]]
+src  = "../../fenesh/dev.peios.fenesh.welcome.toml"
+dest = "usr/share/apps/dev.peios.fenesh.welcome.toml"
+
+[[file]]
+src  = "../../fenesh/welcome.svg"
+dest = "usr/share/icons/base/dev.peios.fenesh.welcome.svg"
+
+# fenesh's settings as they stand, over the packaged seed: what is pinned to
+# a new person's dock. Both where the seed is kept and in the queue peinit
+# applies at boot, which peiso fills before a layer's files are put in.
+[[file]]
+src  = "../../fenesh/registry.d/fenesh-config.reg"
+dest = "usr/share/regim/fenesh-config.reg"
+
+[[file]]
+src  = "../../fenesh/registry.d/fenesh-config.reg"
+dest = "lcl/policy/autoapply.d/fenesh-config.reg"
+
+# The terminal and the text editor, which fenesh pins, as they stand in
+# their checkouts: the medium carries neither package yet.
+[[file]]
+src  = "../../peiterm/target/release/peiterm"
+dest = "usr/bin/peiterm"
+
+[[file]]
+src  = "../../peiterm/dev.peios.peiterm.toml"
+dest = "usr/share/apps/dev.peios.peiterm.toml"
+
+[[file]]
+src  = "../../peiterm/peiterm.svg"
+dest = "usr/share/icons/base/dev.peios.peiterm.svg"
+
+[[file]]
+src  = "../../peitor/target/release/peitor"
+dest = "usr/bin/peitor"
+
+[[file]]
+src  = "../../peitor/dev.peios.peitor.toml"
+dest = "usr/share/apps/dev.peios.peitor.toml"
+
+[[file]]
+src  = "../../peitor/peitor.svg"
+dest = "usr/share/icons/base/dev.peios.peitor.svg"
+
+# Gexora as it stands in its checkout, over the package the medium carries,
+# which is older than its menus.
+[[file]]
+src  = "../../gexora/target/release/gexora"
+dest = "usr/bin/gexora"
+
+[[file]]
+src  = "../../gexora/dev.peios.gexora.toml"
+dest = "usr/share/apps/dev.peios.gexora.toml"
+
+[[file]]
+src  = "../../gexora/gexora.svg"
+dest = "usr/share/icons/base/dev.peios.gexora.svg"
+
+# The permissions editor Gexora opens, which nothing packages yet.
+[[file]]
+src  = "../../gxwi-sd-editor/target/release/gxwi-sd-editor"
+dest = "usr/bin/gxwi-sd-editor"
+
+[[file]]
+src  = "../../gxwi-sd-editor/dev.peios.gxwi-sd-editor.toml"
+dest = "usr/share/apps/dev.peios.gxwi-sd-editor.toml"
+
+[[file]]
+src  = "../../gxwi-sd-editor/gxwi-sd-editor.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi-sd-editor.svg"
+
+# Services Manager, which nothing packages yet.
+[[file]]
+src  = "../../gxwi-services-manager/target/release/gxwi-services-manager"
+dest = "usr/bin/gxwi-services-manager"
+
+[[file]]
+src  = "../../gxwi-services-manager/dev.peios.gxwi-services-manager.toml"
+dest = "usr/share/apps/dev.peios.gxwi-services-manager.toml"
+
+[[file]]
+src  = "../../gxwi-services-manager/gxwi-services-manager.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi-services-manager.svg"
+
+# Event Viewer, which nothing packages yet.
+[[file]]
+src  = "../../gxwi-event-viewer/target/release/gxwi-event-viewer"
+dest = "usr/bin/gxwi-event-viewer"
+
+[[file]]
+src  = "../../gxwi-event-viewer/dev.peios.gxwi-event-viewer.toml"
+dest = "usr/share/apps/dev.peios.gxwi-event-viewer.toml"
+
+[[file]]
+src  = "../../gxwi-event-viewer/gxwi-event-viewer.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi-event-viewer.svg"
+
+# The icons of the other applications the medium carries, as they stand in
+# their checkouts, over the packaged ones.
+
+[[file]]
+src  = "../../gxwi/libgxwi/examples/hello/hello.svg"
+dest = "usr/share/icons/base/dev.peios.gxwi.hello.svg"

@@ -1,0 +1,57 @@
+.TH INSTALLER-GXWI 1 "2026-10-06" "Peios"
+.SH NAME
+installer-gxwi \- the graphical Peios installer, in a browser, as GXWI's overlay
+.SH SYNOPSIS
+.B installer-gxwi
+.RB [ \-\-socket
+.IR PATH ]
+.RB [ \-\-listen
+.IR ADDRESS : PORT ]
+.SH DESCRIPTION
+What GXWI runs as its overlay on an install medium: one process for the
+machine, which everyone who opens the machine's address in a browser is sent
+to, with no logon. It installs nothing itself.
+.BR installerd (8)
+does that, as SYSTEM, and asks its questions over a socket; this program
+holds that conversation, keeps what it has come to as one state, and serves a
+page that draws it. Every browser is sent the same thing, and sent it again
+whenever it changes, so two people looking see the same disk chosen and are
+moved on together.
+.PP
+The page goes from what to do with the machine, through which disk and
+whether it is really to be erased, to the installation as it runs and the
+restart. The button that begins an installation is held down rather than
+pressed. A job that fails ends the conversation; what it ended with stays on
+the page until someone asks to start again. A job that finishes goes on to
+.BR installerd 's
+offer to restart the machine, and the page waits for the machine to come back
+and goes where it lands: first-boot setup, Peios, or the installer again.
+.PP
+GXWI starts it, as the account its
+.I OverlayUsername
+names, and hands it the listening socket it serves on. The medium makes it the
+overlay, in
+.IR Machine\eSoftware\eGXWI ;
+the package does not, so an installed machine that carries it is not an
+installer. Started by hand, it has no socket and says so.
+.SH OPTIONS
+.TP
+.BI \-\-socket " PATH"
+.BR installerd 's
+socket.
+The default is
+.IR /run/installerd.sock .
+.TP
+.BI \-\-listen " ADDRESS" : PORT
+Serve here instead of on a socket handed over, for working on the page where
+there is no GXWI.
+.TP
+.BR \-V ", " \-\-version
+Print the version.
+.TP
+.BR \-h ", " \-\-help
+Print a summary of these.
+.SH SEE ALSO
+.BR oobe-gxwi (1),
+.BR installerd (8),
+.BR gxwid (1)
