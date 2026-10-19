@@ -1,0 +1,149 @@
+.TH INSTALLERD 8 2026-10-19 "Peios installer 0.1.13"
+.SH NAME
+installerd \- Peios installation and repair service
+.SH SYNOPSIS
+.B installerd
+.RB [ \-\-socket
+.IR PATH ]
+.RB [ \-\-medium
+.IR PATH ]
+.RB [ \-\-force ]
+.br
+.B installerd \-\-dry-run
+.RB [ \-\-socket
+.IR PATH ]
+.RB [ \-\-inventory
+.IR FILE ]
+.RB [ \-\-fail-at
+.IR PHASE ]
+.SH DESCRIPTION
+.B installerd
+owns installation, repair, and upgrade operations.
+It serves a Message Surface Interaction Protocol (MSIP) conversation to
+terminal, browser, and scripted frontends over a Unix-domain socket.
+The daemon performs disk operations; the frontend presents questions and
+forwards answers.
+.PP
+A fresh installation replaces the selected whole disk, copies the medium's
+pristine system, stages installed-system registry seeds, and regenerates the
+initramfs and unified kernel image.
+Upgrade uses the same edition's newer release from the medium.
+Repair offers boot-file regeneration, a filesystem check, or replacement of
+the root directory's security descriptor.
+The browser frontend supports fresh installation; use
+.BR install-tui (1)
+for upgrade and repair.
+.PP
+Installation attempts to copy the medium's GXWI key and certificate from
+.IR /var/state/gxwi .
+A missing key or failed copy does not fail installation.
+Verify the certificate presented by the installed machine before entering
+credentials; successful installation does not prove that it is unchanged.
+Upgrade preserves the installed system's key.
+.PP
+The console's initial page reports the browser address and certificate
+fingerprint when available and refreshes them every 3 seconds.
+The fingerprint comes from
+.IR /var/state/gxwi/certificate.sha256 .
+Use a trusted console to check it; a page delivered over an unverified
+connection cannot authenticate that connection.
+.PP
+Closing a frontend does not cancel an active job.
+A daemon restart loses its in-memory conversation.
+A completed job and an accepted restart request do not prove that the
+machine booted from the selected disk.
+.SH OPTIONS
+.TP
+.BI \-\-socket " PATH"
+Listen on PATH instead of
+.IR /run/installerd.sock .
+.TP
+.BI \-\-medium " PATH"
+Use PATH as the mounted installation medium instead of
+.IR /media/peios .
+.TP
+.B \-\-force
+Allow the partitioning tool to replace a table it did not create. This never
+suppresses the mounted-device guard or the confirmation in the MSIP flow.
+.TP
+.B \-\-dry-run
+Exercise the complete conversation without changing disks. The machine's
+disks and their partitions are listed as they are; what is on them is not
+looked into, which takes a mount.
+.TP
+.BI \-\-inventory " FILE"
+With
+.BR \-\-dry-run ,
+pretend to be the machine the JSON in FILE describes instead of probing this
+one: its
+.I disks
+and what each holds, the storage
+.I controllers
+nothing drives, and the release its
+.I medium
+carries. For showing a surface a machine other than the one it is being
+worked on. A key that is not recognized is an error.
+.TP
+.BI \-\-fail-at " PHASE"
+With
+.BR \-\-dry-run ,
+fail every job part way through PHASE, which is named as the end of the
+phase's element ref:
+.BR partition ,
+.BR format ,
+.B copy
+or
+.B boot
+for an installation. For showing a surface a job that goes wrong.
+.TP
+.BR \-h , " \-\-help"
+Show command help.
+.TP
+.BR \-V , " \-\-version"
+Show the program version.
+.SH SECURITY
+The service is intended to run as SYSTEM.
+Its intended socket descriptor grants SYSTEM and Administrators access.
+Descriptor application is best effort: failure of
+.B sd
+produces a warning and leaves inherited access in effect.
+Verify runtime socket protection rather than inferring it from a listening
+message.
+.PP
+Startup removes an existing entry at the socket path before binding,
+including in dry-run mode.
+Use a fresh, protected directory and an explicit socket path for rehearsals.
+Dry-run avoids disk changes but is not free of startup effects.
+.SH EXIT STATUS
+.TP
+.B 0
+Help or version was printed successfully.
+.TP
+.B 2
+Invalid arguments or an unreadable or invalid inventory.
+.TP
+.B 101
+An unrecoverable listener or server error caused a Rust panic.
+The daemon normally continues serving rather than exiting when a job ends.
+.SH ENVIRONMENT
+.TP
+.B PATH
+Used to locate external installation, filesystem, registry, and security
+tools.
+Run the privileged daemon with a trusted executable search path.
+.SH FILES
+.TP
+.I /run/installerd.sock
+Default MSIP socket.
+.TP
+.I /media/peios/rootfs.squashfs
+Default pristine system image.
+.TP
+.I /var/state/gxwi
+GXWI's key and certificate, carried into an installed system; see
+.BR gxwid (1).
+.SH SEE ALSO
+.BR gxwid (1),
+.BR install-tui (1),
+.BR msip-drive (1),
+.BR peipkg (8)

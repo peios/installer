@@ -1,0 +1,24 @@
+{
+    "side_effects": ["man-db"],
+    "package": {
+        "version": "0.1.13-1",
+        "architecture": "x86_64",
+        "license": "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)",
+        "license_class": "free",
+        "homepage": "https://github.com/peios/installer",
+        "name": "dev.peios.oobed",
+        "description": "Privileged Peios first-boot account and machine setup service"
+    },
+    "dependencies": {
+        "dev.peios.peiosutils": ">= 0.8.5-1",
+        "dev.peios.authd-lps": ">= 0.0.14-1",
+        "dev.peios.net": ">= 0.1.1-1"
+    },
+    "files": {
+        "source:LICENSE": "usr/share/licenses/dev.peios.oobed/LICENSE",
+        "stage:licenses/oobed/**": "usr/share/licenses/dev.peios.oobed/third-party",
+        "stage:usr/sbin/oobed": "usr/sbin/oobed",
+        "stage:usr/share/man/man8/oobed.8.gz": "usr/share/man/man8/oobed.8.gz"
+    },
+    "executables": ["usr/sbin/oobed"]
+}

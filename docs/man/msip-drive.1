@@ -1,0 +1,93 @@
+.TH MSIP-DRIVE 1 2026-10-19 "Peios installer 0.1.13"
+.SH NAME
+msip-drive \- drive an MSIP conversation non-interactively
+.SH SYNOPSIS
+.B msip-drive
+.RB [ \-\-socket
+.IR PATH ]
+.RB [ \-\-kind
+.IR NAME ]
+.RB [ \-\-set
+.IR REF=VALUE ] ...
+.RB [ \-\-set-file
+.IR REF=PATH ] ...
+.RB [ \-\-press
+.IR REF ] ...
+.SH DESCRIPTION
+.B msip-drive
+is a scriptable Message Surface Interaction Protocol (MSIP) client.
+It prints turns, supplies values to named inputs, and consumes action
+references in command-line order.
+It understands the protocol rather than one installer flow.
+.PP
+Starting the client can attach to the daemon's existing conversation.
+The client has no conversation-identity guard and does not require a fresh
+conversation before sending queued actions.
+Use an exclusive, private daemon socket when a fresh operation is required.
+.PP
+Actions are consumed on new turns, not updates to the same turn.
+A rejected input or rescan can leave the client waiting even with actions
+queued.
+There is no built-in deadline.
+Stopping the client does not cancel an active daemon job.
+.PP
+Secret elements are masked in the trace.
+The trace prints only a tail of stored log lines and is not an exhaustive
+job journal.
+.SH OPTIONS
+.TP
+.BI \-\-socket " PATH"
+Connect to PATH instead of
+.IR /run/installerd.sock .
+.TP
+.BI \-\-kind " NAME"
+Start NAME instead of the
+.B install
+conversation.
+.TP
+.BI \-\-set " REF=VALUE"
+Provide VALUE when the named input is available.
+Repeat this option to supply more than one value.
+VALUE is visible in the process argument list and must not contain a secret.
+.TP
+.BI \-\-set-file " REF=PATH"
+Provide the exact UTF-8 contents of PATH when the named enabled input appears.
+The value is read without placing it in the process argument list.
+Repeat this option to supply more than one file.
+.TP
+.BI \-\-press " REF"
+Invoke REF on the next actionable turn.
+Repeat this option to queue more actions; order is significant.
+.TP
+.BR \-h , " \-\-help"
+Show command help.
+.TP
+.BR \-V , " \-\-version"
+Show the program version.
+.SH SECURITY
+Use a protected socket and input files appropriate to the operation.
+Values supplied with
+.B \-\-set
+are visible in the process argument list.
+Use
+.B \-\-set-file
+for secrets; it reads the exact UTF-8 file contents without trimming a final
+newline.
+Protect the file itself and the captured output.
+Only inputs marked secret by the daemon are masked in the trace.
+.SH EXIT STATUS
+.TP
+.B 0
+The conversation ended with a complete result, or help or version was shown.
+An accepted restart request does not establish that a disk boot succeeded.
+.TP
+.B 1
+Connection, protocol, input-file, or flow failure, or no action remained
+for an actionable turn.
+.TP
+.B 2
+Invalid command-line arguments.
+.SH SEE ALSO
+.BR install-tui (1),
+.BR installerd (8),
+.BR oobed (8)

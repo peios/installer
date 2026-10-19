@@ -1,0 +1,10 @@
+#!/bin/sh
+# Check authored Installer documentation without starting desktop programs.
+set -eu
+repo=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+trail=${TRAIL:-trail}
+"$trail" lint docs/learn
+output=$(mktemp -d "${TMPDIR:-/tmp}/installer-learn.XXXXXXXX")
+trap 'rm -rf -- "$output"' EXIT HUP INT TERM
+"$trail" build docs/learn --strict --no-cache --out "$output"

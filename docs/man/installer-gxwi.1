@@ -1,0 +1,75 @@
+.TH INSTALLER-GXWI 1 2026-10-19 "Peios installer 0.1.13"
+.SH NAME
+installer-gxwi \- the graphical Peios installer, in a browser, as GXWI's overlay
+.SH SYNOPSIS
+.B installer-gxwi
+.RB [ \-\-socket
+.IR PATH ]
+.RB [ \-\-listen
+.IR ADDRESS : PORT ]
+.SH DESCRIPTION
+.B installer-gxwi
+presents the conversation owned by
+.BR installerd (8)
+as a GXWI browser overlay.
+The daemon performs the privileged operations.
+All connected browsers observe and modify the same conversation.
+Closing a browser does not cancel a daemon job.
+.PP
+GXWI starts the frontend with an inherited Unix listening socket and handles
+the external browser connection.
+The frontend serves HTTP/2 over that socket.
+For development,
+.B \-\-listen
+starts a direct HTTP listener without GXWI's TLS termination.
+All browser assets are embedded in the executable.
+.SH OPTIONS
+.TP
+.BI \-\-socket " PATH"
+.BR installerd 's
+socket.
+The default is
+.IR /run/installerd.sock .
+.TP
+.BI \-\-listen " ADDRESS" : PORT
+Serve here instead of on a socket handed over, for working on the page where
+there is no GXWI.
+.TP
+.BR \-V ", " \-\-version
+Print the version.
+.TP
+.BR \-h ", " \-\-help
+Print a summary of these.
+.SH SECURITY
+The overlay is available without normal sign-in.
+Coordinate with other people using it and keep the machine on a trusted
+network until setup completes.
+Verify the GXWI certificate through the machine's trusted console before
+entering a password.
+.PP
+Direct development listeners serve unencrypted HTTP.
+Use synthetic credentials and an isolated environment for those listeners.
+The frontend relies on GXWI for external connection security and on the
+daemon's socket access controls for its MSIP connection.
+.SH EXIT STATUS
+.TP
+.B 0
+Help, version, or normal server completion.
+.TP
+.B 1
+Invalid arguments, missing inherited socket, or server initialization error.
+.SH ENVIRONMENT
+.TP
+.B LISTEN_FDS
+Must indicate at least one inherited descriptor when
+.B \-\-listen
+is absent.
+The frontend takes ownership of descriptor 3 as its Unix listener.
+.SH FILES
+.TP
+.I /run/installerd.sock
+Default conversation socket.
+.SH SEE ALSO
+.BR gxwid (1),
+.BR oobe-gxwi (1),
+.BR installerd (8)

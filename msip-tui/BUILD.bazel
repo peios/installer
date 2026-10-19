@@ -1,0 +1,44 @@
+load("@crates//:crates.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:version.bzl", "VERSION")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "Cargo.toml",
+    "BUILD.bazel",
+])
+
+filegroup(
+    name = "sources",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "target/**",
+            "out/**",
+            "**/__pycache__/**",
+            "**/*.pyc",
+            "**/.ruff_cache/**",
+            "**/node_modules/**",
+        ],
+    ),
+)
+
+rust_library(
+    name = "msip-tui",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = ["Cargo.toml"],
+    crate_name = "msip_tui",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    version = VERSION,
+    deps = [] + all_crate_deps(normal = True),
+)
+
+rust_test(
+    name = "tests",
+    size = "small",
+    crate = ":msip-tui",
+    deps = all_crate_deps(normal_dev = True),
+)

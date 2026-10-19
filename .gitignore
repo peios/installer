@@ -2,3 +2,10 @@
 /out
 /disk.img
 __pycache__/
+
+/bazel-*
+/.ci-sdk/
+/.ci-tools/
+/docs/learn/dist/
+**/.ruff_cache/
+**/node_modules/

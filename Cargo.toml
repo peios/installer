@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["installerd", "install-tui", "msip-drive", "msip-tui", "msip-serve", "oobe-tui", "oobed"]
+members = ["installerd", "install-tui", "msip-drive", "msip-tui", "msip-serve", "oobe-tui", "oobed", "installer-gxwi"]
 
 [workspace.package]
 version = "0.1.13"
@@ -17,7 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [profile.release]
-# Pekit detaches full DWARF after linking. Keeping it here permits complete
+# Packaging detaches full DWARF after linking. Keeping it here permits complete
 # per-binary debuginfo and exact debugsource packages without weakening the
 # installed executables.
 debug = 2

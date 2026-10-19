@@ -1,0 +1,110 @@
+load("@crates//:crates.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//build:musl.bzl", "musl_artifact", "musl_test")
+load("//build:version.bzl", "VERSION")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "Cargo.toml",
+    "BUILD.bazel",
+])
+
+filegroup(
+    name = "sources",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "target/**",
+            "out/**",
+            "**/__pycache__/**",
+            "**/*.pyc",
+            "**/.ruff_cache/**",
+            "**/node_modules/**",
+        ],
+    ),
+)
+
+rust_library(
+    name = "library",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = ["Cargo.toml"],
+    crate_name = "installerd",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    version = VERSION,
+    deps = ["//msip-serve"] + all_crate_deps(normal = True),
+)
+
+rust_binary(
+    name = "program",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = ["Cargo.toml"],
+    crate_name = "program",
+    crate_root = "src/main.rs",
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    tags = ["manual"],
+    version = VERSION,
+    deps = [
+        ":library",
+        "//msip-serve",
+    ] + all_crate_deps(normal = True),
+)
+
+musl_artifact(
+    name = "installerd",
+    binary = ":program",
+)
+
+rust_test(
+    name = "tests",
+    size = "small",
+    crate = ":library",
+    deps = all_crate_deps(normal_dev = True),
+)
+
+musl_test(
+    name = "musl-tests",
+    size = "small",
+    binary = ":tests",
+)
+
+rust_test(
+    name = "disk_page-test",
+    size = "small",
+    srcs = ["tests/disk_page.rs"],
+    crate_root = "tests/disk_page.rs",
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(
+        proc_macro = True,
+        proc_macro_dev = True,
+    ),
+    deps = [
+        ":library",
+        "//msip-serve",
+    ] + all_crate_deps(
+        normal = True,
+        normal_dev = True,
+    ),
+)
+
+rust_test(
+    name = "flow-test",
+    size = "small",
+    srcs = ["tests/flow.rs"],
+    crate_root = "tests/flow.rs",
+    edition = "2024",
+    proc_macro_deps = all_crate_deps(
+        proc_macro = True,
+        proc_macro_dev = True,
+    ),
+    deps = [
+        ":library",
+        "//msip-serve",
+    ] + all_crate_deps(
+        normal = True,
+        normal_dev = True,
+    ),
+)

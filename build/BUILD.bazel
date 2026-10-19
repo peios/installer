@@ -1,0 +1,96 @@
+load(":checks.bzl", "rust_toolchain_inputs")
+load(":musl.bzl", "musl_artifact")
+load(":packaging.bzl", "package_mode")
+
+exports_files([
+    "BUILD.bazel",
+    "peios-sys.patch",
+    "rules-rust-system-libraries.patch",
+])
+
+filegroup(
+    name = "starlark",
+    srcs = glob(["*.bzl"]),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "native",
+    values = {"define": "peios_native=true"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "packaged",
+    flag_values = {":package-mode": "true"},
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "**/__pycache__/**",
+            "**/*.pyc",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+package_mode(
+    name = "package-mode",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "x86_64-unknown-linux-gnu",
+    constraint_values = [":libc-gnu"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "x86_64-unknown-linux-musl",
+    constraint_values = [":libc-musl"],
+    visibility = ["//visibility:public"],
+)
+
+constraint_setting(
+    name = "libc",
+    default_constraint_value = ":libc-gnu",
+    visibility = ["//visibility:public"],
+)
+
+constraint_value(
+    name = "libc-gnu",
+    constraint_setting = ":libc",
+    visibility = ["//visibility:public"],
+)
+
+constraint_value(
+    name = "libc-musl",
+    constraint_setting = ":libc",
+    visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "musl-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":libc-musl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+rust_toolchain_inputs(
+    name = "toolchain-inputs",
+    visibility = ["//visibility:public"],
+)
+
+musl_artifact(
+    name = "musl-toolchain-inputs",
+    binary = ":toolchain-inputs",
+    visibility = ["//visibility:public"],
+)

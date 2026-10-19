@@ -1,0 +1,20 @@
+{
+    "package": {
+        "version": "0.1.13-1",
+        "architecture": "x86_64",
+        "license": "((MIT OR Apache-2.0) AND Unicode-3.0) AND (Apache-2.0 OR MIT) AND MIT AND (MIT OR Unlicense)",
+        "license_class": "free",
+        "homepage": "https://github.com/peios/installer",
+        "name": "dev.peios.msip-drive-debuginfo",
+        "description": "Debugging symbols for the MSIP automation client"
+    },
+    "dependencies": {
+        "dev.peios.msip-drive": "= 0.1.13-1",
+        "dev.peios.peios-installer-debugsource": "= 0.1.13-1"
+    },
+    "files": {
+        "source:LICENSE": "usr/share/licenses/dev.peios.msip-drive-debuginfo/LICENSE",
+        "stage:licenses/msip-drive/**": "usr/share/licenses/dev.peios.msip-drive-debuginfo/third-party",
+        "stage:debug/msip-drive/usr/lib/debug/**": "usr/lib/debug"
+    }
+}

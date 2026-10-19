@@ -1,0 +1,154 @@
+.TH OOBED 8 2026-10-19 "Peios installer 0.1.13"
+.SH NAME
+oobed \- Peios first-boot setup service
+.SH SYNOPSIS
+.B oobed
+.RB [ \-\-socket
+.IR path ]
+.RB [ \-\-browser
+.I path
+.RB | \-\-no-browser ]
+.RB [ \-\-dry-run
+.RB [ \-\-net-status
+.IR file ]]
+.SH DESCRIPTION
+.B oobed
+creates the first administrator account, records the machine name, and
+applies a pending manual wired-network setting.
+It serves the Message Surface Interaction Protocol (MSIP) conversation to
+.BR oobe-tui (1)
+and, when installed,
+.BR oobe-gxwi (1).
+Both frontends share the same conversation.
+.PP
+The network page reads
+.B net status
+and refreshes when requested.
+A manual address, gateway, and name servers are saved until the final apply
+step, after account creation and machine naming.
+The resulting profile and interface rule belong to the network service.
+Wireless-network joining is not provided by this flow.
+.PP
+Account names are trimmed and checked against local account-store rules.
+Passwords must be nonempty, match, and contain no carriage return or
+line feed.
+Unicode characters, spaces, and tabs are preserved.
+Reserved group names and
+.B peios-oobe-setup
+are rejected as account names.
+The machine name must be one label of at most 63 letters, digits, and
+hyphens, without a leading or trailing hyphen, and cannot be
+.BR localhost .
+.PP
+Browser setup uses the GXWI overlay.
+Before accepting clients, the daemon creates or reuses the passwordless
+account
+.B peios-oobe-setup
+and admits it to the intended socket descriptor.
+It then sets GXWI's overlay values.
+Successful setup removes the overlay, the temporary account and its home,
+and the setup service definitions.
+Unfinished setup retains the definitions for another boot.
+.PP
+The console's welcome page reports the browser address and certificate
+fingerprint when available.
+It reads
+.I /var/state/gxwi/certificate.sha256
+and refreshes the page every 3 seconds.
+Verify the fingerprint through a trusted console before entering browser
+credentials.
+The browser page is not itself a source of certificate trust.
+.SH OPTIONS
+.TP
+.BI \-\-socket " PATH"
+Listen on PATH instead of
+.IR /run/oobed.sock .
+.TP
+.BI \-\-browser " PATH"
+The program GXWI runs to draw setup in a browser. The default is
+.IR /bin/oobe-gxwi ;
+if it is not installed, setup is on the console only.
+.TP
+.B \-\-no-browser
+Setup on the console only.
+.TP
+.B \-\-dry-run
+Exercise the setup conversation without changing the machine. No account is
+created and no overlay is set, so a browser program is pointed at the socket
+by hand.
+.TP
+.BI \-\-net-status " FILE"
+With
+.BR \-\-dry-run ,
+take FILE to be what
+.B net status
+prints, read afresh each time the network page asks. Without it, a dry run
+cannot say anything of the network.
+.TP
+.BR \-h , " \-\-help"
+Show command help.
+.TP
+.BR \-V , " \-\-version"
+Show the program version.
+.SH CONFIGURATION
+The daemon writes the machine name, network profiles, and rules under
+.BR Machine\eSystem\eNetwork ,
+and overlay values under
+.BR Machine\eSoftware\eGXWI .
+It removes the
+.B oobed
+and
+.B oobe-tui
+service definitions after successful setup.
+The registry interfaces of those owning components define their value
+semantics.
+.SH SECURITY
+The daemon runs as SYSTEM.
+Its intended socket descriptor admits SYSTEM, Administrators, and the
+temporary browser account when browser setup is offered.
+Failure to apply that descriptor produces a warning and leaves inherited
+access in effect.
+.PP
+The temporary account has no password and no groups.
+Any sign-in mechanism accepting passwordless accounts can accept it while
+it exists.
+The browser overlay is available without normal sign-in; keep the machine
+on a trusted network until setup finishes.
+.PP
+Passwords are sent to
+.B lps
+over standard input rather than process arguments and are not written to
+the MSIP log.
+.PP
+Startup removes the supplied socket path before binding, including in
+dry-run mode.
+Use a new, protected directory for rehearsal sockets.
+Dry-run does not create accounts or configure a browser overlay.
+.SH EXIT STATUS
+.TP
+.B 0
+Help, version, or successful setup completion.
+.TP
+.B 2
+Invalid command-line arguments.
+.TP
+.B 101
+An unrecoverable listener or server error caused a Rust panic.
+.SH ENVIRONMENT
+.TP
+.B NOTIFY_SOCKET
+Service-manager socket that receives readiness after setup has bound its
+socket and prepared browser access.
+.TP
+.B PATH
+Used to locate account, network, registry, and security tools.
+Run the privileged daemon with a trusted executable search path.
+.SH FILES
+.TP
+.I /run/oobed.sock
+Default MSIP socket.
+.SH SEE ALSO
+.BR lps (1),
+.BR net (1),
+.BR oobe-tui (1),
+.BR reg (1)

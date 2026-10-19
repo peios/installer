@@ -1,0 +1,19 @@
+{
+    "package": {
+        "version": "0.1.13-1",
+        "architecture": "noarch",
+        "license": "MIT",
+        "license_class": "free",
+        "homepage": "https://github.com/peios/installer",
+        "name": "dev.peios.oobe",
+        "description": "Complete Peios first-boot setup service and console surface"
+    },
+    "dependencies": {
+        "dev.peios.oobed": "= 0.1.13-1",
+        "dev.peios.oobe-tui": "= 0.1.13-1"
+    },
+    "files": {
+        "source:LICENSE": "usr/share/licenses/dev.peios.oobe/LICENSE",
+        "stage:usr/share/regim/oobe-service.reg": "usr/share/regim/oobe-service.reg"
+    }
+}
