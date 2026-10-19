@@ -46,6 +46,9 @@ const CONFIRM: &str = "confirm";
 impl App {
     pub(crate) fn render(&self, f: &mut Frame) {
         let area = f.area();
+        if area.is_empty() {
+            return;
+        }
         f.render_widget(Clear, area);
         let [header, rule_top, body, rule_bottom, footer] = Layout::vertical([
             Constraint::Length(1),
@@ -860,10 +863,14 @@ fn row(area: Rect, n: u16, h: u16) -> Rect {
 /// The content column: centred, never wider than [`CONTENT_COLUMNS`], with a
 /// row's breathing space above.
 pub(crate) fn column(area: Rect) -> Rect {
-    let width = area.width.saturating_sub(4).clamp(1, CONTENT_COLUMNS);
+    let width = area
+        .width
+        .saturating_sub(4)
+        .clamp(1, CONTENT_COLUMNS)
+        .min(area.width);
     Rect {
         x: area.x + (area.width - width) / 2,
-        y: area.y + 1,
+        y: area.y + area.height.min(1),
         width,
         height: area.height.saturating_sub(1),
     }

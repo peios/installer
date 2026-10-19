@@ -44,3 +44,14 @@ kernel console messages and restores the prior setting afterward.
 Emergency kernel messages remain visible. Other services can still write
 to the console; <kbd>Ctrl</kbd>+<kbd>L</kbd> asks the terminal frontend to
 repaint if those messages disturb the form.
+
+## Terminal geometry
+
+The terminal frontend discovers its size at startup. A render area with
+zero width or height draws no content and leaves the conversation intact.
+This does not add size reporting to a serial connection: a terminal that
+does not report later size changes still needs its size set explicitly.
+
+Use the nonzero dimensions accepted by the frontend's `--size` option when
+starting with known geometry. See `install-tui(1)` or `oobe-tui(1)` for the
+size-discovery fallback and repaint controls.

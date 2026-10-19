@@ -71,6 +71,10 @@ option overrides size discovery.
 Without a usable size, the frontend falls back to 80 columns and 24 rows.
 .SH NOTES
 The renderer determines the terminal size at startup.
+A frame with zero width or height draws no content and leaves the
+conversation state intact.
+This does not change the nonzero dimensions required by
+.BR \-\-size .
 Press Ctrl+L to repaint after unrelated console output disrupts the form.
 Closing the frontend does not cancel a running daemon job.
 .SH SEE ALSO

@@ -520,3 +520,40 @@ fn disabled_selects_show_their_wrapped_help_without_focus() {
         assert!(col(&lines, "[ Next ]").is_some());
     }
 }
+
+#[test]
+fn empty_terminal_dimensions_render_without_drawing_outside_the_viewport() {
+    let mut surface = app(form(), json!([]));
+    for (width, height) in [(0, 0), (0, 24), (80, 0)] {
+        let lines = frame(&surface, width, height);
+        assert_eq!(lines.len(), usize::from(height));
+        assert!(lines.iter().all(String::is_empty));
+        press(&mut surface, KeyCode::F(1));
+        assert!(frame(&surface, width, height).iter().all(String::is_empty));
+        press(&mut surface, KeyCode::Esc);
+    }
+}
+
+#[test]
+fn a_terminal_can_resume_rendering_after_an_empty_resize() {
+    let surface = app(form(), json!([]));
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    for (width, height) in [(0, 0), (0, 24), (80, 0), (80, 24)] {
+        terminal.backend_mut().resize(width, height);
+        terminal.draw(|frame| surface.render(frame)).unwrap();
+    }
+    let buffer = terminal.backend().buffer();
+    let header: String = (0..80).map(|column| buffer[(column, 0)].symbol()).collect();
+    assert!(header.contains("Peios Test"));
+}
+
+#[test]
+fn an_empty_content_column_stays_within_its_available_area() {
+    for (width, height) in [(0, 0), (0, 24), (80, 0)] {
+        let area = ratatui::layout::Rect::new(5, 7, width, height);
+        let content = crate::render::column(area);
+        assert_eq!(content.area(), 0);
+        assert!(content.x >= area.x && content.right() <= area.right());
+        assert!(content.y >= area.y && content.bottom() <= area.bottom());
+    }
+}
