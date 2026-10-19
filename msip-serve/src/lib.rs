@@ -14,12 +14,14 @@
 
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 use std::thread;
 
 use serde_json::{Map, Value};
 
 use msip::daemon::{Conversation, Disposition, TurnSpec, ValidAnswer};
-use msip::frame::{FrameError, MsgType, read_msg, write_msg};
+use msip::frame::{FrameError, MsgType, read_msg};
 use msip::msg::{
     Answer, Attach, Bound, ErrorCode, ErrorMsg, Hello, Listing, ListingEntry, Outcome, Refused,
     RefusedReason, Start, Welcome,
@@ -33,6 +35,9 @@ const REFRESH_EVERY: std::time::Duration = std::time::Duration::from_secs(3);
 
 pub mod browser;
 mod console;
+mod writer;
+
+use writer::{Outgoing, Writer, DRAIN_TIMEOUT};
 
 /// Say something operational, where a boot can see it.
 ///
@@ -171,7 +176,7 @@ struct Live {
     flow: Box<dyn Flow>,
     /// A job is running: the open page takes no answers.
     working: bool,
-    subscribers: Vec<UnixStream>,
+    subscribers: Vec<Outgoing>,
     /// The kernel console, held quiet for as long as this conversation
     /// lives and restored when it is dropped. Never read: it is the
     /// drop that does the work, and hanging it here is what makes every
@@ -181,8 +186,7 @@ struct Live {
 
 impl Live {
     fn broadcast<T: serde::Serialize>(&mut self, t: MsgType, body: &T) {
-        self.subscribers
-            .retain_mut(|s| write_msg(s, t, body).is_ok());
+        self.subscribers.retain(|s| s.send(t, body).is_ok());
     }
 
     fn issue(&mut self, spec: TurnSpec) {
@@ -201,6 +205,8 @@ pub struct Server {
     name: String,
     make_flow: Box<dyn Fn() -> Box<dyn Flow> + Send + Sync>,
     live: Mutex<Option<Live>>,
+    /// Changed while holding live; remains set while END drains outside that mutex.
+    finishing: AtomicBool,
 }
 
 impl Server {
@@ -215,6 +221,7 @@ impl Server {
             name: name.into(),
             make_flow: Box::new(make_flow),
             live: Mutex::new(None),
+            finishing: AtomicBool::new(false),
         })
     }
 
@@ -237,6 +244,18 @@ impl Server {
                 Err(e) => note(TAG, &format!("cannot refresh the open page: {e:?}")),
             }
         }
+    }
+
+    fn finish(&self, mut live: Live, outcome: Outcome) {
+        let deadline = Instant::now() + DRAIN_TIMEOUT;
+        for subscriber in &live.subscribers {
+            subscriber.flush_until(deadline);
+        }
+        // END has reached each responsive peer's socket before retirement can exit the daemon.
+        live.flow.finished(outcome);
+        drop(live);
+        let _guard = self.live.lock().unwrap();
+        self.finishing.store(false, Ordering::Relaxed);
     }
 
     fn start_job(self: &Arc<Self>, job: Job) {
@@ -287,10 +306,11 @@ impl Server {
                 if let Ok(end) = live.conversation.end(outcome, message) {
                     live.broadcast(MsgType::End, &end);
                 }
-                live.flow.finished(outcome);
+                let live = guard.take().expect("the completed conversation exists");
+                server.finishing.store(true, Ordering::Relaxed);
+                drop(guard);
+                server.finish(live, outcome);
             }
-            // The conversation is over; the next START opens a fresh one.
-            *guard = None;
         });
     }
 }
@@ -318,6 +338,17 @@ enum ConnState {
 }
 
 fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameError> {
+    let writer = Writer::new(stream.try_clone()?)?;
+    let result = read_connection(&mut stream, &writer.outgoing, server);
+    writer.outgoing.flush_until(Instant::now() + DRAIN_TIMEOUT);
+    result
+}
+
+fn read_connection(
+    mut stream: &mut UnixStream,
+    outgoing: &Outgoing,
+    server: Arc<Server>,
+) -> Result<(), FrameError> {
     let mut state = ConnState::ExpectHello;
     loop {
         let (t, body) = match read_msg(&mut stream) {
@@ -330,10 +361,9 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
             (ConnState::ExpectHello, MsgType::Hello) => {
                 let hello: Hello = match serde_json::from_value(body) {
                     Ok(h) => h,
-                    Err(e) => return protocol(&mut stream, ErrorCode::Malformed, &e.to_string()),
+                    Err(e) => return protocol(outgoing, ErrorCode::Malformed, &e.to_string()),
                 };
-                write_msg(
-                    &mut stream,
+                outgoing.send(
                     MsgType::Welcome,
                     &Welcome {
                         daemon: Some(server.name.clone()),
@@ -363,13 +393,12 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                     })
                     .unwrap_or_default();
                 drop(guard);
-                write_msg(&mut stream, MsgType::Listing, &Listing { conversations })?;
+                outgoing.send(MsgType::Listing, &Listing { conversations })?;
             }
             // §3.6: a surface that cannot render what the flow needs is
             // refused at bind time, so an unrenderable page is never sent.
             (ConnState::Unrenderable, MsgType::Start | MsgType::Attach) => {
-                write_msg(
-                    &mut stream,
+                outgoing.send(
                     MsgType::Refused,
                     &Refused {
                         reason: RefusedReason::UnsupportedElements,
@@ -380,11 +409,10 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
             (ConnState::Unbound, MsgType::Start) => {
                 let start: Start = match serde_json::from_value(body) {
                     Ok(s) => s,
-                    Err(e) => return protocol(&mut stream, ErrorCode::Malformed, &e.to_string()),
+                    Err(e) => return protocol(outgoing, ErrorCode::Malformed, &e.to_string()),
                 };
                 if start.kind != server.kind {
-                    write_msg(
-                        &mut stream,
+                    outgoing.send(
                         MsgType::Refused,
                         &Refused {
                             reason: RefusedReason::UnknownKind,
@@ -394,6 +422,17 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                     continue;
                 }
                 let mut guard = server.live.lock().unwrap();
+                if server.finishing.load(Ordering::Relaxed) {
+                    drop(guard);
+                    outgoing.send(
+                        MsgType::Refused,
+                        &Refused {
+                            reason: RefusedReason::Unavailable,
+                            message: Some("the previous conversation is finishing".into()),
+                        },
+                    )?;
+                    continue;
+                }
                 let fresh = guard.is_none();
                 if fresh {
                     // Not `expect`. A conversation id is read from
@@ -419,8 +458,7 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                             // for protocol violations, and nothing the
                             // surface did is wrong. §3.6's `unavailable`
                             // is the daemon admitting its own failure.
-                            write_msg(
-                                &mut stream,
+                            outgoing.send(
                                 MsgType::Refused,
                                 &Refused {
                                     reason: RefusedReason::Unavailable,
@@ -432,8 +470,7 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                     }
                 }
                 let live = guard.as_mut().expect("a conversation was just opened");
-                write_msg(
-                    &mut stream,
+                outgoing.send(
                     MsgType::Bound,
                     &Bound {
                         conversation: live.conversation.id().to_string(),
@@ -446,7 +483,7 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                     match live.conversation.issue(first) {
                         Ok(turn) => {
                             let turn = turn.clone();
-                            write_msg(&mut stream, MsgType::Turn, &turn)?;
+                            outgoing.send(MsgType::Turn, &turn)?;
                         }
                         Err(e) => {
                             // Same reasoning as above: a flow whose first
@@ -457,8 +494,7 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                             note(TAG, &format!("cannot issue the first turn: {e:?}"));
                             *guard = None;
                             drop(guard);
-                            write_msg(
-                                &mut stream,
+                            outgoing.send(
                                 MsgType::Refused,
                                 &Refused {
                                     reason: RefusedReason::Unavailable,
@@ -469,21 +505,20 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                         }
                     }
                 } else if let Some(turn) = live.conversation.current_turn() {
-                    write_msg(&mut stream, MsgType::Turn, turn)?;
+                    outgoing.send(MsgType::Turn, turn)?;
                 }
-                live.subscribers.push(stream.try_clone()?);
+                live.subscribers.push(outgoing.clone());
                 state = ConnState::Bound;
             }
             (ConnState::Unbound, MsgType::Attach) => {
                 let attach: Attach = match serde_json::from_value(body) {
                     Ok(a) => a,
-                    Err(e) => return protocol(&mut stream, ErrorCode::Malformed, &e.to_string()),
+                    Err(e) => return protocol(outgoing, ErrorCode::Malformed, &e.to_string()),
                 };
                 let mut guard = server.live.lock().unwrap();
                 match guard.as_mut() {
                     Some(live) if live.conversation.id() == attach.conversation => {
-                        write_msg(
-                            &mut stream,
+                        outgoing.send(
                             MsgType::Bound,
                             &Bound {
                                 conversation: live.conversation.id().to_string(),
@@ -492,13 +527,12 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                             },
                         )?;
                         if let Some(turn) = live.conversation.current_turn() {
-                            write_msg(&mut stream, MsgType::Turn, turn)?;
+                            outgoing.send(MsgType::Turn, turn)?;
                         }
-                        live.subscribers.push(stream.try_clone()?);
+                        live.subscribers.push(outgoing.clone());
                         state = ConnState::Bound;
                     }
-                    _ => write_msg(
-                        &mut stream,
+                    _ => outgoing.send(
                         MsgType::Refused,
                         &Refused {
                             reason: RefusedReason::UnknownKind,
@@ -510,7 +544,7 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
             (ConnState::Bound, MsgType::Answer) => {
                 let answer: Answer = match serde_json::from_value(body) {
                     Ok(a) => a,
-                    Err(e) => return protocol(&mut stream, ErrorCode::Malformed, &e.to_string()),
+                    Err(e) => return protocol(outgoing, ErrorCode::Malformed, &e.to_string()),
                 };
                 let mut guard = server.live.lock().unwrap();
                 let Some(live) = guard.as_mut() else { continue };
@@ -522,12 +556,17 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                 match live.conversation.handle_answer(&answer) {
                     Disposition::Stale => {}
                     Disposition::Protocol(e) => {
-                        let _ = write_msg(&mut stream, MsgType::Error, &e);
+                        let _ = outgoing.send(MsgType::Error, &e);
                     }
                     Disposition::Invalid(errors) => reject(live, &errors),
-                    Disposition::Valid(valid) => match apply(live, valid, &mut stream) {
+                    Disposition::Valid(valid) => match apply(live, valid, outgoing) {
                         After::Nothing => {}
-                        After::Finished => *guard = None,
+                        After::Finished(outcome) => {
+                            let live = guard.take().expect("the completed conversation exists");
+                            server.finishing.store(true, Ordering::Relaxed);
+                            drop(guard);
+                            server.finish(live, outcome);
+                        }
                         After::Job(job) => {
                             // The job reports progress through the same
                             // lock, so it cannot start while we hold it.
@@ -542,8 +581,7 @@ fn connection(mut stream: UnixStream, server: Arc<Server>) -> Result<(), FrameEr
                     ConnState::Bound => ErrorCode::UnexpectedType,
                     _ => ErrorCode::Unbound,
                 };
-                let _ = write_msg(
-                    &mut stream,
+                let _ = outgoing.send(
                     MsgType::Error,
                     &ErrorMsg {
                         code,
@@ -591,13 +629,13 @@ fn reject(live: &mut Live, errors: &[(String, String)]) {
 /// means releasing the lock the job itself takes to report progress.
 enum After {
     Nothing,
-    Finished,
+    Finished(Outcome),
     Job(Job),
 }
 
 /// Take the flow's decision and act on everything that can be done
 /// while holding the conversation.
-fn apply(live: &mut Live, valid: ValidAnswer, stream: &mut UnixStream) -> After {
+fn apply(live: &mut Live, valid: ValidAnswer, outgoing: &Outgoing) -> After {
     match live.flow.advance(&valid) {
         Step::Page(spec) => {
             live.issue(spec);
@@ -617,8 +655,7 @@ fn apply(live: &mut Live, valid: ValidAnswer, stream: &mut UnixStream) -> After 
             if let Ok(end) = live.conversation.end(outcome, message) {
                 live.broadcast(MsgType::End, &end);
             }
-            live.flow.finished(outcome);
-            After::Finished
+            After::Finished(outcome)
         }
         Step::Work { page, job } => {
             live.working = true;
@@ -626,8 +663,7 @@ fn apply(live: &mut Live, valid: ValidAnswer, stream: &mut UnixStream) -> After 
             After::Job(job)
         }
         Step::Refuse(why) => {
-            let _ = write_msg(
-                stream,
+            let _ = outgoing.send(
                 MsgType::Error,
                 &ErrorMsg {
                     code: ErrorCode::BadValue,
@@ -639,9 +675,8 @@ fn apply(live: &mut Live, valid: ValidAnswer, stream: &mut UnixStream) -> After 
     }
 }
 
-fn protocol(stream: &mut UnixStream, code: ErrorCode, msg: &str) -> Result<(), FrameError> {
-    let _ = write_msg(
-        stream,
+fn protocol(outgoing: &Outgoing, code: ErrorCode, msg: &str) -> Result<(), FrameError> {
+    let _ = outgoing.send(
         MsgType::Error,
         &ErrorMsg {
             code,
@@ -686,3 +721,6 @@ pub fn secure_socket(path: &str, sddl: &str) {
 /// means erasing a disk or minting the machine's first account, so it
 /// is not Everyone.
 pub const ADMIN_SOCKET_SDDL: &str = "O:SYG:SYD:(A;;GA;;;SY)(A;;GA;;;BA)";
+
+#[cfg(test)]
+mod tests;
