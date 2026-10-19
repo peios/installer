@@ -10,7 +10,7 @@ use std::sync::{OnceLock, mpsc};
 
 use axum::Router;
 use axum::extract::State;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::WebSocketUpgrade;
 use axum::http::header::{self, HeaderValue};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -18,7 +18,10 @@ use axum::routing::{any, get};
 use tokio::sync::watch;
 
 use crate::Conversation;
-use crate::setup::{Asked, Heard, Said};
+use crate::input::{Admission, MAX_MESSAGE_BYTES};
+use crate::setup::{Heard, Said};
+
+mod live;
 use crate::view::View;
 
 const INDEX: &str = include_str!("../page/index.html");
@@ -50,6 +53,11 @@ const ASSETS: &[(&str, &str, &[u8])] = &[
         include_bytes!("../page/progress.js"),
     ),
     ("/restart.js", SCRIPT, include_bytes!("../page/restart.js")),
+    (
+        "/requests.js",
+        SCRIPT,
+        include_bytes!("../page/requests.js"),
+    ),
     ("/welcome.js", SCRIPT, include_bytes!("../page/welcome.js")),
     (
         "/fonts/manrope.woff2",
@@ -88,6 +96,7 @@ struct Served {
     view: watch::Receiver<View>,
     said: Said,
     tell: mpsc::Sender<Heard>,
+    admission: Admission,
 }
 
 pub fn routes(
@@ -116,7 +125,12 @@ pub fn routes(
         .route("/log.txt", get(log))
         .route("/hello", get(hello))
         .fallback(elsewhere)
-        .with_state(Served { view, said, tell })
+        .with_state(Served {
+            view,
+            said,
+            tell,
+            admission: Admission::default(),
+        })
 }
 
 /// Everything the job has said of itself, as a file to keep. A page shows
@@ -238,44 +252,10 @@ fn file(content_type: &'static str, bytes: &'static [u8]) -> Response {
 }
 
 async fn live(State(served): State<Served>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |socket| show(socket, served))
-}
-
-/// Sends one browser the state as it stands, and again each time it changes,
-/// until the browser goes. What the browser asks for is passed to the thread
-/// that holds the conversation, which decides what comes of it; a browser
-/// learns the outcome as everyone does, from the state.
-async fn show(mut socket: WebSocket, Served { mut view, tell, .. }: Served) {
-    // Whether the state can still change. It cannot once the thread that
-    // holds the conversation has gone, and what it left is then what a
-    // browser goes on being shown, for as long as it stays.
-    let mut live = true;
-    loop {
-        let state = serde_json::to_string(&*view.borrow_and_update()).unwrap_or_default();
-        if socket.send(Message::Text(state.into())).await.is_err() {
-            return;
-        }
-        loop {
-            tokio::select! {
-                changed = view.changed(), if live => match changed {
-                    Ok(()) => break,
-                    Err(_) => live = false,
-                },
-                heard = socket.recv() => match heard {
-                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return,
-                    Some(Ok(Message::Text(text))) => {
-                        // Something that is not a request is this page's
-                        // mistake or somebody's mischief; either way it is
-                        // nothing to act on.
-                        if let Ok(asked) = serde_json::from_str::<Asked>(&text) {
-                            let _ = tell.send(Heard::Asked(asked));
-                        }
-                    }
-                    Some(Ok(_)) => {}
-                },
-            }
-        }
-    }
+    upgrade
+        .max_message_size(MAX_MESSAGE_BYTES)
+        .max_frame_size(MAX_MESSAGE_BYTES)
+        .on_upgrade(move |socket| live::show(socket, served))
 }
 
 #[cfg(test)]

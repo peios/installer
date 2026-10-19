@@ -150,7 +150,7 @@ package_store(
 host_test(
     name = "browser-harness-test",
     size = "small",
-    command = "node --experimental-vm-modules --test installer-gxwi/dev/harness-tests.mjs installer-gxwi/dev/browser/cdp-tests.mjs installer-gxwi/dev/browser/chrome-tests.mjs installer-gxwi/dev/browser/exit-status-tests.mjs installer-gxwi/dev/browser/ending-state.mjs",
+    command = "node --experimental-vm-modules --test installer-gxwi/dev/harness-tests.mjs installer-gxwi/dev/browser/cdp-tests.mjs installer-gxwi/dev/browser/chrome-tests.mjs installer-gxwi/dev/browser/exit-status-tests.mjs installer-gxwi/dev/browser/ending-state.mjs installer-gxwi/dev/browser/requests-tests.mjs",
     data = ["//installer-gxwi:sources"],
     tags = [
         "external",

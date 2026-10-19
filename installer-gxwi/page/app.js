@@ -8,6 +8,7 @@
 // oobed's conversation as the installer holds installerd's. The page says
 // whose it is before anything has been sent, and the few things said here of
 // "the installer" are said of setup instead.
+import { canAsk, encodeRequest, refusalMessage } from "./requests.js";
 import { WOKE } from "./bits.js";
 import { createAccountPage } from "./account.js";
 import { createConfirmPage } from "./confirm.js";
@@ -92,7 +93,10 @@ let view = null;
 let heard = "opening"; // this browser's own line to the installer: opening, open or lost
 let socket = null;
 
+let freshSnapshot = false;
+
 function listen() {
+    freshSnapshot = false;
     socket = new WebSocket(
         `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/live`,
     );
@@ -105,6 +109,7 @@ function listen() {
         // Once the machine is restarting, what was said is over.
         if (restart?.active) return;
         view = JSON.parse(message.data);
+        freshSnapshot = true;
         draw();
     };
     // The installer has gone, or the machine has. The page stays as it is
@@ -112,7 +117,10 @@ function listen() {
     // again, so there is nothing here to put right. Unless the machine is
     // restarting: then the page has its own way of waiting, and whatever
     // answers here next is not this installer.
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+        freshSnapshot = false;
+        const refusal = refusalMessage(event.code);
+        if (refusal) toast(refusal);
         heard = "lost";
         // Setup applying what it was told, or done: its last acts take this
         // page's ground away, and the page follows the machine to what
@@ -139,8 +147,13 @@ function listen() {
 // which says what came of it.
 function ask(request) {
     if (socket?.readyState !== WebSocket.OPEN || !view) return;
-    if (!view.seq && !request.again) return;
-    socket.send(JSON.stringify({ ...request, seq: view.seq }));
+    if (!canAsk(request, view, freshSnapshot)) return;
+    const text = encodeRequest(request, view.seq);
+    if (text === null) {
+        toast(refusalMessage(1009));
+        return;
+    }
+    socket.send(text);
 }
 
 // ---- said to a screen reader, politely ----

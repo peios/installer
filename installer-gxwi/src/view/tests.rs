@@ -388,6 +388,7 @@ fn a_page_not_drawn_here_is_said_to_be_one() {
 #[test]
 fn a_page_is_sent_as_the_kind_it_is() {
     let view = View {
+        generation: 1,
         conversation: Conversation::Install,
         release: Release {
             version: "2026.8".into(),

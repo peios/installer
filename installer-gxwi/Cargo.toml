@@ -17,3 +17,7 @@ peios = { git = "https://github.com/peios/peios-rs.git", rev = "f8c84930f2b71763
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+
+[dev-dependencies]
+futures-util = { version = "=0.3.34", default-features = false, features = ["sink", "std"] }
+tokio-tungstenite = "=0.29.0"

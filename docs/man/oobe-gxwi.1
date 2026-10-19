@@ -9,7 +9,7 @@ oobe-gxwi \- Peios first-boot setup, in a browser, as GXWI's overlay
 .IR ADDRESS : PORT ]
 .SH DESCRIPTION
 .B oobe-gxwi
-presents the conversation owned by
+presents the Message Surface Interaction Protocol (MSIP) conversation owned by
 .BR oobed (8)
 as a GXWI browser overlay.
 The daemon performs the privileged operations.
@@ -69,6 +69,44 @@ The frontend takes ownership of descriptor 3 as its Unix listener.
 .TP
 .I /run/oobed.sock
 Default conversation socket.
+.SH LIMITS
+Incoming WebSocket messages and frames are limited to 1 MiB.
+The supplied browser page refuses oversized submissions with a visible
+message; the server also enforces the limit.
+A request within that limit can still be refused if its encoded MSIP answer
+exceeds the daemon protocol limit.
+The page reports that refusal rather than replaying the request.
+.PP
+The shared browser-input queue admits at most 4 MiB of accounted data.
+Accounting includes the raw message and fixed entry overhead, and remains
+reserved until handling finishes.
+When the queue is full, a browser connection waits for capacity while it
+continues receiving view updates.
+Each connection can hold one additional capped frame outside that queue,
+waiting for admission or for its previous action to finish.
+.PP
+This is not a bound on total process memory.
+The number of active browser connections is not globally capped.
+Browser view updates and close frames have a 10-second write deadline.
+A timeout ends that browser connection.
+.PP
+If writes to the daemon make no progress for 10 seconds, the frontend
+abandons that connection and presents the lost-connection state while it
+tries to reconnect.
+.SH NOTES
+Browser input is associated with the daemon connection that received it.
+When that connection changes, the frontend closes the old browser socket
+with WebSocket code 1012 so the page can reconnect to fresh state.
+Queued actions belonging to the old connection are discarded rather than
+replayed against another conversation.
+.PP
+An action already sent to the daemon can have taken effect before the
+connection was lost.
+Inspect the recovered state before repeating an action.
+A reconnect does not roll back a running installation or setup operation.
+Closing a tab does not guarantee that an earlier submission was canceled.
+Connection cleanup follows an observed close or error; a close message can
+arrive behind previously sent data.
 .SH SEE ALSO
 .BR gxwid (1),
 .BR installer-gxwi (1),

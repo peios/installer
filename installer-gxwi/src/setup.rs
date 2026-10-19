@@ -38,7 +38,11 @@ use serde_json::{Map, Value};
 use tokio::sync::watch;
 
 use crate::Conversation;
+use crate::input::BrowserInput;
 use crate::view::{self, Link, Page, View};
+
+/// Disconnect a daemon write that makes no progress for this interval.
+const WRITE_PROGRESS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How long after installerd was lost it is tried again.
 const AGAIN: Duration = Duration::from_secs(2);
@@ -61,7 +65,7 @@ pub enum Heard {
     /// That connection is over, and why.
     Gone(u64, String),
     /// Someone at a browser asked for something.
-    Asked(Asked),
+    Asked(BrowserInput),
 }
 
 /// What a browser asks for. `seq` is the page it was looking at when it
@@ -111,6 +115,7 @@ pub fn keep(
     loop {
         connection += 1;
         view.send_modify(|view| {
+            view.generation = connection;
             view.link = Link::Connecting;
             view.restarting = false;
             view.without_a_turn();
@@ -130,11 +135,18 @@ pub fn keep(
             Ok(()) => {
                 loop {
                     match inbox.recv() {
-                        Ok(Heard::Asked(Asked {
-                            seq: 0,
-                            again: true,
-                            ..
-                        })) => break,
+                        Ok(Heard::Asked(input))
+                            if matches!(
+                                input.decode(connection),
+                                Some(Asked {
+                                    seq: 0,
+                                    again: true,
+                                    ..
+                                })
+                            ) =>
+                        {
+                            break;
+                        }
                         // Anything else is asked of a page that has gone, or
                         // is the last of a connection that is over.
                         Ok(_) => {}
@@ -175,6 +187,7 @@ fn converse(
 ) -> Result<(), String> {
     let mut stream =
         UnixStream::connect(socket).map_err(|e| format!("connect {}: {e}", socket.display()))?;
+    configure_writer(&stream, WRITE_PROGRESS_TIMEOUT)?;
     // What this program calls itself to the daemon, which only records it.
     let surface = format!("{}/{}", conversation.program(), env!("CARGO_PKG_VERSION"));
     let hello = Hello {
@@ -196,6 +209,12 @@ fn converse(
     // is what ends its read.
     let _ = stream.shutdown(Shutdown::Both);
     outcome
+}
+
+fn configure_writer(stream: &UnixStream, timeout: Duration) -> Result<(), String> {
+    stream
+        .set_write_timeout(Some(timeout))
+        .map_err(|e| format!("socket write timeout: {e}"))
 }
 
 /// Reads what installerd says on one connection and puts it in the queue,
@@ -242,8 +261,18 @@ fn talk(
             Heard::Gone(from, why) if from == connection => return Err(why),
             // The last words of a connection already given up.
             Heard::Said(..) | Heard::Gone(..) => continue,
-            Heard::Asked(asked) => {
-                ask(stream, &session, &mut chosen, &mut account, view, asked)?;
+            Heard::Asked(mut input) => {
+                if let Some(asked) = input.decode(connection) {
+                    ask(
+                        stream,
+                        &session,
+                        &mut chosen,
+                        &mut account,
+                        view,
+                        asked,
+                        &mut input,
+                    )?;
+                }
                 continue;
             }
         };
@@ -395,6 +424,7 @@ fn ask(
     account: &mut Option<String>,
     view: &watch::Sender<View>,
     asked: Asked,
+    input: &mut BrowserInput,
 ) -> Result<(), String> {
     let Some(page) = session.page() else {
         return Ok(());
@@ -428,13 +458,24 @@ fn ask(
         } else {
             Map::new()
         };
-        if let Some(name) = answered_account(turn, &values) {
-            *account = Some(name);
-        }
+        let answered_name = answered_account(turn, &values);
         let Some(answer) = session.answer(Some(&action), values) else {
             return Ok(());
         };
-        write_msg(stream, MsgType::Answer, &answer).map_err(|e| format!("answer: {e}"))?;
+        // write_msg validates the reserialized body plus the 12-byte MSIP
+        // header before writing any bytes. The browser cap alone is insufficient:
+        // Answer has different field names and framing from Asked.
+        match write_msg(stream, MsgType::Answer, &answer) {
+            Ok(()) => {}
+            Err(FrameError::TooLarge(_)) => {
+                input.reject_oversize();
+                return Ok(());
+            }
+            Err(error) => return Err(format!("answer: {error}")),
+        }
+        if let Some(name) = answered_name {
+            *account = Some(name);
+        }
         view.send_modify(|view| view.waiting = Some(action));
     }
     Ok(())
@@ -552,5 +593,135 @@ mod tests {
         assert_eq!(kept(), ["four"]);
         hear(&said, &page("mode", &[]), true);
         assert!(kept().is_empty());
+    }
+
+    fn answer_session() -> Session {
+        let mut session = Session::new();
+        session
+            .handle(MsgType::Welcome, serde_json::json!({"kinds":["oobe"]}))
+            .unwrap();
+        session
+            .handle(
+                MsgType::Bound,
+                serde_json::json!({"conversation":"test","seq":1}),
+            )
+            .unwrap();
+        session
+            .handle(
+                MsgType::Turn,
+                serde_json::json!({"seq":1,"id":"oobe.account","elements":[
+                    {"ref":"value","type":"string","name":"Value"},
+                    {"ref":"go","type":"action","name":"Next"}
+                ]}),
+            )
+            .unwrap();
+        session
+    }
+
+    async fn request_of_size(bytes: usize) -> BrowserInput {
+        let base = r#"{"seq":1,"press":"go","values":{"value":""}}"#;
+        let text = base.replace(
+            r#""value":"""#,
+            &format!("\"value\":\"{}\"", "x".repeat(bytes - base.len())),
+        );
+        assert_eq!(text.len(), bytes);
+        crate::input::Admission::default()
+            .admit(text, 1)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn oversized_serialized_answer_refuses_locally_before_writing() {
+        use std::io::Read;
+        let (mut writer, mut peer) = UnixStream::pair().unwrap();
+        peer.set_nonblocking(true).unwrap();
+        let mut input = request_of_size(crate::input::MAX_MESSAGE_BYTES).await;
+        let feedback = input.feedback();
+        let asked = input.decode(1).unwrap();
+        let (view, _) = watch::channel(View::starting(
+            Conversation::Oobe,
+            crate::release::Release::default(),
+            String::new(),
+        ));
+        ask(
+            &mut writer,
+            &answer_session(),
+            &mut None,
+            &mut None,
+            &view,
+            asked,
+            &mut input,
+        )
+        .unwrap();
+        feedback.await.unwrap();
+        assert_eq!(
+            peer.read(&mut [0]).unwrap_err().kind(),
+            ErrorKind::WouldBlock
+        );
+        assert!(view.borrow().waiting.is_none());
+    }
+
+    #[tokio::test]
+    async fn legal_boundary_answer_is_written_with_its_header() {
+        let (mut writer, mut peer) = UnixStream::pair().unwrap();
+        // "action" is one byte longer than "press", plus the12-byte MSIP header.
+        let mut input = request_of_size(crate::input::MAX_MESSAGE_BYTES - 13).await;
+        let asked = input.decode(1).unwrap();
+        let reader = std::thread::spawn(move || read_msg(&mut peer).unwrap());
+        let (view, _) = watch::channel(View::starting(
+            Conversation::Oobe,
+            crate::release::Release::default(),
+            String::new(),
+        ));
+        ask(
+            &mut writer,
+            &answer_session(),
+            &mut None,
+            &mut None,
+            &view,
+            asked,
+            &mut input,
+        )
+        .unwrap();
+        let (kind, answer) = reader.join().unwrap();
+        assert_eq!(kind, MsgType::Answer);
+        assert_eq!(
+            serde_json::to_vec(&answer).unwrap().len() + msip::frame::HEADER_LEN,
+            msip::frame::MAX_TOTAL_LEN as usize
+        );
+        assert_eq!(view.borrow().waiting.as_deref(), Some("go"));
+    }
+
+    #[tokio::test]
+    async fn stalled_answer_write_times_out_without_marking_action_as_sent() {
+        let (mut writer, _peer) = UnixStream::pair().unwrap();
+        configure_writer(&writer, WRITE_PROGRESS_TIMEOUT).unwrap();
+        assert_eq!(
+            writer.write_timeout().unwrap(),
+            Some(Duration::from_secs(10))
+        );
+        configure_writer(&writer, Duration::from_millis(20)).unwrap();
+        let mut input = request_of_size(900 * 1024).await;
+        let asked = input.decode(1).unwrap();
+        let (view, _) = watch::channel(View::starting(
+            Conversation::Oobe,
+            crate::release::Release::default(),
+            String::new(),
+        ));
+        let started = Instant::now();
+        let error = ask(
+            &mut writer,
+            &answer_session(),
+            &mut None,
+            &mut None,
+            &view,
+            asked,
+            &mut input,
+        )
+        .unwrap_err();
+        assert!(error.starts_with("answer: "));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(view.borrow().waiting.is_none());
     }
 }

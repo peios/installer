@@ -21,6 +21,9 @@ mod pages;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct View {
+    /// Internal daemon connection identity; never part of browser JSON.
+    #[serde(skip)]
+    pub generation: u64,
     /// Whose conversation this is: installerd's (`install`) or oobed's
     /// (`oobe`). The page is the same page either way, and says what
     /// is being done in the words of the one it is.
@@ -375,6 +378,7 @@ const INTERFACES: &str = "manual.interface";
 impl View {
     pub fn starting(conversation: Conversation, release: Release, boot: String) -> View {
         View {
+            generation: 0,
             conversation,
             release,
             link: Link::Connecting,

@@ -22,6 +22,7 @@ use peios::token::ImpersonationLevel;
 use serde::Serialize;
 use tokio::sync::watch;
 
+mod input;
 mod page;
 mod release;
 mod setup;

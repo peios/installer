@@ -558,11 +558,13 @@ name = "installer-gxwi"
 version = "0.1.13"
 dependencies = [
  "axum",
+ "futures-util",
  "msip",
  "peios",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]
