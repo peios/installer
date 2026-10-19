@@ -48,6 +48,13 @@ pub fn check(answered: Answered) -> Result<String, Vec<(String, String)>> {
             "account.password".to_string(),
             "Choose a password. This account administers the machine.".to_string(),
         ));
+    } else if answered.password.contains(['\r', '\n']) {
+        // lps reads one line from its password pipe; accepting a line break here
+        // would create the account with only a prefix of the chosen password.
+        wrong.push((
+            "account.password".to_string(),
+            "A password cannot contain a line break.".to_string(),
+        ));
     } else if answered.password != answered.confirm {
         // On confirm, not on password: the person retypes the one they got
         // wrong, and the first field keeps what they meant.
@@ -119,6 +126,19 @@ mod tests {
 
     fn refs(result: Result<String, Vec<(String, String)>>) -> Vec<String> {
         result.unwrap_err().into_iter().map(|(r, _)| r).collect()
+    }
+
+    #[test]
+    fn passwords_preserve_unicode_and_spaces_but_reject_line_terminators() {
+        for password in ["prefix\nsuffix", "prefix\rsuffix", "\r\n", "ending\n"] {
+            assert_eq!(
+                refs(answered("jack", password, password)),
+                ["account.password"]
+            );
+        }
+        for password in [" spaced password ", "café 雪", "tab\tinside"] {
+            assert_eq!(answered("jack", password, password).unwrap(), "jack");
+        }
     }
 
     #[test]
