@@ -1,0 +1,38 @@
+.TH OOBE-TUI 1 "September 2026" "Peios" "User Commands"
+.SH NAME
+oobe-tui \- terminal surface for Peios first-boot setup
+.SH SYNOPSIS
+.B oobe-tui
+.RB [ --socket " " PATH ]
+.RB [ --kind " " NAME ]
+.RB [ --plain ]
+.RB [ --size " " COLSxROWS ]
+.SH DESCRIPTION
+.B oobe-tui
+renders the first-boot conversation owned by
+.BR oobed (8).
+Leaving setup unfinished does not retire it; the flow is offered again on the
+next boot.
+.SH OPTIONS
+.TP
+.BI --socket " PATH"
+Connect to PATH instead of
+.IR /run/oobed.sock .
+.TP
+.BI --kind " NAME"
+Request an MSIP kind other than
+.BR oobe .
+.TP
+.B --plain
+Use the conservative serial-console presentation.
+.TP
+.BI --size " COLSxROWS"
+Override terminal geometry.  Both dimensions must be non-zero.
+.TP
+.BR -h , " --help"
+Show command help.
+.TP
+.BR -V , " --version"
+Show the program version.
+.SH SEE ALSO
+.BR oobed (8)

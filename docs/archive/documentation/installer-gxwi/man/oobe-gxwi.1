@@ -1,0 +1,62 @@
+.TH OOBE-GXWI 1 "2026-10-06" "Peios"
+.SH NAME
+oobe-gxwi \- Peios first-boot setup, in a browser, as GXWI's overlay
+.SH SYNOPSIS
+.B oobe-gxwi
+.RB [ \-\-socket
+.IR PATH ]
+.RB [ \-\-listen
+.IR ADDRESS : PORT ]
+.SH DESCRIPTION
+First-boot setup in a browser, on a machine that has been installed and not
+set up. Where it is installed,
+.BR oobed (8)
+makes it GXWI's overlay while setup is pending: it makes a passwordless
+account to run it as, admits that account to its socket, and sets
+.I OverlayUsername
+and
+.I OverlaySession
+in
+.IR Machine\eSoftware\eGXWI .
+Everyone who opens the machine's address in a browser is then sent here, with
+no logon. Without it, setup is offered on the machine's console only.
+.PP
+It does nothing to the machine itself.
+.B oobed
+makes the first account and names the machine, as SYSTEM, and asks its
+questions over a socket; this program holds that conversation and serves a
+page that draws it: the welcome, the network and an address set by hand, the
+account, the machine's name, and finishing. A password typed is the browser's
+own until Next, and is never sent to anyone else looking; opened by an address
+that is not the loopback, the page says the password will cross the network
+unencrypted.
+.PP
+.BR oobed 's
+last act is to take the overlay away, which ends this program and gives the
+address back to GXWI's sign-in page. The page follows it there.
+.PP
+It is the same program as
+.BR installer-gxwi (1),
+built twice, because the two are one page: a restart from the installer lands
+here.
+.SH OPTIONS
+.TP
+.BI \-\-socket " PATH"
+.BR oobed 's
+socket.
+The default is
+.IR /run/oobed.sock .
+.TP
+.BI \-\-listen " ADDRESS" : PORT
+Serve here instead of on a socket handed over, for working on the page where
+there is no GXWI.
+.TP
+.BR \-V ", " \-\-version
+Print the version.
+.TP
+.BR \-h ", " \-\-help
+Print a summary of these.
+.SH SEE ALSO
+.BR installer-gxwi (1),
+.BR oobed (8),
+.BR gxwid (1)

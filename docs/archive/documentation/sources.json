@@ -1,0 +1,20 @@
+[
+  {
+    "source": "/home/jack/projects/peios-newtree/learn-staging/peios.product/0--using-peios.antho/200--files.shelf/200--disks-and-filesystems.topic/500--installing-to-disk.md",
+    "archive": "docs/archive/documentation/learn-staging/peios.product/0--using-peios.antho/200--files.shelf/200--disks-and-filesystems.topic/500--installing-to-disk.md",
+    "sha256": "595f2c4787544ec7f6c376e863bd04d5df60046461211c6f43dc04638af8a585",
+    "disposition": "reference-copy-mixed-scope"
+  },
+  {
+    "source": "/home/jack/projects/peios-newtree/learn-staging/peios.product/0--using-peios.antho/200--files.shelf/200--disks-and-filesystems.topic/550--first-boot-setup.md",
+    "archive": "docs/archive/documentation/learn-staging/peios.product/0--using-peios.antho/200--files.shelf/200--disks-and-filesystems.topic/550--first-boot-setup.md",
+    "sha256": "3db6e37492c5674c252657274ce14a10847c2a0a6b59aab1b829da731de2c183",
+    "disposition": "moved-to-component"
+  },
+  {
+    "source": "/home/jack/projects/peios-newtree/learn-staging/peios.product/4--developing-for-peios.antho/200--shipping-software.shelf/300--msip-daemons.topic/200--rehearse-the-headless-installer.md",
+    "archive": "docs/archive/documentation/learn-staging/peios.product/4--developing-for-peios.antho/200--shipping-software.shelf/300--msip-daemons.topic/200--rehearse-the-headless-installer.md",
+    "sha256": "22e41e6982bc58b0a0dd5a33332c7437da769d8be1bcf30e918228da2ee2837a",
+    "disposition": "moved-to-component"
+  }
+]

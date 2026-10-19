@@ -1,0 +1,56 @@
+.TH MSIP-DRIVE 1 "September 2026" "Peios" "User Commands"
+.SH NAME
+msip-drive \- drive an MSIP conversation non-interactively
+.SH SYNOPSIS
+.B msip-drive
+.RB [ --socket " " PATH ]
+.RB [ --kind " " NAME ]
+.RB [ --set " " REF=VALUE ] ...
+.RB [ --set-file " " REF=PATH ] ...
+.RB [ --press " " REF ] ...
+.SH DESCRIPTION
+.B msip-drive
+is a scriptable MSIP surface.  It prints every turn, supplies values to named
+inputs, and consumes action references in command-line order.  It understands
+the protocol rather than any particular installer flow.
+.PP
+Secret elements are masked in output.  Supplying a secret with
+.B --set
+can still expose it through the process argument list; use
+.B --set-file
+for credentials and other secrets.
+.SH OPTIONS
+.TP
+.BI --socket " PATH"
+Connect to PATH instead of
+.IR /run/installerd.sock .
+.TP
+.BI --kind " NAME"
+Start NAME instead of the
+.B install
+conversation.
+.TP
+.BI --set " REF=VALUE"
+Provide VALUE when the named enabled input appears.  May be repeated.  VALUE
+is visible in the process argument list and must not contain a secret.
+.TP
+.BI --set-file " REF=PATH"
+Provide the exact UTF-8 contents of PATH when the named enabled input appears.
+The value is read without placing it in the process argument list.  May be
+repeated.
+.TP
+.BI --press " REF"
+Press REF on the next actionable turn.  May be repeated; order is significant.
+.TP
+.BR -h , " --help"
+Show command help.
+.TP
+.BR -V , " --version"
+Show the program version.
+.SH EXIT STATUS
+Zero means the conversation completed.  One means connection, protocol, or
+flow failure; two means invalid command-line usage.
+.SH SEE ALSO
+.BR installerd (8),
+.BR install-tui (1),
+.BR oobed (8)

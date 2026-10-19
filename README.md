@@ -1,43 +1,48 @@
-# Peios installer and OOBE
+# Peios Installer
 
-This workspace contains the privileged services and presentation surfaces used
-to install Peios and complete first-boot setup. They communicate over the
-Message Surface Interaction Protocol (MSIP).
+Peios Installer installs the operating system and completes first-boot setup.
+This repository contains the privileged engines, terminal interfaces, and
+GXWI browser interfaces, with one component version and separate packages.
 
-The deployable components are deliberately split by privilege and lifecycle:
+`installerd` owns installation, upgrade, and repair operations. `oobed` owns
+account creation and machine setup. Frontends present their conversations
+through the Message Surface Interaction Protocol (MSIP); the protocol remains
+an independent dependency pinned in `Cargo.toml` and `Cargo.lock`.
 
-- `installerd` owns installation, repair, and upgrade operations;
-- `install-tui` is its terminal presentation surface;
-- `msip-drive` drives an MSIP conversation non-interactively;
-- `oobed` performs first-boot account and machine setup; and
-- `oobe-tui` is the first-boot terminal surface.
+The shipped programs are:
 
-`msip-serve` and `msip-tui` are internal workspace libraries. The protocol
-types live in the separate `msip` repository and are pinned exactly by this
-workspace.
+| Engine | Terminal interface | Browser interface |
+|---|---|---|
+| `installerd` | `install-tui` | `installer-gxwi` |
+| `oobed` | `oobe-tui` | `oobe-gxwi` |
 
-## Development
+`msip-drive` supplies scripted answers. `msip-serve` and `msip-tui` are
+internal Rust libraries. Browser assets are embedded in the frontend binaries.
+The browser interfaces link to libpeios; they do not need the Rust GXWI SDK.
 
-The workspace requires Rust 1.98.1 or newer. Cargo resolves MSIP from its exact
-public Git revision; no sibling checkout participates in a release build. Run:
+## Build and check
 
-```sh
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-```
-
-The source-owned Pekit recipe builds the production packages offline after its
-vendor stage:
+Bazel is the build and packaging interface. With an explicit `PEIOS_SDK`
+prepared as described in [Building](docs/building.md), run:
 
 ```sh
-pekit package --all --version 0.1.5
-pekit lint --version 0.1.5
+./bazel build //:artifacts
+./bazel test //...
+./bazel build //:packages
 ```
 
-Run any shipped program with `--help` for its command-line interface. Manual
-pages are maintained in `man/` and installed by the corresponding packages.
+The build guide separates Linux development output, native Peios output,
+and qualification in a disposable guest. Building packages does not install
+Peios or establish that an image boots.
+
+## Documentation
+
+User and integrator guidance lives in [Learn](docs/learn/), with command
+references in [docs/man](docs/man/). Historical material is kept outside
+published Learn in [docs/archive](docs/archive/).
 
 ## License
 
-Peios installer and OOBE sources are licensed under the MIT License. Packaged
-binaries also carry the complete notices for their vendored dependencies.
+Source code is licensed under the MIT License. Embedded fonts retain their
+licenses in `installer-gxwi/page/fonts/`. Dependency notices accompany the
+package output.

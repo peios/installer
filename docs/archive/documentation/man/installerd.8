@@ -1,0 +1,113 @@
+.TH INSTALLERD 8 "October 2026" "Peios" "System Administration"
+.SH NAME
+installerd \- Peios installation and repair service
+.SH SYNOPSIS
+.B installerd
+.RB [ --socket " " PATH ]
+.RB [ --medium " " PATH ]
+.RB [ --force ]
+.br
+.B installerd --dry-run
+.RB [ --socket " " PATH ]
+.RB [ --inventory " " FILE ]
+.RB [ --fail-at " " PHASE ]
+.SH DESCRIPTION
+.B installerd
+owns the privileged installation, repair, and upgrade flow.  It exposes that
+flow over MSIP; presentation programs such as
+.BR install-tui (1)
+connect to its Unix-domain socket and hold no disk-management privilege.
+.PP
+The service normally reads the pristine system image from the mounted
+installation medium, writes the selected disk, exchanges live-boot for
+disk-boot in the target package database, stages installed-system registry
+seeds, and regenerates the initramfs and UKI.
+.PP
+An installation also carries GXWI's key and certificate,
+.IR /var/state/gxwi ,
+from the medium into the installed system, descriptors and all, so a browser
+that installed the machine goes on trusting it and first-boot setup continues
+in the same tab.  Every installation does, whichever surface started it.  A
+medium without them, or a copy that fails, leaves the installed system to make
+its own when GXWI first starts there; the installation goes on either way.
+An upgrade carries nothing: the system's own key stays.
+.PP
+The first page says where the machine is in a browser and its certificate's
+SHA-256 fingerprint, from
+.IR /var/state/gxwi/certificate.sha256 ,
+for someone at the console to check what a browser shows before going past
+its warning.  Only the console's drawing of it is worth checking against: a
+page that came over the connection being checked could say anything, and the
+browser installer does not draw it.  The page is made as the machine starts,
+often before it has an address or GXWI has made its certificate; while it is
+open it is asked again every 3 seconds, and the line changes as they come.
+Nothing is said where GXWI is not installed.
+.SH OPTIONS
+.TP
+.BI --socket " PATH"
+Listen on PATH instead of
+.IR /run/installerd.sock .
+.TP
+.BI --medium " PATH"
+Use PATH as the mounted installation medium instead of
+.IR /media/peios .
+.TP
+.B --force
+Allow the partitioning tool to replace a table it did not create.  This never
+suppresses the mounted-device guard or the confirmation in the MSIP flow.
+.TP
+.B --dry-run
+Exercise the complete conversation without changing disks.  The machine's
+disks and their partitions are listed as they are; what is on them is not
+looked into, which takes a mount.
+.TP
+.BI --inventory " FILE"
+With
+.BR --dry-run ,
+pretend to be the machine the JSON in FILE describes instead of probing this
+one: its
+.I disks
+and what each holds, the storage
+.I controllers
+nothing drives, and the release its
+.I medium
+carries.  For showing a surface a machine other than the one it is being
+worked on.  A key that is not recognised is an error.
+.TP
+.BI --fail-at " PHASE"
+With
+.BR --dry-run ,
+fail every job part way through PHASE, which is named as the end of the
+phase's element ref:
+.BR partition ,
+.BR format ,
+.B copy
+or
+.B boot
+for an installation.  For showing a surface a job that goes wrong.
+.TP
+.BR -h , " --help"
+Show command help.
+.TP
+.BR -V , " --version"
+Show the program version.
+.SH SECURITY
+The daemon is intended to run as SYSTEM.  Its socket descriptor grants access
+only to SYSTEM and Administrators.  The terminal surface is deliberately a
+separate process.
+.SH FILES
+.TP
+.I /run/installerd.sock
+Default MSIP socket.
+.TP
+.I /media/peios/rootfs.squashfs
+Default pristine system image.
+.TP
+.I /var/state/gxwi
+GXWI's key and certificate, carried into an installed system; see
+.BR gxwid (1).
+.SH SEE ALSO
+.BR gxwid (1),
+.BR install-tui (1),
+.BR msip-drive (1),
+.BR peipkg (8)
