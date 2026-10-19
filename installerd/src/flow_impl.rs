@@ -3,11 +3,12 @@
 
 use std::sync::{Arc, Mutex};
 
+use serde_json::Value;
+
 use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::types;
 use msip::msg::Outcome;
 use msip_serve::{Flow, Step};
-use serde_json::Value;
 
 use crate::executor::{Executor, JobKind};
 use crate::flow::{self, Advance, FlowState};
@@ -25,6 +26,7 @@ const NEEDED: &[&str] = &[
 /// What the conversation ends with once the machine is on its way down.
 pub const RESTARTING: &str = "Restarting the machine.";
 
+/// Installation conversation state backed by the selected executor.
 pub struct Install {
     executor: Arc<dyn Executor>,
     state: FlowState,
@@ -41,6 +43,7 @@ pub struct Install {
 }
 
 impl Install {
+    /// Start at the mode page without probing or changing any disk.
     pub fn new(executor: Arc<dyn Executor>) -> Install {
         Install {
             executor,
@@ -68,7 +71,9 @@ impl Flow for Install {
         if self.state != FlowState::Mode {
             return Vec::new();
         }
-        let Some(now) = msip_serve::browser::where_to_browse() else { return Vec::new() };
+        let Some(now) = msip_serve::browser::where_to_browse() else {
+            return Vec::new();
+        };
         if self.browse.as_deref() == Some(now.as_str()) {
             return Vec::new();
         }
@@ -144,10 +149,6 @@ impl Flow for Install {
         Some(message)
     }
 }
-
-// Kept so `Value` stays used when the patch shape changes.
-#[allow(unused)]
-fn _value(_: Value) {}
 
 #[cfg(test)]
 mod tests {

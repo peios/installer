@@ -47,6 +47,7 @@ pub(crate) fn ensure_terminal_size(requested: Option<(u16, u16)>, surface: &str)
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
+    // SAFETY: TIOCSWINSZ reads one initialized winsize, which lives through the call.
     let rc = unsafe { libc::ioctl(libc::STDOUT_FILENO, TIOCSWINSZ, &ws) };
     if rc < 0 {
         eprintln!(
@@ -91,6 +92,7 @@ const PROBE_WAIT: Duration = Duration::from_millis(250);
 /// `None` when nothing answers: a real serial port with no terminal on
 /// the far end, or output redirected into a file.
 fn ask_terminal_size() -> Option<(u16, u16)> {
+    // SAFETY: isatty only inspects the descriptor and does not take ownership of it.
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 1 {
         return None;
     }
@@ -112,6 +114,7 @@ fn interrupted() -> bool {
 
 fn write_fd(fd: libc::c_int, mut bytes: &[u8]) -> Option<()> {
     while !bytes.is_empty() {
+        // SAFETY: bytes is readable for its full length; fd remains borrowed.
         let n = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
         if n > 0 {
             bytes = &bytes[n as usize..];
@@ -130,13 +133,13 @@ fn write_fd(fd: libc::c_int, mut bytes: &[u8]) -> Option<()> {
 /// [`parse_cursor_report`] scans past it. The cap stops a far end that
 /// chatters something else entirely from holding the whole wait.
 fn read_until(fd: libc::c_int, deadline: Instant) -> Vec<u8> {
-    const CAP: usize = 256;
+    const MAX_REPORT_BYTES: usize = 256;
 
     let mut buf = Vec::new();
     let mut chunk = [0u8; 64];
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() || buf.len() >= CAP {
+        if left.is_zero() || buf.len() >= MAX_REPORT_BYTES {
             return buf;
         }
         let mut fds = libc::pollfd {
@@ -145,12 +148,14 @@ fn read_until(fd: libc::c_int, deadline: Instant) -> Vec<u8> {
             revents: 0,
         };
         let ms = left.as_millis().min(i32::MAX as u128) as libc::c_int;
+        // SAFETY: fds is one initialized, writable pollfd and the count is exactly one.
         match unsafe { libc::poll(&mut fds, 1, ms) } {
             n if n > 0 => {}
             0 => return buf,
             _ if interrupted() => continue,
             _ => return buf,
         }
+        // SAFETY: chunk is writable for the supplied length and is not otherwise borrowed.
         let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
         if n > 0 {
             buf.extend_from_slice(&chunk[..n as usize]);
@@ -219,6 +224,7 @@ fn parse_cursor_report(buf: &[u8]) -> Option<(u16, u16)> {
 pub(crate) fn is_linux_vt() -> bool {
     const KDGKBTYPE: libc::Ioctl = 0x4B33;
     let mut kind: libc::c_char = 0;
+    // SAFETY: KDGKBTYPE writes one character to kind, which lives through the call.
     unsafe { libc::ioctl(libc::STDIN_FILENO, KDGKBTYPE, &mut kind) == 0 }
 }
 
@@ -268,12 +274,14 @@ mod tests {
     /// console in the first place.
     fn line() -> (libc::c_int, libc::c_int) {
         let mut fds = [0 as libc::c_int; 2];
+        // SAFETY: fds provides the two writable descriptor slots required by socketpair.
         let rc = unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) };
         assert_eq!(rc, 0, "socketpair");
         (fds[0], fds[1])
     }
 
     fn close(fds: (libc::c_int, libc::c_int)) {
+        // SAFETY: each test owns both descriptors from line and joins their users before closing.
         unsafe {
             libc::close(fds.0);
             libc::close(fds.1);
@@ -281,6 +289,7 @@ mod tests {
     }
 
     fn say(fd: libc::c_int, bytes: &[u8]) {
+        // SAFETY: bytes is readable for its full length; fd remains borrowed.
         let n = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
         assert_eq!(n, bytes.len() as isize);
     }
@@ -320,6 +329,7 @@ mod tests {
         let (ours, theirs) = line();
         let answering = std::thread::spawn(move || {
             let mut heard = [0u8; 64];
+            // SAFETY: heard is writable for its full length and theirs remains open until join.
             let n = unsafe { libc::read(theirs, heard.as_mut_ptr().cast(), heard.len()) };
             assert!(n > 0, "the probe asked nothing");
             let asked = &heard[..n as usize];
@@ -343,6 +353,7 @@ mod tests {
         let (ours, theirs) = line();
         let answering = std::thread::spawn(move || {
             let mut heard = [0u8; 64];
+            // SAFETY: heard is writable for its full length and theirs remains open until join.
             unsafe { libc::read(theirs, heard.as_mut_ptr().cast(), heard.len()) };
             for byte in b"\x1b[24;80R" {
                 say(theirs, &[*byte]);

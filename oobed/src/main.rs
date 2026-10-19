@@ -1,6 +1,5 @@
 use std::os::unix::net::UnixListener;
 use std::sync::Arc;
-
 use std::path::PathBuf;
 
 use msip_serve::{Server, serve};

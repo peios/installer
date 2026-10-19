@@ -26,6 +26,8 @@ use std::path::{Path, PathBuf};
 const LOOP_SET_FD: libc::Ioctl = 0x4C00;
 const LOOP_CLR_FD: libc::Ioctl = 0x4C01;
 const LOOP_CTL_GET_FREE: libc::Ioctl = 0x4C82;
+const DEVICE_OPEN_ATTEMPTS: usize = 50;
+const DEVICE_OPEN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
 
 /// A loop device bound to a file, released on drop.
 pub struct LoopDevice {
@@ -39,6 +41,7 @@ impl LoopDevice {
     /// Bind `backing` to a free loop device, read-only.
     pub fn attach_readonly(backing: &Path) -> io::Result<LoopDevice> {
         let control = File::open("/dev/loop-control")?;
+        // SAFETY: control is an open loop-control descriptor; this request has no pointer argument.
         let n = unsafe { libc::ioctl(control.as_raw_fd(), LOOP_CTL_GET_FREE) };
         if n < 0 {
             return Err(io::Error::last_os_error());
@@ -51,6 +54,7 @@ impl LoopDevice {
         // rather than assumed.
         let device = open_with_retry(&path)?;
         let file = File::open(backing)?;
+        // SAFETY: both owned descriptors remain open; LOOP_SET_FD consumes the backing fd by value.
         let rc = unsafe { libc::ioctl(device.as_raw_fd(), LOOP_SET_FD, file.as_raw_fd()) };
         if rc < 0 {
             return Err(io::Error::last_os_error());
@@ -62,6 +66,7 @@ impl LoopDevice {
         })
     }
 
+    /// The device pathname while this binding is owned.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -72,6 +77,7 @@ impl Drop for LoopDevice {
         // Best effort: the filesystem on it must already be unmounted,
         // and if it is not the kernel refuses and the device is cleared
         // when the last reference goes anyway.
+        // SAFETY: device is still open and LOOP_CLR_FD requires no pointer argument.
         unsafe {
             libc::ioctl(self.device.as_raw_fd(), LOOP_CLR_FD);
         }
@@ -80,12 +86,12 @@ impl Drop for LoopDevice {
 
 fn open_with_retry(path: &Path) -> io::Result<File> {
     let mut last = None;
-    for _ in 0..50 {
+    for _ in 0..DEVICE_OPEN_ATTEMPTS {
         match OpenOptions::new().read(true).write(true).open(path) {
             Ok(f) => return Ok(f),
             Err(e) => {
                 last = Some(e);
-                std::thread::sleep(std::time::Duration::from_millis(20));
+                std::thread::sleep(DEVICE_OPEN_INTERVAL);
             }
         }
     }

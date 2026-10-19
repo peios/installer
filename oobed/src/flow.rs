@@ -4,9 +4,10 @@
 //! has no account, so an escape hatch produces a system nobody can log
 //! into — Back moves within the flow, and nothing abandons it.
 
+use serde_json::{Map, Value, json};
+
 use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::{Element, types};
-use serde_json::{Map, Value, json};
 
 use crate::network::{Answered, Manual, Network};
 use crate::setup::Setup;
@@ -40,6 +41,7 @@ pub enum Page {
     Applying,
 }
 
+/// The checked next step of a first-boot conversation.
 pub enum Advance {
     Page(Page, TurnSpec),
     /// Change the open page in place.
@@ -97,6 +99,7 @@ fn field(r#ref: &str, name: &str, secret: bool) -> Element {
     e
 }
 
+/// Build the initial welcome page and describe the current locale limitations.
 pub fn locale_page() -> TurnSpec {
     TurnSpec {
         id: Some("oobe.locale".into()),

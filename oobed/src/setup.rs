@@ -48,6 +48,7 @@ const RETIRE_KEYS: &[&str] = &[
     "Machine\\System\\Services\\oobed",
 ];
 
+/// Machine operations needed by first-boot setup, replaceable with a dry-run implementation.
 pub trait Setup: Send + Sync + 'static {
     /// What `net status` prints, for the network page, or nothing where
     /// netd could not be asked.
@@ -56,7 +57,9 @@ pub trait Setup: Send + Sync + 'static {
     fn suggested_hostname(&self) -> String;
     /// Whether a principal of this name already exists.
     fn account_exists(&self, name: &str) -> bool;
+    /// Create an administrator account; report command or credential-delivery errors.
     fn create_account(&self, name: &str, password: &str, p: &dyn Progress) -> Result<(), String>;
+    /// Store the explicit hostname, returning any registry-command failure.
     fn set_hostname(&self, name: &str, p: &dyn Progress) -> Result<(), String>;
     /// Give an interface the address chosen for it by hand
     /// ([`Manual::registry`]).
@@ -119,6 +122,7 @@ pub fn socket_sddl(visitor: Option<&str>) -> String {
     }
 }
 
+/// First-boot operations performed through the installed Peios command-line tools.
 pub struct Real {
     /// The program that draws setup in a browser, if one is to.
     browser: Option<PathBuf>,
@@ -336,6 +340,7 @@ impl Setup for Real {
             .unwrap_or(false)
     }
 
+    /// Create an administrator account; report command or credential-delivery errors.
     fn create_account(&self, name: &str, password: &str, p: &dyn Progress) -> Result<(), String> {
         // lps takes the password on stdin when stdin is not a terminal;
         // there is deliberately no --password flag, so a credential
@@ -371,6 +376,7 @@ impl Setup for Real {
         }
     }
 
+    /// Store the explicit hostname, returning any registry-command failure.
     fn set_hostname(&self, name: &str, p: &dyn Progress) -> Result<(), String> {
         let data = hostname_literal(name);
         Self::run(p, "reg", &["set", NETWORK_KEY, "Hostname", &data])
@@ -448,10 +454,12 @@ impl Setup for DryRun {
     fn account_exists(&self, _name: &str) -> bool {
         false
     }
+    /// Create an administrator account; report command or credential-delivery errors.
     fn create_account(&self, name: &str, _password: &str, p: &dyn Progress) -> Result<(), String> {
         p.log(format!("dry run: would create {name}"));
         Ok(())
     }
+    /// Store the explicit hostname, returning any registry-command failure.
     fn set_hostname(&self, name: &str, p: &dyn Progress) -> Result<(), String> {
         p.log(format!("dry run: would set the hostname to {name}"));
         Ok(())

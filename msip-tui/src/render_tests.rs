@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use msip::frame::MsgType;
 
 use crate::app::App;
-use crate::render::COLUMN;
+use crate::render::CONTENT_COLUMNS;
 use crate::theme::Theme;
 
 fn app(elements: Value, class: Value) -> App {
@@ -70,13 +70,13 @@ fn form() -> Value {
 }
 
 /// The one rule that changes the look most: content lives in a column
-/// no wider than [`COLUMN`], centred, however wide the terminal is.
+/// no wider than [`CONTENT_COLUMNS`], centred, however wide the terminal is.
 #[test]
 fn the_page_is_a_centred_column_on_a_wide_terminal() {
     let a = app(form(), json!([]));
     let lines = frame(&a, 200, 40);
     let (x, _) = col(&lines, "A page").unwrap();
-    assert_eq!(x, ((200 - COLUMN) / 2) as usize);
+    assert_eq!(x, ((200 - CONTENT_COLUMNS) / 2) as usize);
 }
 
 #[test]

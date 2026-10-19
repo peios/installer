@@ -26,6 +26,7 @@ const NEEDED: &[&str] = &[
     types::ACTION,
 ];
 
+/// First-boot conversation state; machine changes are delegated to `Setup`.
 pub struct Oobe {
     setup: Arc<dyn Setup>,
     page: Page,
@@ -37,6 +38,7 @@ pub struct Oobe {
 }
 
 impl Oobe {
+    /// Start at the locale page without changing accounts or machine settings.
     pub fn new(setup: Arc<dyn Setup>) -> Oobe {
         Oobe {
             setup,
@@ -63,12 +65,17 @@ impl Flow for Oobe {
         if self.page != Page::Locale {
             return Vec::new();
         }
-        let Some(now) = msip_serve::browser::where_to_browse() else { return Vec::new() };
+        let Some(now) = msip_serve::browser::where_to_browse() else {
+            return Vec::new();
+        };
         if self.browse.as_deref() == Some(now.as_str()) {
             return Vec::new();
         }
         let mut patch = serde_json::Map::new();
-        patch.insert("ref".into(), serde_json::Value::String("locale.browser".into()));
+        patch.insert(
+            "ref".into(),
+            serde_json::Value::String("locale.browser".into()),
+        );
         patch.insert("text".into(), serde_json::Value::String(now.clone()));
         self.browse = Some(now);
         vec![patch]

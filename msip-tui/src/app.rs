@@ -339,13 +339,24 @@ impl App {
         };
         self.status = None;
 
-        let next = (self.focus + 1) % n;
-        let prev = (self.focus + n - 1) % n;
-        match key.code {
+        self.focused_key(key.code, current, elem, n, stream)
+    }
+
+    fn focused_key(
+        &mut self,
+        code: KeyCode,
+        current: String,
+        elem: Element,
+        count: usize,
+        stream: &mut UnixStream,
+    ) -> After {
+        let next = (self.focus + 1) % count;
+        let prev = (self.focus + count - 1) % count;
+        match code {
             KeyCode::Tab => self.set_focus(next),
             KeyCode::BackTab => self.set_focus(prev),
             KeyCode::Down | KeyCode::Up => {
-                let down = key.code == KeyCode::Down;
+                let down = code == KeyCode::Down;
                 // In a list, the arrows move the highlight, and step out
                 // of the list only at its ends.
                 if is_list(&elem) && elem.enabled {
@@ -357,7 +368,7 @@ impl App {
                 }
             }
             KeyCode::Left | KeyCode::Right => {
-                let right = key.code == KeyCode::Right;
+                let right = code == KeyCode::Right;
                 match self.inputs.get_mut(&current) {
                     Some(Input::Text { value, cursor }) => {
                         let len = value.chars().count();
@@ -376,7 +387,7 @@ impl App {
             }
             KeyCode::Home | KeyCode::End => {
                 if let Some(Input::Text { value, cursor }) = self.inputs.get_mut(&current) {
-                    *cursor = if key.code == KeyCode::Home {
+                    *cursor = if code == KeyCode::Home {
                         0
                     } else {
                         value.chars().count()

@@ -2,7 +2,7 @@
 //! own, so a frame is a pure function of the app and the terminal size.
 //!
 //! The shape is a page rather than a window: a header line and a rule,
-//! a centred column of content no wider than [`COLUMN`], a rule and a
+//! a centred column of content no wider than [`CONTENT_COLUMNS`], a rule and a
 //! footer of key hints. Nothing is stretched to the terminal's width --
 //! a 20-character field in a 200-column box looks broken, and the same
 //! field in a 90-column column looks meant.
@@ -21,15 +21,15 @@ use msip::surface::Page;
 use crate::app::{App, Finished, Input, Modal, is_list, row_enabled, rows_of};
 
 /// The content column is never wider than this, whatever the terminal.
-pub(crate) const COLUMN: u16 = 96;
+pub(crate) const CONTENT_COLUMNS: u16 = 96;
 /// A text input: room for a hostname or a password, not a paragraph.
-const INPUT: u16 = 56;
+const INPUT_COLUMNS: u16 = 56;
 /// Rows a list shows before it scrolls.
 const LIST_ROWS: usize = 8;
 const TABLE_ROWS: usize = 10;
 /// A table column is capped here so one long model string cannot push
 /// the size column off the edge.
-const CELL: usize = 40;
+const MAX_CELL_COLUMNS: usize = 40;
 
 /// What every element is drawn against.
 struct Ctx {
@@ -324,7 +324,7 @@ impl App {
         let g = self.theme.glyphs;
         self.label(f, area, e, focused);
         let boxed = Rect {
-            width: area.width.min(INPUT),
+            width: area.width.min(INPUT_COLUMNS),
             ..row(area, 1, 3)
         };
         let block = self.boxed(focused, e.enabled);
@@ -412,7 +412,7 @@ impl App {
             width: if table {
                 area.width
             } else {
-                area.width.min(INPUT)
+                area.width.min(INPUT_COLUMNS)
             },
             ..row(area, 1, visible as u16 + 2 + header)
         };
@@ -783,7 +783,7 @@ fn fit_columns(e: &Element, rows: &[Value], available: usize) -> Vec<Col> {
                         key,
                         name,
                         right,
-                        width: width.min(CELL),
+                        width: width.min(MAX_CELL_COLUMNS),
                     }
                 })
                 .collect()
@@ -857,10 +857,10 @@ fn row(area: Rect, n: u16, h: u16) -> Rect {
     }
 }
 
-/// The content column: centred, never wider than [`COLUMN`], with a
+/// The content column: centred, never wider than [`CONTENT_COLUMNS`], with a
 /// row's breathing space above.
 pub(crate) fn column(area: Rect) -> Rect {
-    let width = area.width.saturating_sub(4).clamp(1, COLUMN);
+    let width = area.width.saturating_sub(4).clamp(1, CONTENT_COLUMNS);
     Rect {
         x: area.x + (area.width - width) / 2,
         y: area.y + 1,

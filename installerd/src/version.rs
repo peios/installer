@@ -11,6 +11,7 @@
 
 use std::cmp::Ordering;
 
+/// A validated package version with the ordering used by peipkg.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
     /// Canonical decimal; empty when the string carried none.

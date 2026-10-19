@@ -34,7 +34,10 @@ pub fn where_to_browse() -> Option<String> {
         return None;
     }
     let fingerprint = std::fs::read_to_string(FINGERPRINT).ok();
-    let fingerprint = fingerprint.as_deref().map(str::trim).filter(|f| !f.is_empty());
+    let fingerprint = fingerprint
+        .as_deref()
+        .map(str::trim)
+        .filter(|f| !f.is_empty());
     let (bound, port) = listen();
     let addresses = match bound {
         Some(address) if !address.is_unspecified() => vec![address],
@@ -60,8 +63,12 @@ fn sentence(addresses: &[IpAddr], port: u16, fingerprint: Option<&str>) -> Strin
         many => format!("In a browser, this machine is at {}.", many.join(" or ")),
     };
     match fingerprint {
-        Some(fingerprint) => format!("{at} Its certificate's SHA-256 fingerprint is {fingerprint}."),
-        None => format!("{at} Its certificate's SHA-256 fingerprint is shown here once GXWI has made it."),
+        Some(fingerprint) => {
+            format!("{at} Its certificate's SHA-256 fingerprint is {fingerprint}.")
+        }
+        None => format!(
+            "{at} Its certificate's SHA-256 fingerprint is shown here once GXWI has made it."
+        ),
     }
 }
 
@@ -136,14 +143,23 @@ mod tests {
             sentence(&one, 7780, Some("AB:CD")),
             "In a browser, this machine is at https://10.0.2.15:7780/. Its certificate's SHA-256 fingerprint is AB:CD."
         );
-        let two: Vec<IpAddr> = vec!["192.168.1.4".parse().unwrap(), "2001:db8::4".parse().unwrap()];
-        assert!(sentence(&two, 443, Some("AB")).contains("https://192.168.1.4:443/ or https://[2001:db8::4]:443/"));
+        let two: Vec<IpAddr> = vec![
+            "192.168.1.4".parse().unwrap(),
+            "2001:db8::4".parse().unwrap(),
+        ];
+        assert!(
+            sentence(&two, 443, Some("AB"))
+                .contains("https://192.168.1.4:443/ or https://[2001:db8::4]:443/")
+        );
     }
 
     #[test]
     fn what_is_not_there_yet_is_said_so_and_no_placeholder_is_printed() {
         let none = sentence(&[], 7780, None);
-        assert!(none.starts_with("This machine has no network address yet."), "{none}");
+        assert!(
+            none.starts_with("This machine has no network address yet."),
+            "{none}"
+        );
         assert!(none.contains("shown here once GXWI has made it"), "{none}");
         assert!(!none.contains('<'), "{none}");
     }

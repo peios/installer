@@ -43,6 +43,7 @@ pub enum Failure {
 }
 
 impl Failure {
+    /// Consume the classification and return its diagnostic.
     pub fn why(self) -> String {
         match self {
             Failure::Skipped(why) | Failure::Stuck(why) => why,

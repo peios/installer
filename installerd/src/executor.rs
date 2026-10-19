@@ -2,12 +2,12 @@
 //! server know only this trait; M2 ships the dry-run implementation,
 //! M3 the real one.
 
-pub use msip_serve::Progress;
-
 use std::thread::sleep;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+pub use msip_serve::Progress;
 
 use crate::contents::{self, Controller, Partition};
 
@@ -16,6 +16,7 @@ use crate::contents::{self, Controller, Partition};
 /// what the disk will become, so the two cannot disagree.
 pub const ESP_MIB: u64 = 512;
 
+/// One probed or simulated whole disk and the contents inspected on it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Disk {
@@ -193,6 +194,7 @@ fn medium_disk() -> Option<String> {
     Some(if parent == "block" { last } else { parent })
 }
 
+/// The destructive or repair operation confirmed by an installation flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobKind {
     Install,

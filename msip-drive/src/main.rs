@@ -100,7 +100,11 @@ fn main() {
         }
     }
 
-    let mut stream = match UnixStream::connect(&socket) {
+    drive(&socket, &kind, &sets, presses);
+}
+
+fn drive(socket: &str, kind: &str, sets: &HashMap<String, String>, presses: Vec<String>) {
+    let mut stream = match UnixStream::connect(socket) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("connect {socket}: {e}");
@@ -119,7 +123,6 @@ fn main() {
 
     let mut session = Session::new();
     let mut presses = presses.into_iter();
-    let mut started = false;
     loop {
         let (t, body) = match read_msg(&mut stream) {
             Ok(m) => m,
@@ -142,9 +145,14 @@ fn main() {
                     w.daemon.unwrap_or_default(),
                     w.kinds
                 );
-                write_msg(&mut stream, MsgType::Start, &Start { kind: kind.clone() })
-                    .expect("start");
-                started = true;
+                write_msg(
+                    &mut stream,
+                    MsgType::Start,
+                    &Start {
+                        kind: kind.to_string(),
+                    },
+                )
+                .expect("start");
             }
             Event::Bound(b) => {
                 println!(
@@ -157,61 +165,13 @@ fn main() {
                 exit(1);
             }
             Event::NewTurn | Event::Updated => {
-                let Some(page) = session.page() else { continue };
-                let is_new = matches!(event, Event::NewTurn);
-                if is_new {
-                    println!(
-                        "\n== turn {} [{}] {}",
-                        page.turn.seq,
-                        page.turn.id.clone().unwrap_or_default(),
-                        page.turn.name.clone().unwrap_or_default()
-                    );
-                }
-                for e in &page.turn.elements {
-                    print_element(e, is_new);
-                }
-                if !is_new {
-                    continue;
-                }
-                let has_action = page
-                    .turn
-                    .elements
-                    .iter()
-                    .any(|e| e.is_action() && e.enabled);
-                if !has_action {
-                    println!("   (no actions: waiting)");
-                    continue;
-                }
-                let Some(press) = presses.next() else {
-                    eprintln!("no --press left for turn {}", page.turn.seq);
-                    exit(1);
-                };
-                let mut values: Map<String, Value> = Map::new();
-                for e in &page.turn.elements {
-                    if e.is_action() || !e.enabled {
-                        continue;
-                    }
-                    if let Some(v) = sets.get(&e.r#ref) {
-                        values.insert(e.r#ref.clone(), coerce(e, v));
-                    }
-                }
-                // §3.4: a surface must not log a secret's value. This
-                // one prints everything it sends, so it has to mask the
-                // elements the daemon marked secret -- the ref is what
-                // matters for reading the trace anyway.
-                let shown: Map<String, Value> = values
-                    .iter()
-                    .map(|(k, v)| {
-                        let secret = page.turn.elements.iter().any(|e| &e.r#ref == k && e.secret);
-                        (
-                            k.clone(),
-                            if secret { json!("<secret>") } else { v.clone() },
-                        )
-                    })
-                    .collect();
-                println!("   -> press {press} with {}", Value::Object(shown));
-                let ans = session.answer(Some(&press), values).expect("answer");
-                write_msg(&mut stream, MsgType::Answer, &ans).expect("send answer");
+                answer_page(
+                    &session,
+                    matches!(event, Event::NewTurn),
+                    sets,
+                    &mut presses,
+                    &mut stream,
+                );
             }
             Event::Ended(end) => {
                 println!(
@@ -234,8 +194,71 @@ fn main() {
             }
             Event::Listing(_) => {}
         }
-        let _ = started;
     }
+}
+
+/// Print a page update and consume a scripted action only for a new actionable turn.
+fn answer_page(
+    session: &Session,
+    is_new: bool,
+    sets: &HashMap<String, String>,
+    presses: &mut impl Iterator<Item = String>,
+    stream: &mut UnixStream,
+) {
+    let Some(page) = session.page() else { return };
+    if is_new {
+        println!(
+            "\n== turn {} [{}] {}",
+            page.turn.seq,
+            page.turn.id.clone().unwrap_or_default(),
+            page.turn.name.clone().unwrap_or_default()
+        );
+    }
+    for e in &page.turn.elements {
+        print_element(e, is_new);
+    }
+    if !is_new {
+        return;
+    }
+    let has_action = page
+        .turn
+        .elements
+        .iter()
+        .any(|e| e.is_action() && e.enabled);
+    if !has_action {
+        println!("   (no actions: waiting)");
+        return;
+    }
+    let Some(press) = presses.next() else {
+        eprintln!("no --press left for turn {}", page.turn.seq);
+        exit(1);
+    };
+    let mut values: Map<String, Value> = Map::new();
+    for e in &page.turn.elements {
+        if e.is_action() || !e.enabled {
+            continue;
+        }
+        if let Some(v) = sets.get(&e.r#ref) {
+            values.insert(e.r#ref.clone(), coerce(e, v));
+        }
+    }
+    // §3.4: a surface must not log a secret's value. This
+    // one prints everything it sends, so it has to mask the
+    // elements the daemon marked secret -- the ref is what
+    // matters for reading the trace anyway.
+    let shown: Map<String, Value> = values
+        .iter()
+        .map(|(k, v)| {
+            let secret = page.turn.elements.iter().any(|e| &e.r#ref == k && e.secret);
+            (
+                k.clone(),
+                if secret { json!("<secret>") } else { v.clone() },
+            )
+        })
+        .collect();
+    println!("   -> press {press} with {}", Value::Object(shown));
+    let ans = session.answer(Some(&press), values).expect("answer");
+    write_msg(stream, MsgType::Answer, &ans).expect("send answer");
 }
 
 /// Give a --set string the JSON type the element expects.
@@ -323,5 +346,46 @@ fn print_element(e: &Element, verbose: bool) {
                 println!("   - {} !! {err}", e.r#ref);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scripted_answers_skip_actions_and_disabled_inputs_without_skipping_the_turn() {
+        let mut session = Session::new();
+        session
+            .handle(MsgType::Welcome, json!({"kinds":["test"]}))
+            .unwrap();
+        session
+            .handle(MsgType::Bound, json!({"conversation":"test","seq":0}))
+            .unwrap();
+        session
+            .handle(
+                MsgType::Turn,
+                json!({"seq":1,"elements":[
+                    {"ref":"next","type":"action"},
+                    {"ref":"disabled","type":"string","enabled":false},
+                    {"ref":"password","type":"string","secret":true}
+                ]}),
+            )
+            .unwrap();
+        let (mut socket, mut peer) = UnixStream::pair().unwrap();
+        peer.set_read_timeout(Some(std::time::Duration::from_secs(1)))
+            .unwrap();
+        let sets = HashMap::from([
+            ("disabled".into(), "ignored".into()),
+            ("password".into(), "chosen secret".into()),
+        ]);
+        let mut presses = ["next".into(), "later".into()].into_iter();
+        answer_page(&session, false, &sets, &mut presses, &mut socket);
+        answer_page(&session, true, &sets, &mut presses, &mut socket);
+        let (kind, answer) = read_msg(&mut peer).unwrap();
+        assert_eq!(kind, MsgType::Answer);
+        assert_eq!(answer["action"], "next");
+        assert_eq!(answer["values"], json!({"password":"chosen secret"}));
+        assert_eq!(presses.next().as_deref(), Some("later"));
     }
 }

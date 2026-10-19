@@ -3,9 +3,10 @@
 //! as data in, data out. Only this module knows the tree; that is
 //! MSIP's contract.
 
+use serde_json::{Map, Value, json};
+
 use msip::daemon::{TurnSpec, ValidAnswer};
 use msip::element::{Element, types};
-use serde_json::{Map, Value, json};
 
 use crate::contents::{self, Controller};
 use crate::executor::{Disk, ESP_MIB, Executor, JobKind, Release};
@@ -20,6 +21,7 @@ pub enum Mode {
     Repair,
 }
 
+/// Current page and the disk selection carried between installation pages.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlowState {
     Mode,
@@ -95,6 +97,7 @@ fn disabled(mut e: Element, why: &str) -> Element {
     e
 }
 
+/// Offer installation, upgrade and repair without selecting a disk.
 pub fn mode_page() -> TurnSpec {
     let mut elements = vec![
         text(
@@ -111,7 +114,12 @@ pub fn mode_page() -> TurnSpec {
     if let Some(browse) = msip_serve::browser::where_to_browse() {
         elements.push(text("mode.browser", &browse));
     }
-    TurnSpec { id: Some("mode".into()), name: Some("Peios Setup".into()), elements, class: vec!["menu".into()] }
+    TurnSpec {
+        id: Some("mode".into()),
+        name: Some("Peios Setup".into()),
+        elements,
+        class: vec!["menu".into()],
+    }
 }
 
 /// What the disk page is made from: the machine's disks with what is
@@ -527,6 +535,7 @@ pub fn upgrade_confirm_page(
     }
 }
 
+/// Offer the supported repairs for the previously selected disk.
 pub fn repair_menu(target: &str) -> TurnSpec {
     TurnSpec {
         id: Some("repair.menu".into()),

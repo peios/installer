@@ -16,13 +16,23 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
+use serde_json::{Map, Value};
+
 use msip::daemon::{Conversation, Disposition, TurnSpec, ValidAnswer};
 use msip::frame::{FrameError, MsgType, read_msg, write_msg};
 use msip::msg::{
     Answer, Attach, Bound, ErrorCode, ErrorMsg, Hello, Listing, ListingEntry, Outcome, Refused,
     RefusedReason, Start, Welcome,
 };
-use serde_json::{Map, Value};
+
+/// What this library calls itself when it has something to say. A
+/// daemon's own messages carry its own tag.
+const TAG: &str = "msip";
+/// How often the open page is asked what has changed ([`Flow::refresh`]).
+const REFRESH_EVERY: std::time::Duration = std::time::Duration::from_secs(3);
+
+pub mod browser;
+mod console;
 
 /// Say something operational, where a boot can see it.
 ///
@@ -36,15 +46,6 @@ use serde_json::{Map, Value};
 /// kernel makes one record per write. Best-effort: a least-privileged
 /// service cannot open `/dev/kmsg`, and that is not worth a word of its
 /// own on a console this daemon may be about to draw on.
-/// What this library calls itself when it has something to say. A
-/// daemon's own messages carry its own tag.
-const TAG: &str = "msip";
-/// How often the open page is asked what has changed ([`Flow::refresh`]).
-const REFRESH_EVERY: std::time::Duration = std::time::Duration::from_secs(3);
-
-pub mod browser;
-mod console;
-
 pub fn note(tag: &str, line: &str) {
     eprintln!("{tag}: {line}");
     static KMSG: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
@@ -194,6 +195,7 @@ impl Live {
     }
 }
 
+/// A single shared conversation and the connection-independent flow that owns it.
 pub struct Server {
     kind: &'static str,
     name: String,
@@ -202,6 +204,7 @@ pub struct Server {
 }
 
 impl Server {
+    /// Create an idle server; `make_flow` must return a fresh flow for each conversation.
     pub fn new(
         kind: &'static str,
         name: impl Into<String>,

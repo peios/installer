@@ -64,6 +64,10 @@ pub struct Config {
     pub leave_hint: &'static str,
 }
 
+/// Connect to the configured daemon and run the terminal surface until the user leaves.
+///
+/// A connection failure is printed with context and exits the surface process.
+/// Leaving the surface does not cancel a job owned by the daemon.
 pub fn run(cfg: Config) {
     let Config {
         socket,

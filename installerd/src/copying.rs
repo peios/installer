@@ -24,7 +24,7 @@ use std::path::Path;
 
 /// The longest a symbolic link's target can be and still be kept in the
 /// inode, on ext4; a longer one takes a block.
-const FAST_LINK: u64 = 60;
+const FAST_LINK_BYTES: u64 = 60;
 
 /// How much a filesystem with `block`-byte blocks will hold more once
 /// everything under `tree` has been copied onto it.
@@ -62,7 +62,7 @@ pub fn room_for(tree: &Path, block: u64) -> u64 {
                     continue;
                 }
                 total += meta.len().div_ceil(block) * block;
-            } else if kind.is_symlink() && meta.len() >= FAST_LINK {
+            } else if kind.is_symlink() && meta.len() >= FAST_LINK_BYTES {
                 total += block;
             }
         }
@@ -139,7 +139,7 @@ mod tests {
         // A short target lives in the inode; a long one takes a block.
         // Neither is the hundred thousand bytes the first one points at.
         let short = elsewhere.as_os_str().len() as u64;
-        let expected = if short >= FAST_LINK { 8192 } else { 4096 };
+        let expected = if short >= FAST_LINK_BYTES { 8192 } else { 4096 };
         assert_eq!(room_for(&dir, 4096), expected);
         fs::remove_dir_all(&dir).unwrap();
         fs::remove_dir_all(&elsewhere).unwrap();
