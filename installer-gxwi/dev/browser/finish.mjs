@@ -35,25 +35,41 @@ const status = join(run, "net-status.txt");
 const port = 7798;
 const site = `http://127.0.0.2:${port}/`;
 // This machine's address on its network, and the length of that network.
-const lan = Object.values(networkInterfaces()).flat().find((a) => a.family === "IPv4" && !a.internal);
+const lan = Object.values(networkInterfaces())
+    .flat()
+    .find((a) => a.family === "IPv4" && !a.internal);
 const moved = lan && `http://${lan.address}:${port}/`;
 const env = { ...process.env, LD_LIBRARY_PATH: join(root, "../libpeios/target/debug") };
 
-writeFileSync(status, readFileSync(join(root, "dev/net-status.txt"), "utf8") + `
+writeFileSync(
+    status,
+    readFileSync(join(root, "dev/net-status.txt"), "utf8") +
+        `
 enp4s0  [5a5a5a5a-0000-5000-8000-000000000004]
   verdict    JOIN(default) by wired
   state      up, carrier
   readiness  addressed
   hardware   52:54:00:00:00:04 pci-0000:04:00.0 virtio_net
   address    127.0.0.2/8
-`);
+`,
+);
 
-let oobed = null, oobeGxwi = null, signIn = null;
+let oobed = null,
+    oobeGxwi = null,
+    signIn = null;
 async function setupUp() {
     rmSync(socket, { force: true });
-    oobed = spawn(join(installer, "oobed"), ["--dry-run", "--socket", socket, "--net-status", status], { stdio: "ignore" });
+    oobed = spawn(
+        join(installer, "oobed"),
+        ["--dry-run", "--socket", socket, "--net-status", status],
+        { stdio: "ignore" },
+    );
     await sleep(400);
-    oobeGxwi = spawn(join(root, "target/debug/oobe-gxwi"), ["--socket", socket, "--listen", `127.0.0.2:${port}`], { stdio: "ignore", env });
+    oobeGxwi = spawn(
+        join(root, "target/debug/oobe-gxwi"),
+        ["--socket", socket, "--listen", `127.0.0.2:${port}`],
+        { stdio: "ignore", env },
+    );
     await sleep(400);
 }
 /** What GXWI does when oobed takes the overlay away: setup goes, and the
@@ -78,7 +94,8 @@ function signInDown() {
 
 const chrome = await browser(9384);
 const { send, js, picture, key, click } = chrome;
-const seen = () => js(`(() => {
+const seen = () =>
+    js(`(() => {
     const turn = document.getElementById("turn");
     return {
         url: location.href, title: document.title,
@@ -92,7 +109,10 @@ const seen = () => js(`(() => {
         status: document.getElementById("status-text")?.textContent ?? null,
     };
 })()`);
-const type = (id, text) => js(`(() => { const i = document.getElementById(${JSON.stringify(id)}); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event("input")); })()`);
+const type = (id, text) =>
+    js(
+        `(() => { const i = document.getElementById(${JSON.stringify(id)}); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event("input")); })()`,
+    );
 const at = (kind) => eventually(seen, (s) => s.kind === kind && s.showing, 10);
 
 /** From the welcome to Finish, with an address given by hand if `address`. */
@@ -109,7 +129,11 @@ async function throughSetup(address) {
         await click('#turn .iface[data-value="enp4s0"]');
         await type("field-manual-address", address);
         await click("#turn .nav .btn.go-on");
-        await eventually(seen, (s) => s.kind === "network" && s.showing && s.heading === "Network", 10);
+        await eventually(
+            seen,
+            (s) => s.kind === "network" && s.showing && s.heading === "Network",
+            10,
+        );
         await sleep(500);
     }
     await click("#turn .nav .btn.go-on");
@@ -125,7 +149,9 @@ async function throughSetup(address) {
 
 const out = {};
 const failed = [];
-const expect = (what, holds) => { if (!holds) failed.push(what); };
+const expect = (what, holds) => {
+    if (!holds) failed.push(what);
+};
 
 try {
     // As setup mostly is.
@@ -137,29 +163,65 @@ try {
     out.done = await seen();
     await picture("finish-1-done.png");
     expect("Finish goes on to setup applying what it was told", out.applying.after !== null);
-    expect("its phases, all done", JSON.stringify(out.done.phases.map(([name]) => name)) === JSON.stringify(["Creating your account", "Naming the machine"])
-        && out.done.phases.every(([, how]) => how.includes("done")));
-    expect("finished, it says so in oobed's words and offers the sign-in page, not starting again",
-        out.done.heading === "Setup is complete" && out.done.signIn && !out.done.again);
+    expect(
+        "its phases, all done",
+        JSON.stringify(out.done.phases.map(([name]) => name)) ===
+            JSON.stringify(["Creating your account", "Naming the machine"]) &&
+            out.done.phases.every(([, how]) => how.includes("done")),
+    );
+    expect(
+        "finished, it says so in oobed's words and offers the sign-in page, not starting again",
+        out.done.heading === "Setup is complete" && out.done.signIn && !out.done.again,
+    );
     out.unreachable = await chrome.unreachable();
     expect("a pointer reaches every button", out.unreachable.length === 0);
     await setupDone("127.0.0.2");
-    out.leaving = await eventually(() => js(`document.getElementById("stage").classList.contains("leaving")`), (on) => on, 15);
-    expect("setup's page gives way to the sign-in page rather than being cut from", out.leaving.after !== null);
+    out.leaving = await eventually(
+        () => js(`document.getElementById("stage").classList.contains("leaving")`),
+        (on) => on,
+        15,
+    );
+    expect(
+        "setup's page gives way to the sign-in page rather than being cut from",
+        out.leaving.after !== null,
+    );
     out.signedIn = await eventually(seen, (s) => s.title === "Sign in", 15);
-    expect("setup gone, the page goes to the sign-in page where it was", out.signedIn.after !== null && out.signedIn.url === site);
-    const handed = JSON.parse(await js(`window.handed`) ?? "null");
-    out.handed = handed && { v: handed.v, stars: handed.stars.length / 7, glows: handed.glows, rise: handed.rise, w: handed.w, h: handed.h };
+    expect(
+        "setup gone, the page goes to the sign-in page where it was",
+        out.signedIn.after !== null && out.signedIn.url === site,
+    );
+    const handed = JSON.parse((await js(`window.handed`)) ?? "null");
+    out.handed = handed && {
+        v: handed.v,
+        stars: handed.stars.length / 7,
+        glows: handed.glows,
+        rise: handed.rise,
+        w: handed.w,
+        h: handed.h,
+    };
     if (handed) {
         // How bright the stars were handed over, against how bright a drifting
         // field settles at: the sign-in page eases them there.
-        let a = 0, settles = 0;
-        for (let i = 0; i < handed.stars.length; i += 7) { a += handed.stars[i + 6]; settles += .1 + .5 * handed.stars[i + 2] ** 2; }
-        out.handed.brightness = [a, settles].map((v) => Math.round(v / (handed.stars.length / 7) * 1000) / 1000);
+        let a = 0,
+            settles = 0;
+        for (let i = 0; i < handed.stars.length; i += 7) {
+            a += handed.stars[i + 6];
+            settles += 0.1 + 0.5 * handed.stars[i + 2] ** 2;
+        }
+        out.handed.brightness = [a, settles].map(
+            (v) => Math.round((v / (handed.stars.length / 7)) * 1000) / 1000,
+        );
     }
-    expect("and leaves the sign-in page its stars, to take up where they were",
-        handed?.v === 1 && handed.stars.length > 0 && handed.stars.length % 7 === 0 && handed.rise === true
-        && handed.glows.length === 3 && handed.glows.every((t) => t > 0) && Date.now() - handed.at < 15000);
+    expect(
+        "and leaves the sign-in page its stars, to take up where they were",
+        handed?.v === 1 &&
+            handed.stars.length > 0 &&
+            handed.stars.length % 7 === 0 &&
+            handed.rise === true &&
+            handed.glows.length === 3 &&
+            handed.glows.every((t) => t > 0) &&
+            Date.now() - handed.at < 15000,
+    );
     signInDown();
 
     // With the address the page came in by given another by hand.
@@ -169,19 +231,33 @@ try {
     out.movedDone = await eventually(seen, (s) => s.signIn, 15);
     await sleep(1200);
     out.movedDone = await seen();
-    expect("the address given by hand is a phase of its own, last", out.movedDone.phases.at(-1)?.[0] === "Addressing enp4s0");
+    expect(
+        "the address given by hand is a phase of its own, last",
+        out.movedDone.phases.at(-1)?.[0] === "Addressing enp4s0",
+    );
     await setupDone(lan.address);
     out.following = await eventually(seen, (s) => s.going !== null, 10);
     await picture("finish-2-following.png");
-    expect("the page says it is following the machine", out.following.going === `Following this machine to ${lan.address}.`
-        && out.following.status === "Setup has finished");
+    expect(
+        "the page says it is following the machine",
+        out.following.going === `Following this machine to ${lan.address}.` &&
+            out.following.status === "Setup has finished",
+    );
     out.movedIn = await eventually(seen, (s) => s.title === "Sign in", 15);
-    expect("and goes to the sign-in page at the new address", out.movedIn.after !== null && out.movedIn.url === moved);
+    expect(
+        "and goes to the sign-in page at the new address",
+        out.movedIn.after !== null && out.movedIn.url === moved,
+    );
     signInDown();
 
     // Asking for setup where it has gone is answered by the sign-in page, as
     // GXWI's is, and the browser says so.
-    out.problems = chrome.problems.filter((p) => !/ERR_CONNECTION_REFUSED|Failed to load resource|WebSocket connection to .* failed/.test(p));
+    out.problems = chrome.problems.filter(
+        (p) =>
+            !/ERR_CONNECTION_REFUSED|Failed to load resource|WebSocket connection to .* failed/.test(
+                p,
+            ),
+    );
     expect("the page reports no errors", out.problems.length === 0);
 } finally {
     out.failed = failed;
@@ -191,5 +267,5 @@ try {
     oobed?.kill();
     signInDown();
     rmSync(run, { recursive: true, force: true });
-    process.exit(failed.length ? 1 : 0);
+    process.exitCode = failed.length ? 1 : 0;
 }

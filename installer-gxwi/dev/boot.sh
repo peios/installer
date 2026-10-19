@@ -1,49 +1,31 @@
 #!/bin/sh
-# Runs on the host: boot the GXWI dev VM with disks in it, for the installer
-# to have a machine to look at. It is ../gxwi/dev/boot.sh, which stays up
-# until the VM is killed, with the disks dev/disks.sh makes attached each a
-# different way, so that the disk page has every kind to show:
-#
-#   NVMe    windows.img   a Windows disk
-#   SATA    data.img      files, and another Linux
-#   SATA    release.img   a disk holding the release the medium carries
-#   USB     blank.img     an empty stick, removable
-#   virtio  peios.qcow2   a disk Peios was really installed on, if there is one
-#
-# and the medium it boots from, which is virtio too.
-#
-# It starts as a machine does, through the firmware (OVMF), and a restart is a
-# restart rather than the end of the VM, so that what the installer installs
-# can be restarted into. The stick comes first in the firmware's order and
-# the medium last: an empty stick has nothing to start and the medium starts,
-# and once something is installed on the stick, that starts.
-#
-#     dev/boot.sh             # in another terminal; it stays up
-#     dev/push.sh             # build, and put it in the VM
-#     dev/overlay.sh on       # http://127.0.0.1:7780/ is now the installer
-#     node dev/browser/machine.mjs
-#
-# IMAGE names a medium to boot instead of ../dist/release's newest:
-# dev/image.sh makes target/image, which carries this installer and
-# first-boot setup in a browser, for the machine installed from it to have.
-#
-#     IMAGE=target/image dev/boot.sh
+# Boot an explicitly supplied development image with disposable fixture disks.
+# VM_RUNNER is an executable accepting IMAGE followed by individual QEMU arguments;
+# it owns firmware, networking and boot-medium configuration. It must keep guest
+# writes off the supplied image and support guest reboot. No image is discovered.
 set -eu
+: "${IMAGE:?set IMAGE to the development image or composed image directory}"
+: "${VM_RUNNER:?set VM_RUNNER to an executable development VM runner}"
+image=$(realpath "$IMAGE")
+runner=$(realpath "$VM_RUNNER")
+[ -e "$image" ] || {
+    echo "IMAGE does not exist: $image" >&2
+    exit 1
+}
+[ -x "$runner" ] || {
+    echo "VM_RUNNER is not executable: $runner" >&2
+    exit 1
+}
 cd "$(dirname "$0")/.."
 dev/disks.sh
 d=$PWD/target/disks
-# $1 is what QEMU is to call the drive, $2 its file, $3 the file's format.
-drive() { printf ' -drive if=none,id=%s,format=%s,file=%s' "$1" "${3:-raw}" "$d/$2"; }
-extra="-device ahci,id=sata -device qemu-xhci,id=usb"
-extra="$extra$(drive windows windows.img) -device nvme,drive=windows,serial=installer-gxwi"
-extra="$extra$(drive data data.img) -device ide-hd,drive=data,bus=sata.0,model=WDC-WD20EZAZ"
-extra="$extra$(drive blank blank.img) -device usb-storage,drive=blank,bus=usb.0,removable=on,bootindex=1"
+# QEMU's key/value syntax uses doubled commas inside filenames.
+escape_path() { printf '%s' "$1" | sed 's/,/,,/g'; }
+set -- -device ahci,id=sata -device qemu-xhci,id=usb -drive "if=none,id=windows,format=raw,file=$(escape_path "$d/windows.img")" -device nvme,drive=windows,serial=installer-gxwi -drive "if=none,id=data,format=raw,file=$(escape_path "$d/data.img")" -device ide-hd,drive=data,bus=sata.0,model=WDC-WD20EZAZ -drive "if=none,id=blank,format=raw,file=$(escape_path "$d/blank.img")" -device usb-storage,drive=blank,bus=usb.0,removable=on,bootindex=1
 if [ -e "$d/release.img" ]; then
-    extra="$extra$(drive release release.img) -device ide-hd,drive=release,bus=sata.1,model=CT500MX500SSD1"
+    set -- "$@" -drive "if=none,id=release,format=raw,file=$(escape_path "$d/release.img")" -device ide-hd,drive=release,bus=sata.1,model=CT500MX500SSD1
 fi
 if [ -e "$d/peios.qcow2" ]; then
-    extra="$extra$(drive peios peios.qcow2 qcow2) -device virtio-blk-pci,drive=peios"
+    set -- "$@" -drive "if=none,id=peios,format=qcow2,file=$(escape_path "$d/peios.qcow2")" -device virtio-blk-pci,drive=peios
 fi
-args="--uefi --reboot"
-[ -z "${IMAGE:-}" ] || args="$args --build $(realpath "$IMAGE")"
-VM_EXTRA="$extra" DRIVE_ARGS="$args" exec ../gxwi/dev/boot.sh
+exec "$runner" "$image" "$@"

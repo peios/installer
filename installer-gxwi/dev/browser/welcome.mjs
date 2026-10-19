@@ -18,7 +18,8 @@ const site = process.argv[2] ?? "http://127.0.0.1:7791/";
 const chrome = await browser(9378);
 const { send, js, picture, click } = chrome;
 
-const seen = () => js(`(() => {
+const seen = () =>
+    js(`(() => {
     const turn = document.getElementById("turn");
     const lockup = document.getElementById("intro-lockup");
     const box = turn.querySelector(".select");
@@ -48,42 +49,89 @@ const seen = () => js(`(() => {
 
 const out = {};
 const failed = [];
-const expect = (what, holds) => { if (!holds) failed.push(what); };
+const expect = (what, holds) => {
+    if (!holds) failed.push(what);
+};
 
 try {
     await send("Page.navigate", { url: site });
     await sleep(1900);
     out.playing = await seen();
-    expect("the page knows it is setup's before anything is sent", out.playing.conversation === "oobe");
-    expect("the intro plays, from the stars", !out.playing.settled && !out.playing.mark.includes("sleeping"));
-    expect("and says what setup did to get here", out.playing.ticker.some((line) => line.startsWith("connect") && line.endsWith("oobed.sock")));
+    expect(
+        "the page knows it is setup's before anything is sent",
+        out.playing.conversation === "oobe",
+    );
+    expect(
+        "the intro plays, from the stars",
+        !out.playing.settled && !out.playing.mark.includes("sleeping"),
+    );
+    expect(
+        "and says what setup did to get here",
+        out.playing.ticker.some(
+            (line) => line.startsWith("connect") && line.endsWith("oobed.sock"),
+        ),
+    );
     out.landed = await eventually(seen, (s) => s.kind === "welcome" && s.showing, 15);
     await sleep(900);
-    out.landed = { ...await seen(), after: out.landed.after };
+    out.landed = { ...(await seen()), after: out.landed.after };
     await picture("welcome-1.png");
-    expect("the intro lands on oobed's first page", out.landed.after !== null && out.landed.heading === "Welcome to Peios"
-        && out.landed.greeting === "Welcome to Peios" && out.landed.lede === "A few questions and this machine is ready to use.");
-    expect("the language is shown, and why it is not a choice",
-        out.landed.label === "Language" && out.landed.language === "English" && out.landed.languageOff
-        && out.landed.notes[0]?.startsWith("Peios ships in English only"));
-    expect("the keyboard is left to the browser, and the page says so", out.landed.notes[1] === "Your keyboard is this device's own, so there is no layout to choose here.");
+    expect(
+        "the intro lands on oobed's first page",
+        out.landed.after !== null &&
+            out.landed.heading === "Welcome to Peios" &&
+            out.landed.greeting === "Welcome to Peios" &&
+            out.landed.lede === "A few questions and this machine is ready to use.",
+    );
+    expect(
+        "the language is shown, and why it is not a choice",
+        out.landed.label === "Language" &&
+            out.landed.language === "English" &&
+            out.landed.languageOff &&
+            out.landed.notes[0]?.startsWith("Peios ships in English only"),
+    );
+    expect(
+        "the keyboard is left to the browser, and the page says so",
+        out.landed.notes[1] ===
+            "Your keyboard is this device's own, so there is no layout to choose here.",
+    );
     expect("Next has the keyboard", out.landed.next === "Next" && out.landed.focused === "Next");
-    expect("the status line says setup answered", /^Connected to oobed\/\d/.test(out.landed.status));
+    expect(
+        "the status line says setup answered",
+        /^Connected to oobed\/\d/.test(out.landed.status),
+    );
     expect("the tab is named for the page", out.landed.title === "Welcome to Peios · Peios Setup");
 
-    out.greeted = await eventually(seen, (s) => s.greeting !== "Welcome to Peios" && s.greetingLang, 8);
+    out.greeted = await eventually(
+        seen,
+        (s) => s.greeting !== "Welcome to Peios" && s.greetingLang,
+        8,
+    );
     await picture("welcome-2-greeting.png");
-    expect("the greeting goes round the languages, each marked as its own", out.greeted.after !== null);
-    expect("while the heading is still what oobed called it", out.greeted.heading === "Welcome to Peios");
+    expect(
+        "the greeting goes round the languages, each marked as its own",
+        out.greeted.after !== null,
+    );
+    expect(
+        "while the heading is still what oobed called it",
+        out.greeted.heading === "Welcome to Peios",
+    );
 
     await click("#turn .btn.go-on");
     out.next = await eventually(seen, (s) => s.kind === "network" && s.showing, 3);
     expect("Next goes on to the network page", out.next.after !== null && out.next.toast === null);
     await click("#turn .nav .btn.quiet");
     out.back = await eventually(seen, (s) => s.kind === "welcome" && s.showing, 3);
-    expect("and Back comes back to the welcome", out.back.after !== null && out.back.heading === "Welcome to Peios");
+    expect(
+        "and Back comes back to the welcome",
+        out.back.after !== null && out.back.heading === "Welcome to Peios",
+    );
 
-    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await send("Emulation.setDeviceMetricsOverride", {
+        width: 390,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: true,
+    });
     await sleep(500);
     out.phone = await seen();
     await picture("welcome-3-phone.png");
@@ -95,15 +143,25 @@ try {
     await send("Page.reload");
     out.waking = await eventually(seen, (s) => s.mark.includes("formed") || s.settled, 5);
     await picture("welcome-4-waking.png");
-    expect("arriving from a restart, the mark is already made, asleep or waking, in the middle",
-        out.waking.after !== null && out.waking.mark.includes("drawn") && !out.waking.settled);
+    expect(
+        "arriving from a restart, the mark is already made, asleep or waking, in the middle",
+        out.waking.after !== null && out.waking.mark.includes("drawn") && !out.waking.settled,
+    );
     out.woken = await eventually(seen, (s) => s.kind === "welcome" && s.showing, 8);
-    expect("and it is on the page sooner than the intro would have been", out.woken.after !== null && out.woken.after < 5);
+    expect(
+        "and it is on the page sooner than the intro would have been",
+        out.woken.after !== null && out.woken.after < 5,
+    );
     expect("once", (await js(`sessionStorage.getItem("peios.woke")`)) === null);
 
     const hello = await (await fetch(`${site}hello`)).json();
     out.hello = hello;
-    expect("asked who is here, it says setup, and which boot", /^oobe-gxwi\//.test(hello.setup) && typeof hello.boot === "string" && !("installer" in hello));
+    expect(
+        "asked who is here, it says setup, and which boot",
+        /^oobe-gxwi\//.test(hello.setup) &&
+            typeof hello.boot === "string" &&
+            !("installer" in hello),
+    );
 
     out.elsewhere = chrome.elsewhere(site);
     expect("nothing is fetched from anywhere else", out.elsewhere.length === 0);
@@ -113,5 +171,5 @@ try {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));
     chrome.close();
-    process.exit(failed.length ? 1 : 0);
+    process.exitCode = failed.length ? 1 : 0;
 }

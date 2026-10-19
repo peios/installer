@@ -35,7 +35,8 @@ const chrome = await browser(9376);
 const { send, js, picture, key, click } = chrome;
 
 /** What the page shows once the machine is restarting. */
-const restartSeen = () => js(`(() => {
+const restartSeen = () =>
+    js(`(() => {
     const turn = document.getElementById("turn");
     const lockup = document.getElementById("intro-lockup");
     return {
@@ -52,7 +53,8 @@ const restartSeen = () => js(`(() => {
     };
 })()`);
 
-const seen = () => js(`(() => {
+const seen = () =>
+    js(`(() => {
     const turn = document.getElementById("turn");
     const build = turn.querySelector(".build");
     const log = turn.querySelector(".log");
@@ -100,7 +102,9 @@ const onFirstPage = (s) => s.heading === "Peios Setup" && s.actions === 3 && s.s
 
 const out = {};
 const failed = [];
-const expect = (what, holds) => { if (!holds) failed.push(what); };
+const expect = (what, holds) => {
+    if (!holds) failed.push(what);
+};
 
 try {
     await send("Page.navigate", { url: site });
@@ -111,90 +115,193 @@ try {
 
     await key("1", "Digit1", 49);
     out.disks = await eventually(seen, (s) => s.heading === "Choose a disk" && s.showing, 60);
-    const sticks = (out.disks.disks ?? []).filter((d) => !d.disabled && d.where.includes(" · USB") && d.where.includes("removable"));
+    const sticks = (out.disks.disks ?? []).filter(
+        (d) => !d.disabled && d.where.includes(" · USB") && d.where.includes("removable"),
+    );
     out.onto = sticks.map((d) => d.value);
     expect("there is exactly one removable USB disk to install onto", sticks.length === 1);
-    if (sticks.length !== 1) throw new Error("no one disk that is safe to erase: nothing was pressed");
+    if (sticks.length !== 1) {
+        throw new Error("no one disk that is safe to erase: nothing was pressed");
+    }
     const stick = sticks[0].value;
 
     await click(`#turn .disk[data-value="${stick}"]`);
-    await eventually(seen, (s) => s.disks.some((d) => d.value === stick && d.checked) && s.next === "on");
+    await eventually(
+        seen,
+        (s) => s.disks.some((d) => d.value === stick && d.checked) && s.next === "on",
+    );
     await click("#turn .btn.go-on");
     out.confirm = await eventually(seen, (s) => s.heading === "Ready to install" && s.showing, 60);
-    expect("the confirmation is about the stick", out.confirm.after !== null && out.confirm.summary?.includes(`(${stick}). The whole disk will be erased`));
-    if (!out.confirm.summary?.includes(`(${stick})`)) throw new Error("the confirmation is not about the stick: nothing was held");
+    expect(
+        "the confirmation is about the stick",
+        out.confirm.after !== null &&
+            out.confirm.summary?.includes(`(${stick}). The whole disk will be erased`),
+    );
+    if (!out.confirm.summary?.includes(`(${stick})`)) {
+        throw new Error("the confirmation is not about the stick: nothing was held");
+    }
 
     // The button that erases, held until it takes.
     await sleep(900);
-    const at = await js(`(() => { const r = document.querySelector("#turn .destroy").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const at = await js(
+        `(() => { const r = document.querySelector("#turn .destroy").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`,
+    );
     await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
-    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: at.x,
+        y: at.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+    });
     out.held = await eventually(seen, (s) => s.committed || s.kind === "progress", 5);
-    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: at.x,
+        y: at.y,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+    });
     const began = Date.now();
     out.running = await eventually(seen, (s) => s.kind === "progress" && s.showing, 20);
     await picture("install-1-running.png");
     // A job that goes wrong at once is over before its page has arrived, and
     // the page then arrives saying so.
-    expect("holding the button begins the installation, and its page arrives",
-        out.running.after !== null && out.running.disk.there && out.running.disk.under?.startsWith(`${stick} · `)
-        && (out.running.stopped || out.running.finished || out.running.lede?.includes(`(${stick}).`)));
-    expect("the phases are an installation's", JSON.stringify(out.running.phases.map((p) => p.name)) === JSON.stringify(["Partitioning", "Formatting", "Copying the system", "Setting up boot"]));
+    expect(
+        "holding the button begins the installation, and its page arrives",
+        out.running.after !== null &&
+            out.running.disk.there &&
+            out.running.disk.under?.startsWith(`${stick} · `) &&
+            (out.running.stopped ||
+                out.running.finished ||
+                out.running.lede?.includes(`(${stick}).`)),
+    );
+    expect(
+        "the phases are an installation's",
+        JSON.stringify(out.running.phases.map((p) => p.name)) ===
+            JSON.stringify(["Partitioning", "Formatting", "Copying the system", "Setting up boot"]),
+    );
 
     // As long as it takes. What the page shows along the way is kept, once
     // for each phase it is seen under way in.
     out.along = [];
-    out.end = await eventually(async () => {
-        const s = await seen();
-        if (s.now?.[0] && !out.along.some((a) => a.now === s.now[0])) out.along.push({ now: s.now[0], figure: s.figure, at: Math.round((Date.now() - began) / 1000) });
-        return s;
-    }, (s) => (s.finished || s.stopped) && s.again !== null, 1800);
+    out.end = await eventually(
+        async () => {
+            const s = await seen();
+            if (s.now?.[0] && !out.along.some((a) => a.now === s.now[0])) {
+                out.along.push({
+                    now: s.now[0],
+                    figure: s.figure,
+                    at: Math.round((Date.now() - began) / 1000),
+                });
+            }
+            return s;
+        },
+        (s) => (s.finished || s.stopped) && s.again !== null,
+        1800,
+    );
     out.tookSeconds = Math.round((Date.now() - began) / 1000);
     // The bars glide to where the job left them, and a phase is not shown
     // done until its bar has got there: the page is read once it is still.
     await sleep(1600);
-    out.end = { ...await seen(), after: out.end.after };
+    out.end = { ...(await seen()), after: out.end.after };
     await picture("install-2-ended.png");
-    expect("the job comes to an end, and the page stays to say how", out.end.after !== null && out.end.kind === "progress");
+    expect(
+        "the job comes to an end, and the page stays to say how",
+        out.end.after !== null && out.end.kind === "progress",
+    );
     out.outcome = out.end.finished ? "complete" : out.end.stopped ? "failed" : "neither";
     if (out.end.finished) {
-        expect("finished, every phase is done and both partitions are made", out.end.phases.every((p) => p.state === "done") && out.end.disk.parts.every((p) => p.done));
-        expect("and it says so in installerd's words", out.end.heading === "Installation complete" && out.end.again === "Back to the start" && out.end.status === "Finished");
+        expect(
+            "finished, every phase is done and both partitions are made",
+            out.end.phases.every((p) => p.state === "done") &&
+                out.end.disk.parts.every((p) => p.done),
+        );
+        expect(
+            "and it says so in installerd's words",
+            out.end.heading === "Installation complete" &&
+                out.end.again === "Back to the start" &&
+                out.end.status === "Finished",
+        );
         expect("and offers to restart the machine", out.end.reboot === "Reboot now");
     } else if (out.end.stopped) {
-        expect("stopped, it says what installerd said, and where it stopped",
-            out.end.heading === "Installation stopped" && !!out.end.installerdSaid && out.end.phases.some((p) => p.state === "failed" || p.state === "skipped"));
-        expect("and offers to start again", out.end.again === "Start again" && out.end.status === "Stopped");
+        expect(
+            "stopped, it says what installerd said, and where it stopped",
+            out.end.heading === "Installation stopped" &&
+                !!out.end.installerdSaid &&
+                out.end.phases.some((p) => p.state === "failed" || p.state === "skipped"),
+        );
+        expect(
+            "and offers to start again",
+            out.end.again === "Start again" && out.end.status === "Stopped",
+        );
     }
     const saved = await fetch(`${site}log.txt`);
     const lines = (await saved.text()).split("\n");
     out.saved = { status: saved.status, lines: lines.length - 1, first: lines[0] };
-    expect("everything the job said can be saved", saved.status === 200 && lines.length > 5 && lines[0].startsWith("$ part create"));
+    expect(
+        "everything the job said can be saved",
+        saved.status === 200 && lines.length > 5 && lines[0].startsWith("$ part create"),
+    );
 
     if (reboot && out.end.finished) {
         // Restarted into what was installed, which is Peios' own GXWI on the
         // stick, with first-boot setup on the machine's screen.
         expect("the restart is offered", out.end.reboot === "Reboot now");
         await click('#turn .nav.ends [data-way="reboot"]');
-        out.going = await eventually(restartSeen, (r) => r.rebooting && r.ticker[0] === "reboot asked of installerd", 30);
-        expect("pressed, installerd takes it and the page goes down with the machine", out.going.after !== null);
+        out.going = await eventually(
+            restartSeen,
+            (r) => r.rebooting && r.ticker[0] === "reboot asked of installerd",
+            30,
+        );
+        expect(
+            "pressed, installerd takes it and the page goes down with the machine",
+            out.going.after !== null,
+        );
         out.away = await eventually(restartSeen, (r) => r.mark.includes("sleeping"), 20);
-        out.back = await eventually(restartSeen, (r) => (["running", "again", "lost", "welcome"].includes(r.kind)) && r.showing, 300);
+        out.back = await eventually(
+            restartSeen,
+            (r) => ["running", "again", "lost", "welcome"].includes(r.kind) && r.showing,
+            300,
+        );
         await sleep(1600);
-        out.back = { ...await restartSeen(), after: out.back.after };
+        out.back = { ...(await restartSeen()), after: out.back.after };
         await picture("install-3-restarted.png");
         const hello = await fetch(`${site}hello`);
-        out.answering = { status: hello.status, said: hello.headers.get("content-type")?.startsWith("application/json") ? await hello.json() : null };
+        out.answering = {
+            status: hello.status,
+            said: hello.headers.get("content-type")?.startsWith("application/json")
+                ? await hello.json()
+                : null,
+        };
         if (out.back.conversation === "oobe") {
             // A medium that carries first-boot setup in a browser (dev/image.sh).
-            expect("the machine comes back as Peios, and the page goes on to its first-boot setup",
-                out.back.after !== null && out.back.kind === "welcome" && out.back.welcome === "Welcome to Peios" && /^Connected to oobed\//.test(out.back.status));
-            expect("and what answers at the address is setup", typeof out.answering.said?.setup === "string");
+            expect(
+                "the machine comes back as Peios, and the page goes on to its first-boot setup",
+                out.back.after !== null &&
+                    out.back.kind === "welcome" &&
+                    out.back.welcome === "Welcome to Peios" &&
+                    /^Connected to oobed\//.test(out.back.status),
+            );
+            expect(
+                "and what answers at the address is setup",
+                typeof out.answering.said?.setup === "string",
+            );
         } else {
-            expect("the machine comes back as Peios, and the page says so",
-                out.back.after !== null && out.back.kind === "running" && out.back.heading === "Peios is running"
-                && out.back.ledes[0]?.startsWith("The machine restarted from ") && out.back.ledes[0].endsWith(`(${stick}).`));
-            expect("and what answers at the address is not the installer", !out.answering.said?.installer);
+            expect(
+                "the machine comes back as Peios, and the page says so",
+                out.back.after !== null &&
+                    out.back.kind === "running" &&
+                    out.back.heading === "Peios is running" &&
+                    out.back.ledes[0]?.startsWith("The machine restarted from ") &&
+                    out.back.ledes[0].endsWith(`(${stick}).`),
+            );
+            expect(
+                "and what answers at the address is not the installer",
+                !out.answering.said?.installer,
+            );
         }
     } else {
         await click('#turn .nav.ends [data-way="again"]');
@@ -204,11 +311,17 @@ try {
 
     out.elsewhere = chrome.elsewhere(site);
     expect("nothing is fetched from anywhere else", out.elsewhere.length === 0);
-    out.problems = chrome.problems.filter((p) => !reboot || !/WebSocket|ERR_CONNECTION_REFUSED|ERR_EMPTY_RESPONSE|ERR_CONNECTION_RESET|401|Failed to load resource/.test(p));
+    out.problems = chrome.problems.filter(
+        (p) =>
+            !reboot ||
+            !/WebSocket|ERR_CONNECTION_REFUSED|ERR_EMPTY_RESPONSE|ERR_CONNECTION_RESET|401|Failed to load resource/.test(
+                p,
+            ),
+    );
     expect("the page reports no errors", out.problems.length === 0);
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));
     chrome.close();
-    process.exit(failed.length ? 1 : 0);
+    process.exitCode = failed.length ? 1 : 0;
 }

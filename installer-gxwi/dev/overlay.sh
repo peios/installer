@@ -11,8 +11,12 @@
 # and installerd's socket admits administrators. GXWI applies the change as
 # it is made; nothing is restarted.
 set -eu
-cd "$(dirname "$0")/.."
-guest=../gxwi/dev/guest.sh
+: "${VM_GUEST:?set VM_GUEST to an executable development guest command runner}"
+guest=$(realpath "$VM_GUEST")
+[ -x "$guest" ] || {
+    echo "VM_GUEST is not executable: $guest" >&2
+    exit 1
+}
 key="'Machine\\Software\\GXWI'"
 case "${1:-}" in
 on)

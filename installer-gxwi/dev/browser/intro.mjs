@@ -19,7 +19,8 @@ const site = process.argv[2] ?? "http://127.0.0.1:7780/";
 const chrome = await browser(9370);
 const { send, js, picture, key, problems } = chrome;
 /** What the page is showing. */
-const seen = () => js(`({
+const seen = () =>
+    js(`({
     settled: document.getElementById("stage").classList.contains("settled"),
     live: document.getElementById("page").classList.contains("live"),
     title: document.title,
@@ -45,7 +46,9 @@ const seen = () => js(`({
 
 const out = {};
 const failed = [];
-const expect = (what, holds) => { if (!holds) failed.push(what); };
+const expect = (what, holds) => {
+    if (!holds) failed.push(what);
+};
 
 try {
     // The intro, left alone.
@@ -53,25 +56,54 @@ try {
     await sleep(1900);
     await picture("intro-1-gathering.png");
     out.gathering = await seen();
-    expect("the intro is playing, and the page is not in the way of it", out.gathering.settled === false && out.gathering.live === false);
-    expect("what the installer did is said as the intro plays", out.gathering.ticker.length >= 2 && out.gathering.ticker[1].startsWith("connect"));
+    expect(
+        "the intro is playing, and the page is not in the way of it",
+        out.gathering.settled === false && out.gathering.live === false,
+    );
+    expect(
+        "what the installer did is said as the intro plays",
+        out.gathering.ticker.length >= 2 && out.gathering.ticker[1].startsWith("connect"),
+    );
     await sleep(1300);
     await picture("intro-2-formed.png");
     await sleep(1900);
     await picture("intro-3-named.png");
     out.named = await seen();
-    expect("the release is named under the mark", out.named.release.length > 0 || out.named.edition.length === 0);
+    expect(
+        "the release is named under the mark",
+        out.named.release.length > 0 || out.named.edition.length === 0,
+    );
     await sleep(3400);
     await picture("intro-4-landed.png");
     out.landed = await seen();
-    expect("the intro lands on a page that can be used", out.landed.settled && out.landed.live && out.landed.header);
-    expect("the page is installerd's first", out.landed.heading === "Peios Setup" && out.landed.lede?.startsWith("Set up Peios on this machine"));
-    expect("with its three actions, numbered and all showing",
-        JSON.stringify(out.landed.actions.map((a) => [a.key, a.name, a.shown])) === JSON.stringify([
-            ["1", "Install Peios", true], ["2", "Upgrade an installation", true], ["3", "Repair an existing system", true]]));
-    expect("the one most likely wanted is marked, highlighted and has the keyboard",
-        out.landed.actions[0]?.primary && out.landed.actions[0]?.highlighted && out.landed.focused === "Install Peios");
-    expect("the status line says which installer answered", /^Connected to installerd\/\d/.test(out.landed.status) && out.landed.statusShown === "1");
+    expect(
+        "the intro lands on a page that can be used",
+        out.landed.settled && out.landed.live && out.landed.header,
+    );
+    expect(
+        "the page is installerd's first",
+        out.landed.heading === "Peios Setup" &&
+            out.landed.lede?.startsWith("Set up Peios on this machine"),
+    );
+    expect(
+        "with its three actions, numbered and all showing",
+        JSON.stringify(out.landed.actions.map((a) => [a.key, a.name, a.shown])) ===
+            JSON.stringify([
+                ["1", "Install Peios", true],
+                ["2", "Upgrade an installation", true],
+                ["3", "Repair an existing system", true],
+            ]),
+    );
+    expect(
+        "the one most likely wanted is marked, highlighted and has the keyboard",
+        out.landed.actions[0]?.primary &&
+            out.landed.actions[0]?.highlighted &&
+            out.landed.focused === "Install Peios",
+    );
+    expect(
+        "the status line says which installer answered",
+        /^Connected to installerd\/\d/.test(out.landed.status) && out.landed.statusShown === "1",
+    );
 
     // The keyboard: arrows walk, a number chooses, and choosing goes on to
     // the page installerd asks next, and back again.
@@ -80,12 +112,25 @@ try {
     out.walked = (await seen()).focused;
     expect("an arrow moves to the next action", out.walked === "Upgrade an installation");
     await key("3", "Digit3", 51);
-    out.chosen = await eventually(seen, (s) => s.heading === "Repair: choose a disk" && s.shown, 30);
+    out.chosen = await eventually(
+        seen,
+        (s) => s.heading === "Repair: choose a disk" && s.shown,
+        30,
+    );
     await picture("intro-5-chosen.png");
-    expect("a number chooses, and installerd's next page arrives", out.chosen.after !== null && out.chosen.title === "Repair: choose a disk · Peios Setup");
+    expect(
+        "a number chooses, and installerd's next page arrives",
+        out.chosen.after !== null && out.chosen.title === "Repair: choose a disk · Peios Setup",
+    );
     await chrome.click("#turn .btn.quiet");
-    out.back = await eventually(seen, (s) => s.heading === "Peios Setup" && s.shown && s.actions.length === 3);
-    expect("and Back returns to the first", out.back.after !== null && out.back.focused === "Install Peios");
+    out.back = await eventually(
+        seen,
+        (s) => s.heading === "Peios Setup" && s.shown && s.actions.length === 3,
+    );
+    expect(
+        "and Back returns to the first",
+        out.back.after !== null && out.back.focused === "Install Peios",
+    );
 
     // Nothing came from anywhere but the installer, and nothing went wrong.
     out.elsewhere = chrome.elsewhere(site);
@@ -100,7 +145,13 @@ try {
     // The lockup glides for a second, and the page rises behind it.
     await sleep(2600);
     out.skipped = await seen();
-    expect("a key skips the intro", out.skipped.settled && out.skipped.live && out.skipped.actions.length === 3 && out.skipped.actions.every((a) => a.shown));
+    expect(
+        "a key skips the intro",
+        out.skipped.settled &&
+            out.skipped.live &&
+            out.skipped.actions.length === 3 &&
+            out.skipped.actions.every((a) => a.shown),
+    );
 
     // Replayed from the button, and left to finish.
     await js(`document.getElementById("replay").click()`);
@@ -108,27 +159,44 @@ try {
     out.replaying = (await seen()).settled;
     await sleep(6600);
     out.replayed = await seen();
-    expect("the intro replays and lands again", out.replaying === false && out.replayed.settled && out.replayed.live && out.replayed.focused === "Install Peios");
+    expect(
+        "the intro replays and lands again",
+        out.replaying === false &&
+            out.replayed.settled &&
+            out.replayed.live &&
+            out.replayed.focused === "Install Peios",
+    );
 
     // A phone.
-    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await send("Emulation.setDeviceMetricsOverride", {
+        width: 390,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: true,
+    });
     await send("Page.navigate", { url: site });
     await sleep(1200);
     await key("x", "KeyX", 88);
     await sleep(2600);
     out.phone = await seen();
     await picture("intro-6-phone.png");
-    expect("a phone holds the page without scrolling sideways", out.phone.wide === false && out.phone.actions.length === 3);
+    expect(
+        "a phone holds the page without scrolling sideways",
+        out.phone.wide === false && out.phone.actions.length === 3,
+    );
 
     // Any other address comes here.
     await send("Emulation.clearDeviceMetricsOverride");
     await send("Page.navigate", { url: new URL("/desktop/files?open=1", site).href });
     await sleep(1500);
     out.elsewhereLands = await js(`location.pathname`);
-    expect("an address left over from a desktop comes to the installer", out.elsewhereLands === "/");
+    expect(
+        "an address left over from a desktop comes to the installer",
+        out.elsewhereLands === "/",
+    );
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));
     chrome.close();
-    process.exit(failed.length ? 1 : 0);
+    process.exitCode = failed.length ? 1 : 0;
 }

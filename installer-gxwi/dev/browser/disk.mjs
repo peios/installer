@@ -29,28 +29,48 @@ const site = `http://${address}/`;
 // installer-gxwi links libpeios, which is found beside the sibling checkout.
 const env = { ...process.env, LD_LIBRARY_PATH: join(root, "../libpeios/target/debug") };
 
-const startInstallerd = (machine) => spawn(join(installer, "installerd"),
-    ["--dry-run", "--inventory", machine, "--socket", socket], { stdio: "ignore" });
+const startInstallerd = (machine) =>
+    spawn(
+        join(installer, "installerd"),
+        ["--dry-run", "--inventory", machine, "--socket", socket],
+        { stdio: "ignore" },
+    );
 
 // A disk made by someone who hoped its names would be taken for markup.
 const hostile = join(run, "hostile.json");
 const desktop = JSON.parse(readFileSync(join(root, "dev/desktop.json"), "utf8"));
-writeFileSync(hostile, JSON.stringify({
-    disks: [{
-        ...desktop.disks[2],
-        model: '<img src=x onerror="document.title=1">',
-        partitions: [{ ...desktop.disks[2].partitions[0], label: "<b id=planted>Media</b>", holds: "<script>document.title=2</script>" }],
-    }],
-}));
+writeFileSync(
+    hostile,
+    JSON.stringify({
+        disks: [
+            {
+                ...desktop.disks[2],
+                model: '<img src=x onerror="document.title=1">',
+                partitions: [
+                    {
+                        ...desktop.disks[2].partitions[0],
+                        label: "<b id=planted>Media</b>",
+                        holds: "<script>document.title=2</script>",
+                    },
+                ],
+            },
+        ],
+    }),
+);
 
 let installerd = startInstallerd(join(root, "dev/desktop.json"));
 await sleep(400);
-const installerGxwi = spawn(join(root, "target/debug/installer-gxwi"), ["--socket", socket, "--listen", address], { stdio: "ignore", env });
+const installerGxwi = spawn(
+    join(root, "target/debug/installer-gxwi"),
+    ["--socket", socket, "--listen", address],
+    { stdio: "ignore", env },
+);
 const chrome = await browser(9372);
 const { send, js, picture, key, click } = chrome;
 
 /** What the page is showing. */
-const seen = () => js(`({
+const seen = () =>
+    js(`({
     heading: document.querySelector("#turn h1")?.textContent ?? null,
     lede: document.querySelector("#turn .lede")?.textContent ?? null,
     showing: document.getElementById("turn").classList.contains("in") && document.getElementById("page").classList.contains("live"),
@@ -91,19 +111,27 @@ const seen = () => js(`({
     markup: document.querySelectorAll("#turn img, #turn script, #planted").length,
 })`);
 const onFirstPage = (s) => s.heading === "Peios Setup" && s.actions === 3 && s.showing;
-const onDisks = (heading) => (s) => s.heading === heading && s.showing && s.disks.every((d) => d.shown);
-const chosen = (value) => (s) => s.disks.some((d) => d.value === value && d.checked) && s.plan.title !== null;
+const onDisks = (heading) => (s) =>
+    s.heading === heading && s.showing && s.disks.every((d) => d.shown);
+const chosen = (value) => (s) =>
+    s.disks.some((d) => d.value === value && d.checked) && s.plan.title !== null;
 const disk = (value) => `#turn .disk[data-value="${value}"]`;
 /** The state as any other browser is sent it. */
-const elsewhere = () => new Promise((resolve, reject) => {
-    const other = new WebSocket(`ws://${address}/live`);
-    other.onmessage = (m) => { resolve(JSON.parse(m.data)); other.close(); };
-    other.onerror = reject;
-});
+const elsewhere = () =>
+    new Promise((resolve, reject) => {
+        const other = new WebSocket(`ws://${address}/live`);
+        other.onmessage = (m) => {
+            resolve(JSON.parse(m.data));
+            other.close();
+        };
+        other.onerror = reject;
+    });
 
 const out = {};
 const failed = [];
-const expect = (what, holds) => { if (!holds) failed.push(what); };
+const expect = (what, holds) => {
+    if (!holds) failed.push(what);
+};
 
 try {
     await send("Page.navigate", { url: site });
@@ -116,109 +144,233 @@ try {
     await key("1", "Digit1", 49);
     out.install = await eventually(seen, onDisks("Choose a disk"));
     await picture("disk-1-install.png");
-    expect("choosing Install goes on to the disks", out.install.after !== null && out.install.title === "Choose a disk · Peios Setup" && out.install.said === "Choose a disk");
-    expect("every disk installerd lists is there, as it words them",
-        JSON.stringify(out.install.disks.map((d) => [d.value, d.model, d.size])) === JSON.stringify([
-            ["/dev/mmcblk0", "SD64G", "59.5 GiB"], ["/dev/nvme0n1", "Samsung SSD 980 PRO 1TB", "931.5 GiB"],
-            ["/dev/sda", "WDC WD20EZAZ-00GGJB0", "1.8 TiB"], ["/dev/sdb", "SanDisk Ultra Fit", "28.6 GiB"],
-            ["/dev/sdc", "CT500MX500SSD1", "465.8 GiB"]]));
-    expect("a disk says where it is and what is on it",
-        out.install.disks[1].where === "/dev/nvme0n1 · NVMe · Windows" && out.install.disks[0].where === "/dev/mmcblk0 · SD/MMC · 1 partitionremovable"
-        && out.install.disks[4].where.startsWith("/dev/sdc · SATA · Peios 2026.8-7"));
-    expect("the boot medium is listed, marked, and cannot be chosen",
-        out.install.disks[3].disabled && out.install.disks[3].chip === "boot medium" && out.install.disks[3].where === "/dev/sdb · USBboot medium");
-    expect("nothing is chosen, so there is nothing to go on with", out.install.disks.every((d) => !d.checked) && out.install.next === "off");
-    expect("the keyboard starts on the first disk that can be chosen", out.install.focused === "/dev/mmcblk0" && out.install.disks[0].stop);
-    expect("the panel waits for a disk", out.install.label === "What the disk becomes" && out.install.plan.empty === "Choose a disk to see how it will be laid out.");
+    expect(
+        "choosing Install goes on to the disks",
+        out.install.after !== null &&
+            out.install.title === "Choose a disk · Peios Setup" &&
+            out.install.said === "Choose a disk",
+    );
+    expect(
+        "every disk installerd lists is there, as it words them",
+        JSON.stringify(out.install.disks.map((d) => [d.value, d.model, d.size])) ===
+            JSON.stringify([
+                ["/dev/mmcblk0", "SD64G", "59.5 GiB"],
+                ["/dev/nvme0n1", "Samsung SSD 980 PRO 1TB", "931.5 GiB"],
+                ["/dev/sda", "WDC WD20EZAZ-00GGJB0", "1.8 TiB"],
+                ["/dev/sdb", "SanDisk Ultra Fit", "28.6 GiB"],
+                ["/dev/sdc", "CT500MX500SSD1", "465.8 GiB"],
+            ]),
+    );
+    expect(
+        "a disk says where it is and what is on it",
+        out.install.disks[1].where === "/dev/nvme0n1 · NVMe · Windows" &&
+            out.install.disks[0].where === "/dev/mmcblk0 · SD/MMC · 1 partitionremovable" &&
+            out.install.disks[4].where.startsWith("/dev/sdc · SATA · Peios 2026.8-7"),
+    );
+    expect(
+        "the boot medium is listed, marked, and cannot be chosen",
+        out.install.disks[3].disabled &&
+            out.install.disks[3].chip === "boot medium" &&
+            out.install.disks[3].where === "/dev/sdb · USBboot medium",
+    );
+    expect(
+        "nothing is chosen, so there is nothing to go on with",
+        out.install.disks.every((d) => !d.checked) && out.install.next === "off",
+    );
+    expect(
+        "the keyboard starts on the first disk that can be chosen",
+        out.install.focused === "/dev/mmcblk0" && out.install.disks[0].stop,
+    );
+    expect(
+        "the panel waits for a disk",
+        out.install.label === "What the disk becomes" &&
+            out.install.plan.empty === "Choose a disk to see how it will be laid out.",
+    );
     expect("laying it out by hand is offered greyed", out.install.custom?.disabled === true);
 
     // Going on with nothing chosen says why not.
     await click("#turn .btn.go-on");
     out.nothing = await eventually(seen, (s) => s.help !== null, 3);
-    expect("Next with no disk chosen says to choose one", out.nothing.help === "Choose a disk first.");
+    expect(
+        "Next with no disk chosen says to choose one",
+        out.nothing.help === "Choose a disk first.",
+    );
 
     // Choosing a disk.
     await click(disk("/dev/nvme0n1"));
     out.windows = await eventually(seen, chosen("/dev/nvme0n1"));
-    expect("a disk clicked is chosen", out.windows.after !== null && out.windows.disks.filter((d) => d.checked).length === 1 && out.windows.next === "on");
-    expect("the panel names it", out.windows.plan.title === "Samsung SSD 980 PRO 1TB" && out.windows.plan.under === "/dev/nvme0n1 · 931.5 GiB");
-    expect("and says what an install makes of it",
-        JSON.stringify(out.windows.plan.legend) === JSON.stringify(["EFI system partition: 512 MiB · FAT32", "Peios: 931.0 GiB · ext4"]));
-    expect("and what goes to make room",
-        out.windows.plan.erase === "Everything on /dev/nvme0n1 will be erased, including Windows." && out.windows.plan.doomed === 4);
+    expect(
+        "a disk clicked is chosen",
+        out.windows.after !== null &&
+            out.windows.disks.filter((d) => d.checked).length === 1 &&
+            out.windows.next === "on",
+    );
+    expect(
+        "the panel names it",
+        out.windows.plan.title === "Samsung SSD 980 PRO 1TB" &&
+            out.windows.plan.under === "/dev/nvme0n1 · 931.5 GiB",
+    );
+    expect(
+        "and says what an install makes of it",
+        JSON.stringify(out.windows.plan.legend) ===
+            JSON.stringify(["EFI system partition: 512 MiB · FAT32", "Peios: 931.0 GiB · ext4"]),
+    );
+    expect(
+        "and what goes to make room",
+        out.windows.plan.erase ===
+            "Everything on /dev/nvme0n1 will be erased, including Windows." &&
+            out.windows.plan.doomed === 4,
+    );
     await sleep(1800);
     out.wiped = await seen();
     await picture("disk-2-chosen.png");
-    expect("what it becomes is wiped in over what it was, the small partition still to be seen",
-        out.wiped.plan.wiped && out.wiped.plan.becomes.length === 2 && out.wiped.plan.becomes[0] >= 10 && out.wiped.plan.becomes[1] > out.wiped.plan.becomes[0]);
-    expect("and the picture is put into words too", out.wiped.plan.drawn?.startsWith("/dev/nvme0n1 as it will be: EFI system partition, 512 MiB and Peios, 931.0 GiB"));
+    expect(
+        "what it becomes is wiped in over what it was, the small partition still to be seen",
+        out.wiped.plan.wiped &&
+            out.wiped.plan.becomes.length === 2 &&
+            out.wiped.plan.becomes[0] >= 10 &&
+            out.wiped.plan.becomes[1] > out.wiped.plan.becomes[0],
+    );
+    expect(
+        "and the picture is put into words too",
+        out.wiped.plan.drawn?.startsWith(
+            "/dev/nvme0n1 as it will be: EFI system partition, 512 MiB and Peios, 931.0 GiB",
+        ),
+    );
     out.shared = (await elsewhere()).page;
-    expect("the disk chosen here is chosen for everyone looking", out.shared.kind === "disk" && out.shared.chosen === "/dev/nvme0n1");
+    expect(
+        "the disk chosen here is chosen for everyone looking",
+        out.shared.kind === "disk" && out.shared.chosen === "/dev/nvme0n1",
+    );
 
     // The keyboard: an arrow moves and chooses, as in any group of choices.
     await js(`document.querySelector(${JSON.stringify(disk("/dev/nvme0n1"))}).focus()`);
     await key("ArrowDown", "ArrowDown", 40);
     out.arrowed = await eventually(seen, chosen("/dev/sda"));
-    expect("an arrow moves to the next disk and chooses it", out.arrowed.after !== null && out.arrowed.focused === "/dev/sda");
-    expect("what is not a system is named by its label and what is in it",
-        out.arrowed.plan.erase === "Everything on /dev/sda will be erased, including “Media” (640.0 GiB in use).");
+    expect(
+        "an arrow moves to the next disk and chooses it",
+        out.arrowed.after !== null && out.arrowed.focused === "/dev/sda",
+    );
+    expect(
+        "what is not a system is named by its label and what is in it",
+        out.arrowed.plan.erase ===
+            "Everything on /dev/sda will be erased, including “Media” (640.0 GiB in use).",
+    );
     await key("ArrowDown", "ArrowDown", 40);
     out.skipped = await eventually(seen, chosen("/dev/sdc"));
-    expect("and passes over the boot medium", out.skipped.after !== null && out.skipped.focused === "/dev/sdc");
+    expect(
+        "and passes over the boot medium",
+        out.skipped.after !== null && out.skipped.focused === "/dev/sdc",
+    );
 
     // Enter on the chosen disk goes on with it, to the confirmation
     // (confirm.mjs looks at that page), and Back from there returns here.
     await key("Enter", "Enter", 13);
     out.on = await eventually(seen, (s) => s.heading === "Ready to install" && s.showing);
-    expect("Enter on the chosen disk goes on with it, for everyone looking", out.on.after !== null && (await elsewhere()).page.kind === "confirm");
+    expect(
+        "Enter on the chosen disk goes on with it, for everyone looking",
+        out.on.after !== null && (await elsewhere()).page.kind === "confirm",
+    );
     await click("#turn .btn.quiet");
-    out.returned = await eventually(seen, (s) => onDisks("Choose a disk")(s) && s.disks.some((d) => d.checked));
-    expect("and Back from there returns to the disks, the disk still chosen", out.returned.after !== null && out.returned.disks[4].checked && out.returned.focused === "/dev/sdc");
+    out.returned = await eventually(
+        seen,
+        (s) => onDisks("Choose a disk")(s) && s.disks.some((d) => d.checked),
+    );
+    expect(
+        "and Back from there returns to the disks, the disk still chosen",
+        out.returned.after !== null &&
+            out.returned.disks[4].checked &&
+            out.returned.focused === "/dev/sdc",
+    );
 
     // Rescan: installerd looks again, and the page shows it looking.
     await click("#turn .aux .link");
     out.scanning = await eventually(seen, (s) => s.scanning, 3);
     out.scanned = await eventually(seen, (s) => !s.scanning, 5);
-    expect("a rescan is shown while it is under way, and ends", out.scanning.after !== null && out.scanned.after !== null);
-    expect("and leaves the disk that is still there chosen", out.scanned.disks.length === 5 && out.scanned.disks[4].checked && out.scanned.focused !== "BODY");
+    expect(
+        "a rescan is shown while it is under way, and ends",
+        out.scanning.after !== null && out.scanned.after !== null,
+    );
+    expect(
+        "and leaves the disk that is still there chosen",
+        out.scanned.disks.length === 5 &&
+            out.scanned.disks[4].checked &&
+            out.scanned.focused !== "BODY",
+    );
 
     // A narrow screen.
-    await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await send("Emulation.setDeviceMetricsOverride", {
+        width: 390,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: true,
+    });
     await sleep(400);
     out.phone = await seen();
     await picture("disk-3-phone.png");
-    expect("a phone holds the page without scrolling sideways, the panel before Back and Next", out.phone.wide === false && out.phone.planBeforeNav === true);
+    expect(
+        "a phone holds the page without scrolling sideways, the panel before Back and Next",
+        out.phone.wide === false && out.phone.planBeforeNav === true,
+    );
     await send("Emulation.clearDeviceMetricsOverride");
 
     // Back, and the way it came.
     await click("#turn .btn.quiet");
     out.back = await eventually(seen, onFirstPage);
-    expect("Back returns to the first page, the keyboard on what is most likely wanted", out.back.after !== null && out.back.focused === "Install Peios");
+    expect(
+        "Back returns to the first page, the keyboard on what is most likely wanted",
+        out.back.after !== null && out.back.focused === "Install Peios",
+    );
 
     // Upgrade: the same disks, and what is on the chosen one.
     await key("2", "Digit2", 50);
     out.upgrade = await eventually(seen, onDisks("Upgrade: choose a disk"));
-    expect("choosing Upgrade asks for the disk to upgrade, with nothing chosen", out.upgrade.after !== null && out.upgrade.disks.every((d) => !d.checked));
-    expect("the panel is about what is there, and laying a disk out by hand is not offered",
-        out.upgrade.label === "What's on the disk" && out.upgrade.custom === null && out.upgrade.plan.empty === "Choose a disk to see what is on it.");
+    expect(
+        "choosing Upgrade asks for the disk to upgrade, with nothing chosen",
+        out.upgrade.after !== null && out.upgrade.disks.every((d) => !d.checked),
+    );
+    expect(
+        "the panel is about what is there, and laying a disk out by hand is not offered",
+        out.upgrade.label === "What's on the disk" &&
+            out.upgrade.custom === null &&
+            out.upgrade.plan.empty === "Choose a disk to see what is on it.",
+    );
     await click(disk("/dev/sdc"));
     out.upgradable = await eventually(seen, chosen("/dev/sdc"));
     await picture("disk-4-upgrade.png");
-    expect("a disk holding Peios says which release, and what this medium would move it to",
-        JSON.stringify(out.upgradable.plan.versions) === JSON.stringify(["On the disk2026.8-7", "This medium2026.9-1"])
-        && out.upgradable.plan.notes[0] === "Peios 2026.8-7 (experimental), on sdc2.");
-    expect("and its partitions, with what is in use",
-        JSON.stringify(out.upgradable.plan.legend) === JSON.stringify(["EFI system partition: 71 MiB of 512 MiB · FAT32", "Peios root: 18.4 GiB of 465.3 GiB · ext4"])
-        && out.upgradable.plan.erase === null && out.upgradable.plan.becomes.length === 0);
+    expect(
+        "a disk holding Peios says which release, and what this medium would move it to",
+        JSON.stringify(out.upgradable.plan.versions) ===
+            JSON.stringify(["On the disk2026.8-7", "This medium2026.9-1"]) &&
+            out.upgradable.plan.notes[0] === "Peios 2026.8-7 (experimental), on sdc2.",
+    );
+    expect(
+        "and its partitions, with what is in use",
+        JSON.stringify(out.upgradable.plan.legend) ===
+            JSON.stringify([
+                "EFI system partition: 71 MiB of 512 MiB · FAT32",
+                "Peios root: 18.4 GiB of 465.3 GiB · ext4",
+            ]) &&
+            out.upgradable.plan.erase === null &&
+            out.upgradable.plan.becomes.length === 0,
+    );
     // What an upgrade goes on to is not drawn yet, so Next says so and stays.
     await click("#turn .btn.go-on");
     out.held = await eventually(seen, (s) => s.toast !== null, 3);
-    expect("Next toward a step not drawn yet says so, and stays", out.held.toast === "The step after this one is not drawn yet." && out.held.heading === "Upgrade: choose a disk");
+    expect(
+        "Next toward a step not drawn yet says so, and stays",
+        out.held.toast === "The step after this one is not drawn yet." &&
+            out.held.heading === "Upgrade: choose a disk",
+    );
     expect("and nobody else is moved on", (await elsewhere()).page.kind === "disk");
     await click(disk("/dev/nvme0n1"));
     out.notPeios = await eventually(seen, chosen("/dev/nvme0n1"));
-    expect("a disk with no Peios on it says so",
-        out.notPeios.plan.notes[0] === "No Peios system here: no partition on it holds a Peios system. Nothing to upgrade." && out.notPeios.plan.was === 4);
+    expect(
+        "a disk with no Peios on it says so",
+        out.notPeios.plan.notes[0] ===
+            "No Peios system here: no partition on it holds a Peios system. Nothing to upgrade." &&
+            out.notPeios.plan.was === 4,
+    );
     await click("#turn .btn.quiet");
     await eventually(seen, onFirstPage);
 
@@ -227,8 +379,13 @@ try {
     out.repair = await eventually(seen, onDisks("Repair: choose a disk"));
     await click(disk("/dev/sdc"));
     out.repairable = await eventually(seen, chosen("/dev/sdc"));
-    expect("choosing Repair asks for the disk to repair, and says what system is on it",
-        out.repair.after !== null && out.repairable.plan.notes[0] === "Peios 2026.8-7 (experimental), on sdc2, with 18.4 GiB in use." && out.repairable.plan.versions.length === 0);
+    expect(
+        "choosing Repair asks for the disk to repair, and says what system is on it",
+        out.repair.after !== null &&
+            out.repairable.plan.notes[0] ===
+                "Peios 2026.8-7 (experimental), on sdc2, with 18.4 GiB in use." &&
+            out.repairable.plan.versions.length === 0,
+    );
     await click("#turn .btn.quiet");
     await eventually(seen, onFirstPage);
 
@@ -244,12 +401,25 @@ try {
     await key("1", "Digit1", 49);
     out.none = await eventually(seen, onDisks("Choose a disk"));
     await picture("disk-5-none.png");
-    expect("with no disk to choose the page says so in installerd's words",
-        out.none.after !== null && out.none.disks.length === 1 && out.none.disks[0].disabled && out.none.empty === "No disks found. Attach one and rescan.");
-    expect("and says what installerd found instead",
-        out.none.trouble?.startsWith("A storage controller that nothing on this system is driving: a RAID controller (8086:9a0b) at 0000:00:0e.0."));
-    expect("with nothing to show beside it, and the keyboard somewhere useful",
-        out.none.plan.empty === "Nothing to show until a disk turns up." && out.none.focused !== "BODY" && out.none.next === "off");
+    expect(
+        "with no disk to choose the page says so in installerd's words",
+        out.none.after !== null &&
+            out.none.disks.length === 1 &&
+            out.none.disks[0].disabled &&
+            out.none.empty === "No disks found. Attach one and rescan.",
+    );
+    expect(
+        "and says what installerd found instead",
+        out.none.trouble?.startsWith(
+            "A storage controller that nothing on this system is driving: a RAID controller (8086:9a0b) at 0000:00:0e.0.",
+        ),
+    );
+    expect(
+        "with nothing to show beside it, and the keyboard somewhere useful",
+        out.none.plan.empty === "Nothing to show until a disk turns up." &&
+            out.none.focused !== "BODY" &&
+            out.none.next === "off",
+    );
 
     // A disk whose names are markup: they are names, and shown as written.
     installerd.kill();
@@ -259,9 +429,14 @@ try {
     await eventually(seen, onDisks("Choose a disk"));
     await click(disk("/dev/sda"));
     out.hostile = await eventually(seen, chosen("/dev/sda"));
-    expect("what a disk calls itself is shown as text, never taken as markup",
-        out.hostile.after !== null && out.hostile.markup === 0 && out.hostile.title === "Choose a disk · Peios Setup"
-        && out.hostile.plan.title === '<img src=x onerror="document.title=1">' && out.hostile.plan.erase.includes("<script>document.title=2</script>"));
+    expect(
+        "what a disk calls itself is shown as text, never taken as markup",
+        out.hostile.after !== null &&
+            out.hostile.markup === 0 &&
+            out.hostile.title === "Choose a disk · Peios Setup" &&
+            out.hostile.plan.title === '<img src=x onerror="document.title=1">' &&
+            out.hostile.plan.erase.includes("<script>document.title=2</script>"),
+    );
 } finally {
     out.failed = failed;
     console.log(JSON.stringify(out, null, 1));
@@ -269,5 +444,5 @@ try {
     installerGxwi.kill();
     installerd.kill();
     rmSync(run, { recursive: true, force: true });
-    process.exit(failed.length ? 1 : 0);
+    process.exitCode = failed.length ? 1 : 0;
 }
