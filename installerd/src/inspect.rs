@@ -20,6 +20,9 @@
 //! or its boot manager.
 
 use std::ffi::CString;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -66,7 +69,7 @@ const PACKAGE_DB: &str = "var/state/peipkg";
 /// there. The disk is read and nothing else.
 pub fn release_at(root: &Path, scratch: &Path) -> Result<Release, String> {
     let text = plain(root, "usr/lib/os-release")
-        .and_then(|at| std::fs::read_to_string(at).ok())
+        .and_then(|at| read_regular_text(&at).ok())
         .ok_or("no Peios system here (no usr/lib/os-release)")?;
     let edition = edition_of(&text)?;
 
@@ -78,8 +81,19 @@ pub fn release_at(root: &Path, scratch: &Path) -> Result<Release, String> {
     let mut found = false;
     for name in ["db.sqlite", "db.sqlite-wal", "db.sqlite-shm"] {
         if let Some(from) = plain(root, &format!("{PACKAGE_DB}/{name}")) {
-            std::fs::copy(&from, copy.join(name))
+            let mut source =
+                open_regular(&from).map_err(|e| format!("reading {}: {e}", from.display()))?;
+            let mut destination = File::create(copy.join(name))
+                .map_err(|e| format!("copying {}: {e}", from.display()))?;
+            io::copy(&mut source, &mut destination)
                 .map_err(|e| format!("reading {}: {e}", from.display()))?;
+            let permissions = source
+                .metadata()
+                .map_err(|e| format!("reading {}: {e}", from.display()))?
+                .permissions();
+            destination
+                .set_permissions(permissions)
+                .map_err(|e| format!("copying {}: {e}", from.display()))?;
             found |= name == "db.sqlite";
         }
     }
@@ -278,6 +292,28 @@ pub fn plain(root: &Path, relative: &str) -> Option<PathBuf> {
     Some(at)
 }
 
+/// Opening before inspecting the descriptor closes the final-component replacement race.
+/// Nonblocking mode prevents a FIFO with no writer from hanging the disk overview.
+fn open_regular(path: &Path) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+fn read_regular_text(path: &Path) -> io::Result<String> {
+    let mut text = String::new();
+    open_regular(path)?.read_to_string(&mut text)?;
+    Ok(text)
+}
+
 /// What an os-release calls the system it describes.
 pub fn pretty_name(os_release: &str) -> Option<String> {
     let value = |key: &str| {
@@ -307,7 +343,7 @@ pub fn what_holds(root: &Path, release: ReleaseIn) -> (Option<String>, Option<Re
     let os_release = ["usr/lib/os-release", "etc/os-release"]
         .iter()
         .find_map(|at| plain(root, at))
-        .and_then(|at| std::fs::read_to_string(at).ok());
+        .and_then(|at| read_regular_text(&at).ok());
     if let Some(text) = os_release {
         if edition_of(&text).is_ok() {
             return match release(root) {
@@ -350,6 +386,61 @@ mod tests {
 
     fn no_release(_: &Path) -> Result<Release, String> {
         Err("not asked for".into())
+    }
+
+    #[test]
+    fn inspection_reads_regular_files_but_not_directories_or_symlinks() {
+        let root = tree("regular-input");
+        put(&root, "file", "NAME=Example\n");
+        assert_eq!(
+            read_regular_text(&root.join("file")).unwrap(),
+            "NAME=Example\n"
+        );
+        assert!(open_regular(&root).is_err());
+        std::os::unix::fs::symlink(root.join("file"), root.join("link")).unwrap();
+        assert!(open_regular(&root.join("link")).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_fifo_os_release_does_not_wait_for_a_writer() {
+        const CHILD: &str = "INSTALLER_FIFO_INSPECTION_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let root = PathBuf::from(std::env::var_os(CHILD).unwrap());
+            assert_eq!(what_holds(&root, &no_release), (None, None));
+            assert!(open_regular(&root.join("usr/lib/os-release")).is_err());
+            return;
+        }
+        let root = tree("fifo-input");
+        std::fs::create_dir_all(root.join("usr/lib")).unwrap();
+        let path = CString::new(root.join("usr/lib/os-release").as_os_str().as_bytes()).unwrap();
+        // SAFETY: path is a live NUL-terminated pathname inside this test's disposable directory.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "inspect::tests::a_fifo_os_release_does_not_wait_for_a_writer",
+            ])
+            .env(CHILD, &root)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break Some(status);
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            status.is_some_and(|status| status.success()),
+            "inspection blocked or failed"
+        );
     }
 
     #[test]

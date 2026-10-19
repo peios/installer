@@ -218,11 +218,12 @@ pub fn read_gpt(disk: &mut (impl Read + Seek), sector: u64) -> Table {
         le(&header[80..84]),
         le(&header[84..88]),
     );
+    let Some(offset) = entries.checked_mul(sector) else {
+        return table;
+    };
     // A table says how many entries it has and how big each is; one that
     // says something absurd is not read, rather than believed.
-    if !(128..=4096).contains(&size)
-        || count > 1024
-        || disk.seek(SeekFrom::Start(entries * sector)).is_err()
+    if !(128..=4096).contains(&size) || count > 1024 || disk.seek(SeekFrom::Start(offset)).is_err()
     {
         return table;
     }
@@ -439,6 +440,16 @@ pub fn unclaimed_sentence(controllers: &[Controller]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_overflowing_partition_entry_offset_is_not_read() {
+        let mut disk = vec![0u8; 1024];
+        disk[512..520].copy_from_slice(b"EFI PART");
+        disk[584..592].copy_from_slice(&u64::MAX.to_le_bytes());
+        disk[592..596].copy_from_slice(&1u32.to_le_bytes());
+        disk[596..600].copy_from_slice(&128u32.to_le_bytes());
+        assert!(super::read_gpt(&mut std::io::Cursor::new(disk), 512).is_empty());
+    }
     use super::*;
 
     #[test]
