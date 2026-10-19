@@ -6,7 +6,7 @@
 //! runs in it. Everything it needs is in this binary: a machine being
 //! installed may have no route out, so nothing is fetched from anywhere else.
 
-use std::sync::mpsc;
+use std::sync::{OnceLock, mpsc};
 
 use axum::Router;
 use axum::extract::State;
@@ -151,16 +151,16 @@ async fn log(State(served): State<Served>) -> Response {
 fn index(conversation: Conversation) -> &'static str {
     match conversation {
         Conversation::Install => INDEX,
-        // Once, for the life of the process.
-        Conversation::Oobe => Box::leak(
-            INDEX
-                .replacen(
+        Conversation::Oobe => {
+            static OOBE_INDEX: OnceLock<String> = OnceLock::new();
+            OOBE_INDEX.get_or_init(|| {
+                INDEX.replacen(
                     "<html lang=\"en\">",
                     "<html lang=\"en\" data-conversation=\"oobe\">",
                     1,
                 )
-                .into_boxed_str(),
-        ),
+            })
+        }
     }
 }
 
@@ -280,6 +280,16 @@ async fn show(mut socket: WebSocket, Served { mut view, tell, .. }: Served) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn oobe_index_is_initialized_once_and_install_index_is_unchanged() {
+        let first = super::index(crate::Conversation::Oobe);
+        let second = super::index(crate::Conversation::Oobe);
+        assert!(std::ptr::eq(first, second));
+        assert_eq!(first.matches("data-conversation=\"oobe\"").count(), 1);
+        assert_eq!(super::index(crate::Conversation::Install), super::INDEX);
+        assert!(!super::INDEX.contains("data-conversation=\"oobe\""));
+    }
+
     /// A module of the page's that is not served fails to load, and takes
     /// the page down with it, in the browser and nowhere else.
     #[test]
