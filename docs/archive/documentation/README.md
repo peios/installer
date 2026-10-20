@@ -6,7 +6,7 @@ Commands and dependency names in them are not maintained instructions.
 
 `sources.json` records the source pages consulted in `learn-staging`, with
 their original paths, dispositions, and SHA-256 digests. The maintained
-replacement is `docs/learn/peios.product/700--installation-and-setup.shelf`.
+replacement is `docs/learn/1--peios.shelf/peios.product/700--installation-and-setup.shelf`.
 The installation, first-boot, service, and rehearsal guidance was rewritten
 against the source in this repository rather than copied as a release claim.
 
