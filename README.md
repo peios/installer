@@ -6,7 +6,7 @@ GXWI browser interfaces, with one component version and separate packages.
 
 `installerd` owns installation, upgrade, and repair operations. `oobed` owns
 account creation and machine setup. Frontends present their conversations
-through the Message Surface Interaction Protocol (MSIP); the protocol remains
+through the Multi-Surface Interaction Protocol (MSIP); the protocol remains
 an independent dependency pinned in `Cargo.toml` and `Cargo.lock`.
 
 The shipped programs are:

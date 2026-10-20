@@ -10,7 +10,7 @@ the same service owns the installation conversation.
 
 `installerd` selects and modifies disks. `oobed` creates the first account
 and applies machine settings after installation. The services send questions,
-progress, and results through the Message Surface Interaction Protocol
+progress, and results through the Multi-Surface Interaction Protocol
 (MSIP), an independent protocol shared with their frontends.
 
 The available interfaces have these roles:
