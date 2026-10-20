@@ -44,7 +44,7 @@ element types and state; it does not require a `progress` turn class.
 
 Masking is a display property. It does not make logging, debug formatting,
 or retaining a submitted secret safe. Follow the
-[MSIP library's secret handling guidance](https://learn.peios.org/peios/developing-for-peios/msip-daemons/rust-library/)
+[MSIP library's secret handling guidance](https://learn.peios.org/peios/developing-for-peios/setup-conversations/rust-library/)
 and keep secrets out of turn updates and diagnostics.
 
 A primary action's appearance does not authorize unattended execution.
@@ -76,5 +76,5 @@ class.
 
 `msip-drive` does not draw the terminal layout. Its scripted answers rely on
 refs, values, and actions rather than color or class hints. Use
-[Installer Conversation Rehearsals](~peios/installer-operation/rehearsing-conversations)
+[Installer Conversation Rehearsals](~peios/setup-conversations/rehearsing-conversations)
 to check that the same conversation remains usable through automation.

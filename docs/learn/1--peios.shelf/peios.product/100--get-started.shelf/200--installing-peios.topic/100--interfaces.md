@@ -31,6 +31,6 @@ Its configured identity still matters: the supplied first-boot terminal
 service runs as SYSTEM so it can reach setup before any administrator exists.
 
 See [Installing to Disk](~peios/installing-peios/installing-to-disk) for a
-fresh installation and [Conversation Lifetime](~peios/installer-operation/conversation-lifetime)
+fresh installation and [Conversation Lifetime](~peios/setup-conversations/conversation-lifetime)
 for reconnect and failure behavior. Command details belong to
 `installerd(8)`, `install-tui(1)`, `installer-gxwi(1)`, and `oobed(8)`.
