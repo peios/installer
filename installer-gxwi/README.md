@@ -6,8 +6,8 @@ shared conversation state, and `page/` contains embedded browser assets.
 All connected browsers observe the same conversation.
 
 Both programs belong to the installer workspace and share its version.
-Use the [repository build guide](../docs/building.md) for Bazel, SDK,
-package, and development-harness instructions. The maintained command
+Use the [repository build guide](../docs/building.md) for pekit build,
+test, and development-harness instructions. The maintained command
 references are in [docs/man](../docs/man/), and user guidance is in
 [Learn](../docs/learn/).
 

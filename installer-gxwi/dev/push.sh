@@ -11,10 +11,9 @@ share=$(realpath "$VM_SHARE")
 cd "$(dirname "$0")/../.."
 # shellcheck source=installer-gxwi/dev/env.sh
 . installer-gxwi/dev/env.sh
-for target in //installerd //installer-gxwi:installer-gxwi; do
+for target in installerd installer_gxwi; do
     binary=$(build_binary "$target")
-    name=${target##*:}
-    name=${name##*/}
+    name=$(printf '%s' "$target" | tr _ -)
     staging=$(mktemp "$share/.$name.XXXXXX")
     trap 'rm -f "$staging"' EXIT
     cp "$binary" "$staging"

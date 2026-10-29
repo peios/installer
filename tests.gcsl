@@ -1,0 +1,133 @@
+# The installer's tests: each member's unit and integration tests, as
+# `cargo test -p` builds them, the static musl programs' again as they
+# ship, each member's documentation tests, as `cargo test --doc` runs them,
+# Clippy's checks, as `cargo clippy --all-targets -- -Dwarnings` makes them,
+# and the browser harness's own tests.
+#
+# A test's own code runs in a hermetic step of its own, so what it plans,
+# builds or fetches is in its parameters' defaults.
+import fs
+import toolchain
+import unpack from archive
+import Toolchain from toolchain
+import BuildEnv from "github.com/gcslib/buildenv"
+import "github.com/gcslib/rust"
+import "github.com/peios/peios-rs" as peios_rs
+
+# The members of the workspace, each a directory of the same name.
+let MEMBERS = ["installerd", "install-tui", "msip-drive", "msip-tui", "msip-serve", "oobe-tui", "oobed", "installer-gxwi"]
+
+# Node.js, which runs the browser harness's tests, pinned by its SHA-256.
+let NODE = "https://nodejs.org/dist/v22.22.1/node-v22.22.1-linux-x64.tar.xz"
+
+# What every test is given: libpeios, by its soname, which a program that
+# links it loads (see peios-rs's `runtime`).
+def loaded() -> List<{at: String, place: Dir | File}> {
+    = peios_rs.runtime()
+}
+
+# What a test that runs shell commands is given: busybox's `/bin/sh` and
+# tools.
+def shell() -> List<{at: String, place: Dir | File}> {
+    let env: BuildEnv = toolchain.get(Toolchain::BuildEnv)
+    = [{at = "/bin"; place = env.root.dir("bin")}]
+}
+
+# Runs each of `tests`, given `given`.
+fn ran(tests: List<rust.RustTest>, given: List<{at: String, place: Dir | File}> = []) -> {} {
+    let each = for test in tests { = rust.run_test(test, given = given, env = peios_rs.runtime_env()) }
+}
+
+# installerd's tests, some of which run shell commands, given busybox's
+# `/bin/sh` and tools.
+def test installerd(tests: List<rust.RustTest> = rust.tests(crates(), "installerd"), given: List<{at: String, place: Dir | File}> = shell()) {
+    = ran(tests, given)
+}
+
+def test install_tui(tests: List<rust.RustTest> = rust.tests(crates(), "install-tui")) {
+    = ran(tests)
+}
+
+def test msip_drive(tests: List<rust.RustTest> = rust.tests(crates(), "msip-drive")) {
+    = ran(tests)
+}
+
+def test msip_tui(tests: List<rust.RustTest> = rust.tests(crates(), "msip-tui")) {
+    = ran(tests)
+}
+
+def test msip_serve(tests: List<rust.RustTest> = rust.tests(crates(), "msip-serve")) {
+    = ran(tests)
+}
+
+def test oobe_tui(tests: List<rust.RustTest> = rust.tests(crates(), "oobe-tui")) {
+    = ran(tests)
+}
+
+def test oobed(tests: List<rust.RustTest> = rust.tests(crates(), "oobed")) {
+    = ran(tests)
+}
+
+# installer-gxwi's tests, which read the page's scripts from its
+# directory, where Cargo's `CARGO_MANIFEST_DIR` says it is.
+def test installer_gxwi(
+    tests: List<rust.RustTest> = rust.tests(crates(), "installer-gxwi"),
+    given: List<{at: String, place: Dir | File}> = [...loaded(), {at = "/work/src/installer-gxwi/page"; place = dir("installer-gxwi/page")}],
+) {
+    = ran(tests, given)
+}
+
+# The tests of the programs that ship as static musl programs, compiled as
+# they ship.
+def test musl(
+    tests: List<List<rust.RustTest>> = for each in ["installerd", "install-tui", "msip-drive", "oobe-tui", "oobed"] {
+        = rust.tests(musl_crates(), each)
+    },
+    given: List<{at: String, place: Dir | File}> = shell(),
+) {
+    let each = for some in tests { = ran(some, given) }
+}
+
+# Each member's documentation tests.
+def test doctests(
+    ran: List<List<{}>> = for each in MEMBERS {
+        = rust.doctests(crates(), each, given = loaded(), env = peios_rs.runtime_env())
+    },
+) {}
+
+# Clippy's checks of each member, every warning denied.
+def test clippy(checked: List<List<{}>> = for each in MEMBERS { = rust.clippy(crates(), each, flags = ["-Dwarnings"]) }) {}
+
+# The browser harness's tests: its development scripts' wiring, run with
+# stand-in programs and busybox's `sh`, and its browser driver's, run by
+# Node.js's test runner.
+def test browser_harness(
+    node: Dir = unpack(fetch(NODE, sha256 = "9a6bc82f9b491279147219f6a18add1e18424dce90d41d2a5fcd69d4924ba3aa")).dir("node-v22.22.1-linux-x64"),
+    harness: Dir = dir("installer-gxwi/dev"),
+    page: Dir = dir("installer-gxwi/page"),
+    c: toolchain.CToolchain = toolchain.get(Toolchain::C),
+    env: BuildEnv = toolchain.get(Toolchain::BuildEnv),
+) {
+    let home = working_dir().path
+    let made = fs.mkdir("{home}/tmp")
+    let placed: List<{at: String, place: Dir | File | FileSet}> = [
+        {at = "/"; place = c.runtime},
+        {at = "/bin"; place = env.root.dir("bin")},
+        {at = "/tmp"; place = dir("{home}/tmp")},
+        {at = "/opt/node"; place = node},
+        {at = "/work/installer-gxwi/dev"; place = harness},
+        {at = "/work/installer-gxwi/page"; place = page},
+    ]
+    let box = fs.compose(placed).sandbox(cwd = "/work", env = {HOME = "/tmp"; PATH = "/bin"; TMPDIR = "/tmp"})
+    let ran = box.exec(
+        "/opt/node/bin/node",
+        "--experimental-vm-modules",
+        "--test",
+        "installer-gxwi/dev/harness-tests.mjs",
+        "installer-gxwi/dev/browser/cdp-tests.mjs",
+        "installer-gxwi/dev/browser/chrome-tests.mjs",
+        "installer-gxwi/dev/browser/exit-status-tests.mjs",
+        "installer-gxwi/dev/browser/ending-state.mjs",
+        "installer-gxwi/dev/browser/requests-tests.mjs",
+    )
+}

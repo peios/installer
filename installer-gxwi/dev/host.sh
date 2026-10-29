@@ -1,13 +1,13 @@
 #!/bin/sh
 # Serve the frontend against a dry-run daemon; no installation is performed.
-# PEIOS_SDK supplies host development libraries. Optional first argument is the
+# pekit builds the programs and libpeios. Optional first argument is the
 # listen address (default 127.0.0.1:7790). Run from any working directory.
 set -eu
 cd "$(dirname "$0")/../.."
 # shellcheck source=installer-gxwi/dev/env.sh
 . installer-gxwi/dev/env.sh
-daemon_binary=$(build_binary //installerd)
-frontend_binary=$(build_binary //installer-gxwi:installer-gxwi)
+daemon_binary=$(build_binary installerd)
+frontend_binary=$(build_binary installer_gxwi)
 run=$(mktemp -d)
 daemon=
 cleanup() {

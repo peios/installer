@@ -16,15 +16,10 @@ RUST_ROOTS = (
     "oobe-tui",
     "oobed",
     "installer-gxwi",
-    "packages",
 )
 SHELL_SOURCES = (
-    "bazel",
     "tools/check",
     "tools/check-docs",
-    "tools/offline-build",
-    "tools/prepare-dev-sdk",
-    "tools/prepare-native-sdk",
 ) + tuple(
     str(path.relative_to(ROOT))
     for base in ("installer-gxwi/dev", "tests/vm")
@@ -63,7 +58,7 @@ def main() -> None:
     )
     python = sorted(
         str(path.relative_to(ROOT))
-        for name in ("tools", "packages", "installer-gxwi/dev")
+        for name in ("tools", "installer-gxwi/dev")
         for path in (ROOT / name).rglob("*.py")
     )
     run(
@@ -92,7 +87,6 @@ def main() -> None:
         for path in (ROOT / name).rglob(pattern)
         if "vendor" not in path.parts and "third-party" not in path.parts
     )
-    styles.extend(str(path.relative_to(ROOT)) for path in (ROOT / "packages").rglob("*.json"))
     styles.extend(str(path.relative_to(ROOT)) for path in (ROOT / ".github").rglob("*.yml"))
     run(
         [
