@@ -1,0 +1,80 @@
+# The installer's programs, each crate compiled on its own (see the rust
+# library's `workspace`): the daemons and terminal interfaces as static musl
+# programs, which run before or without a desktop, and the browser
+# interfaces for glibc, linking libpeios.
+import fs
+import "github.com/gcslib/clang"
+import "github.com/gcslib/rust"
+import "github.com/peios/peios-rs" as peios_rs
+
+# The installer workspace, planned for glibc. `peios-sys` binds libpeios
+# with bindgen and links it, so it, and every crate that depends on it, is
+# given what peios-rs's library says it needs: libpeios and its headers,
+# built from the Peios SDK's own files.
+def crates() -> rust.RustWorkspace {
+    = rust.workspace(
+        dir("."),
+        rust.vendored(file("Cargo.lock")),
+        crates = peios_rs.crate_settings(),
+        libclang = [clang.libclang_18()],
+    )
+}
+
+# The installer workspace, planned for musl, every program a static,
+# position-independent one linked with full RELRO.
+def musl_crates() -> rust.RustWorkspace {
+    let target = "x86_64-unknown-linux-musl"
+    = rust.workspace(
+        dir("."),
+        rust.vendored(file("Cargo.lock")),
+        target = target,
+        rustflags = [...rust.default_rustflags(target), "-Clink-arg=-Wl,-z,relro", "-Clink-arg=-Wl,-z,now"],
+    )
+}
+
+# The installation daemon.
+def build installerd() {
+    = rust.bin(musl_crates(), "installerd")
+}
+
+# The terminal installation interface.
+def build install_tui() {
+    = rust.bin(musl_crates(), "install-tui")
+}
+
+# The installation drive tool.
+def build msip_drive() {
+    = rust.bin(musl_crates(), "msip-drive")
+}
+
+# The first-boot setup daemon.
+def build oobed() {
+    = rust.bin(musl_crates(), "oobed")
+}
+
+# The terminal first-boot interface.
+def build oobe_tui() {
+    = rust.bin(musl_crates(), "oobe-tui")
+}
+
+# The browser installation interface.
+def build installer_gxwi() {
+    = rust.bin(crates(), "installer-gxwi")
+}
+
+# The browser first-boot interface.
+def build oobe_gxwi() {
+    = rust.bin(crates(), "installer-gxwi", name = "oobe-gxwi")
+}
+
+# libpeios, by its soname, in a directory of its own: what the browser
+# interfaces load when the development helpers run them on the host.
+def build libpeios_dir() {
+    = library_dir(peios_rs.runtime())
+}
+
+# The files `placed` in a directory, each at its path's last part.
+#[hermetic]
+fn library_dir(placed: List<{at: String, place: Dir | File}>) -> Dir {
+    = fs.compose(for each in placed { = {at = each.at.split("/")[len(each.at.split("/")) - 1]; place = each.place} })
+}

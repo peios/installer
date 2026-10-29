@@ -1,0 +1,10 @@
+#!/bin/sh
+# The contributor check: owned source style, then pekit's tests, which build
+# every member, run their tests, the static programs' again as they ship,
+# and the browser harness's, and check every member with Clippy.
+set -eu
+
+repo=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+python3 tools/style-check.py
+pekit test

@@ -1,4 +1,5 @@
-# Cargo is a host development interface. Bazel selects static musl for shipped CLI tools.
+# Cargo is a host development interface. pekit builds the shipped terminal
+# programs and daemons as static musl programs.
 [target.x86_64-unknown-linux-musl]
 linker = "rust-lld"
 rustflags = ["-C", "target-feature=+crt-static"]

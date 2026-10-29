@@ -1,108 +1,125 @@
 # Building Peios Installer
 
-Bazel builds all seven programs, runs the repository checks, and assembles
-canonical package blobs and manifests. Linux development builds and native
-Peios builds are separate configurations.
+Use pekit to build the installer's seven programs and run their tests.
+Pekit builds each crate on its own, so a change rebuilds only the crates it
+reaches. The supported development host is x86-64 Linux.
 
-## Prepare a development SDK
+## Before you start
 
-Use Linux on x86-64 and the pinned launcher at the repository root. The
-browser programs require libpeios and matching kernel user API headers.
-Create an SDK from explicitly selected source revisions:
+You need pekit and Git. Everything else is pinned and fetched by pekit on
+the first build: the Bootlin C toolchains, Rust 1.98.1 with Clippy and the
+musl standard library, busybox, Node.js 22, libclang, and the crates
+`Cargo.lock` selects. The first build needs network access; later builds
+find what they need in pekit's store, and every step runs without network
+access in a sandbox that holds only its declared inputs.
 
-```sh
-tools/prepare-dev-sdk <libpeios-source> <kernel-uapi> <sdk-output>
-```
+The build files use the gcslib libraries named in `workspace.gcsl` and the
+build files, and the libraries of peios-rs and the Peios SDK. `pekit lock`
+pins their commits in `pekit.lock`.
 
-Replace the placeholders with absolute paths. `<kernel-uapi>` contains the
-exported `pkm/` headers, and `<sdk-output>` must not exist. Set `PEIOS_SDK`
-to that output directory before invoking Bazel. The helper does not establish
-compatibility between the SDK and a running Peios kernel.
-
-## Build and test
-
-From the repository root, run:
+## Build
 
 ```sh
-./bazel build //:artifacts
-./bazel test //...
-./bazel build //:packages
+pekit build installerd install_tui msip_drive oobed oobe_tui installer_gxwi oobe_gxwi
 ```
 
-The five core programs use static musl builds. `installer-gxwi` and
-`oobe-gxwi` use the GNU target and dynamically link to libpeios. Internal
-Rust libraries and the pinned MSIP dependency are not separate installer
-shared libraries.
+| Target | Output |
+|---|---|
+| `installerd` | Installation daemon |
+| `install_tui` | Terminal installation interface |
+| `msip_drive` | Scripted answers for an installation |
+| `oobed` | First-boot setup daemon |
+| `oobe_tui` | Terminal first-boot interface |
+| `installer_gxwi` | Browser installation interface |
+| `oobe_gxwi` | Browser first-boot interface |
 
-The package store is `bazel-bin/packages.store`. It separates runtime
-programs, debugging data, source, and the installer and first-boot feature
-packages. Feature packages carry registry seeds; producing these packages
-does not apply those seeds or modify the host.
+Pekit prints where each output is, under `pekit-out/<target>/`. The five
+daemons and terminal programs are static, position-independent musl
+programs with no ELF interpreter, linked with full RELRO and immediate
+binding. `installer-gxwi` and `oobe-gxwi` are built for glibc and load
+`libpeios.so.0` by its shared object name (SONAME). Internal Rust
+libraries and the pinned MSIP dependency are not separate installer shared
+libraries.
 
-Run `tools/check` for style and code checks. Set `TRAIL` to a Trail executable
-and run `tools/check-docs` for documentation validation. Package assembly,
-source tests, and documentation checks do not establish runtime installation
-or first-boot qualification.
-
-## Build for Peios
-
-Native builds use the patched Peios Rust toolchain and an explicitly
-prepared native SDK. Within that environment, `tools/prepare-native-sdk`
-creates an SDK view from installed libpeios and kernel headers. Set
-`PEIOS_SDK` and `PEIOS_RUSTC`, then select `--config=peios` in Bazel.
-
-Native payload checks require PIE, full RELRO, non-executable stacks, packed
-relative relocations and split debugging information. The graphical programs
-also require CET properties. The existing static-musl CET-note exemption is
-preserved: Rust code is instrumented, but musl does not enable shadow stacks
-at startup (PEI-1159).
-
-The environment also needs the Rust musl target libraries and musl sysroot
-for the five static programs. Preserve the exact SDK, compiler, dependency,
-and source identities with each build's logs and package hashes.
-
-Acquire dependencies before entering an offline environment:
+## Test
 
 ```sh
-tools/offline-build acquire <snapshot-directory>
+pekit test
 ```
 
-Use an absolute directory outside the checkout. Inside the prepared Peios
-userspace, build and test that snapshot in an isolated work directory:
+| Test | Check |
+|---|---|
+| `installerd`, `install_tui`, `msip_drive`, `msip_tui`, `msip_serve`, `oobe_tui`, `oobed`, `installer_gxwi` | Each member's unit and integration tests |
+| `musl` | The five static programs' tests, compiled as the static musl programs they ship as |
+| `doctests` | Each member's documentation tests |
+| `clippy` | Clippy's checks of every target of every member, with every warning denied |
+| `browser_harness` | The development scripts' wiring, with stand-in programs, and the browser driver's own tests, with Node.js |
+
+installerd's tests that run shell commands are given busybox's `/bin/sh`.
+A test whose inputs did not change is found in the store and not run again.
+Unit tests, the browser harness's tests, and documentation checks do not
+establish runtime installation or first-boot qualification.
+
+For the full contributor check, install the pinned PSC tools into a
+directory outside the repository, then run the shared entry point:
 
 ```sh
-tools/offline-build build <snapshot-directory> <work-directory>
-tools/offline-build test <snapshot-directory> <work-directory>
+python3 tools/prepare-style-tools.py "$HOME/.cache/installer-style"
+export PEIOS_STYLE_BIN="$HOME/.cache/installer-style/bin"
+tools/check
 ```
 
-The work directory is writable scratch space. These commands require the
-native environment described here; they are not a VM provisioning command.
+`tools/check` checks owned source formatting and lint with rustfmt,
+Prettier, ESLint, Ruff, ShellCheck, and shfmt, then runs `pekit test`. The
+style checks use the host's Rust 1.98.1 formatter through rustup. The tool
+versions and hashes are recorded in `tools/style-tools.lock.json`.
+GitHub's workflow runs the style checks alone; builds and tests run with
+pekit. Set `TRAIL` to a Trail executable and run `tools/check-docs` for
+documentation validation.
 
-## Check release reproducibility
-
-Build the same frozen source and dependency snapshot in two new native work
-roots. Preserve both source manifests and build logs. The package stage records
-the unstripped programs used to produce the shipped binaries:
+To check that the programs build reproducibly, build them twice from the
+same inputs and compare the outputs:
 
 ```sh
-tools/offline-build build <snapshot-directory> <work-a>
-tools/offline-build build <snapshot-directory> <work-b>
-python3 tools/check-reproducibility.py \
-    <work-a>/output/execroot/_main <work-b>/output/execroot/_main
+pekit build --rebuild --check-reproducible installerd install_tui msip_drive oobed oobe_tui installer_gxwi oobe_gxwi
 ```
 
-The comparison requires all seven programs, matching versions, and identical
-unstripped bytes, including debugging information. It rejects reuse of the same
-build root. Build provenance also records the selected GNU and musl Rust
-toolchain inputs, compiler version, and SDK input identity. These checks do not
-replace installation and first-boot qualification in a disposable Peios guest.
+## How the build is planned
+
+`build.gcsl` plans the Cargo workspace twice with the gcslib rust library's
+`workspace`: for `x86_64-unknown-linux-musl`, for the static programs, and
+for glibc, for the browser interfaces. Cargo works out each program's
+build, unit by unit, and pekit compiles each unit as a step. Planning reads
+the manifests, `Cargo.lock`, and which files exist, never the sources, so
+editing a source plans nothing again.
+
+Keep Rust dependency versions in the Cargo manifests and `Cargo.lock`, and
+update the lockfile deliberately with Cargo. `peios-sys` generates its
+bindings from the SDK's headers with bindgen and links libpeios, so it, and
+every crate that depends on it, is given what peios-rs's library says it
+needs, `crate_settings()`: libpeios and its headers, built from the Peios
+SDK's own files. The rust library fails a build whose `Cargo.lock` takes
+peios-rs's crates at another commit than `pekit.lock` pins its library at.
+
+## Not built with pekit yet
+
+Packages, debug information, and builds with the native Peios toolchain,
+which hardens programs with control-flow enforcement technology (CET), are
+not yet built with pekit. The package definitions, their payload checks,
+and the native build settings from the Bazel build are kept outside this
+repository until they are. The native payload checks required PIE, full
+RELRO, non-executable stacks, packed relative relocations, split debugging
+information, and, for the graphical programs, CET properties. Static musl
+programs keep their CET-note exemption: Rust code is instrumented, but musl
+does not enable shadow stacks at startup (PEI-1159).
 
 ## Exercise browser interfaces
 
 The host helpers use private sockets and dry-run daemons. From the repository
 root, `installer-gxwi/dev/host.sh` serves the installation at
 `http://127.0.0.1:7790/`, and `installer-gxwi/dev/host-oobe.sh` serves setup
-at `http://127.0.0.1:7791/`. They require the same explicit SDK as the build.
+at `http://127.0.0.1:7791/`. They build the programs, and libpeios for the
+browser interfaces to load, with pekit.
 
 The installation helper reads `installer-gxwi/dev/desktop.json` by default.
 Set `MACHINE` to another synthetic inventory or `FAIL_AT` to a simulated

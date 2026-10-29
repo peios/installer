@@ -30,11 +30,15 @@ function fixture(t) {
     for (const name of ["env.sh", "host.sh", "host-oobe.sh", "boot.sh", "push.sh", "overlay.sh"]) {
         cpSync(join(scripts, name), join(dev, name));
     }
-    const sdk = join(root, "sdk");
-    mkdirSync(join(sdk, "lib"), { recursive: true });
+    mkdirSync(join(root, "lib"));
     mkdirSync(join(root, "bin"));
+    mkdirSync(join(root, "tools"));
     const log = join(root, "calls");
-    const env = { ...process.env, PEIOS_SDK: sdk, CALL_LOG: log };
+    const env = {
+        ...process.env,
+        CALL_LOG: log,
+        PATH: `${join(root, "tools")}:${process.env.PATH}`,
+    };
     for (const name of ["installerd", "oobed", "installer-gxwi", "oobe-gxwi"]) {
         executable(
             join(root, "bin", name),
@@ -46,14 +50,18 @@ ${name.endsWith("d") ? 'touch "$CALL_LOG.ready"' : ""}
         );
     }
     executable(
-        join(root, "bazel"),
+        join(root, "tools", "pekit"),
         `#!/bin/sh
-if [ "$1" = cquery ]; then
-    for arg do target=$arg; done
-    name=\${target##*:}
-    name=\${name##*/}
-    printf '%s/bin/%s\\n' "$PWD" "$name"
-fi
+[ "$1" = build ] || exit 1
+shift
+for target do
+    printf 'built /%s\\n' "$target"
+    if [ "$target" = libpeios_dir ]; then
+        printf '  %s/lib\\n' "$PWD"
+    else
+        printf '  %s/bin/%s\\n' "$PWD" "$(printf '%s' "$target" | tr _ -)"
+    fi
+done
 `,
     );
     return {
@@ -117,7 +125,7 @@ test("boot rejects missing explicit inputs before running a fixture builder", (t
     assert.match(result.stderr, /set IMAGE/);
 });
 
-test("push installs complete Bazel outputs into the explicit share", (t) => {
+test("push installs complete pekit outputs into the explicit share", (t) => {
     const f = fixture(t);
     const share = join(f.root, "vm share");
     mkdirSync(share);

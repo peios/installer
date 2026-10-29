@@ -22,18 +22,17 @@ The browser interfaces link to libpeios; they do not need the Rust GXWI SDK.
 
 ## Build and check
 
-Bazel is the build and packaging interface. With an explicit `PEIOS_SDK`
-prepared as described in [Building](docs/building.md), run:
+Pekit builds the programs and runs their tests, as
+[Building](docs/building.md) describes:
 
 ```sh
-./bazel build //:artifacts
-./bazel test //...
-./bazel build //:packages
+pekit build installerd install_tui msip_drive oobed oobe_tui installer_gxwi oobe_gxwi
+pekit test
 ```
 
-The build guide separates Linux development output, native Peios output,
-and qualification in a disposable guest. Building packages does not install
-Peios or establish that an image boots.
+The build guide separates development builds from qualification in a
+disposable guest. Passing tests do not install Peios or establish that an
+image boots.
 
 ## Documentation
 
