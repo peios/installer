@@ -68,12 +68,7 @@ def test oobed(tests: List<rust.RustTest> = rust.tests(crates(), "oobed")) {
     = ran(tests)
 }
 
-# installer-gxwi's tests, which read the page's scripts from its
-# directory, where Cargo's `CARGO_MANIFEST_DIR` says it is.
-def test installer_gxwi(
-    tests: List<rust.RustTest> = rust.tests(crates(), "installer-gxwi"),
-    given: List<{at: String, place: Dir | File}> = [...loaded(), {at = "/work/src/installer-gxwi/page"; place = dir("installer-gxwi/page")}],
-) {
+def test installer_gxwi(tests: List<rust.RustTest> = rust.tests(crates(), "installer-gxwi"), given: List<{at: String, place: Dir | File}> = loaded()) {
     = ran(tests, given)
 }
 
