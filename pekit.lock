@@ -48,8 +48,8 @@
       "path": "github.com/gcslib/buildenv",
       "git": "https://github.com/gcslib/buildenv",
       "dir": "",
-      "commit": "533389a1cdade6dfb71afaf609bf13c22285dd17",
-      "tree": "a550d562a8baa002c5979c5c635467544e8ff970decd7e97472836193242c6b8"
+      "commit": "79dad06c0f89458f405695ef05f20956c633f7be",
+      "tree": "5c98902139af8ae9477077eb39b7f2c423f7587385b0ccd17a663666cf8f330f"
     },
     {
       "path": "github.com/gcslib/clang",
@@ -76,8 +76,8 @@
       "path": "github.com/gcslib/rust",
       "git": "https://github.com/gcslib/rust",
       "dir": "",
-      "commit": "ee64226b87efdf8dcc243a503076e46f3ff219e2",
-      "tree": "57293539e9a719911ee92079d6c039df6196d57df98c8d3a848e845cca08c458"
+      "commit": "a6428e662ddbf0dc59a381c82f41648c7e08df10",
+      "tree": "7c08d3ff3627e8f9197c56c2ec2f557ebf9053699e780e6b5a3b3d87f1f576de"
     },
     {
       "path": "github.com/peios/peios-rs",
