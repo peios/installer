@@ -13,7 +13,7 @@ publish.workspace = true
 axum = { version = "0.8.9", features = ["http2", "ws"] }
 # First-party Rust dependencies are pinned to immutable commits.
 msip = { workspace = true }
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "b2282f654758831e4a2e34c7b35c26e61a6ebe1c", package = "peios" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116", package = "peios" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
