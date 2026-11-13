@@ -16,8 +16,8 @@ Check the whole USB device by model, size, and resolved identity; unmount its
 filesystems before writing and wait for a successful flushed write. A stable
 name does not replace checking the target.
 
-The retained live-boot hook expects a medium exposing the image filesystem
-and `rootfs.squashfs`. A multi-image loader that merely exposes an ISO file is
+The live boot hook looks for a disk, disc, or stick holding the medium's
+ISO 9660 filesystem. A multi-image loader that merely exposes an ISO file is
 not established as supported. If the boot hook cannot find its medium, check
 the image write and device discovery before rewriting or changing firmware.
 
