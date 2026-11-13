@@ -1027,7 +1027,7 @@ dependencies = [
 [[package]]
 name = "peios-uapi"
 version = "0.1.0"
-source = "git+https://github.com/peios/ppk?rev=6eda18048a212ba382735a065d3c4bd6374a02cf#6eda18048a212ba382735a065d3c4bd6374a02cf"
+source = "git+https://github.com/peios/ppk?rev=9fb623cb108a6c7eca62e40c86976e480286091f#9fb623cb108a6c7eca62e40c86976e480286091f"
 
 [[package]]
 name = "percent-encoding"
@@ -1050,7 +1050,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 [[package]]
 name = "ppk"
 version = "0.1.0"
-source = "git+https://github.com/peios/ppk?rev=6eda18048a212ba382735a065d3c4bd6374a02cf#6eda18048a212ba382735a065d3c4bd6374a02cf"
+source = "git+https://github.com/peios/ppk?rev=9fb623cb108a6c7eca62e40c86976e480286091f#9fb623cb108a6c7eca62e40c86976e480286091f"
 dependencies = [
  "anyhow",
  "base64",
@@ -1223,7 +1223,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1498,7 +1498,7 @@ dependencies = [
  "getrandom",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1508,7 +1508,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.6",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
