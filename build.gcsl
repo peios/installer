@@ -6,16 +6,18 @@ import fs
 import "github.com/gcslib/clang"
 import "github.com/gcslib/rust"
 import "github.com/peios/peios-rs" as peios_rs
+import "github.com/peios/ppk"
 
 # The installer workspace, planned for glibc. `peios-sys` binds libpeios
 # with bindgen and links it, so it, and every crate that depends on it, is
 # given what peios-rs's library says it needs: libpeios and its headers,
-# built from the Peios SDK's own files.
+# built from the Peios SDK's own files. installerd links ppk, whose crates
+# need what ppk's library says they do.
 def crates() -> rust.RustWorkspace {
     = rust.workspace(
         dir("."),
         rust.vendored(file("Cargo.lock")),
-        crates = peios_rs.crate_settings(),
+        crates = [...peios_rs.crate_settings(), ...ppk.crate_settings()],
         libclang = [clang.libclang_18()],
     )
 }
@@ -29,6 +31,7 @@ def musl_crates() -> rust.RustWorkspace {
         rust.vendored(file("Cargo.lock")),
         target = target,
         rustflags = [...rust.default_rustflags(target), "-Clink-arg=-Wl,-z,relro", "-Clink-arg=-Wl,-z,now"],
+        crates = ppk.crate_settings(),
     )
 }
 
