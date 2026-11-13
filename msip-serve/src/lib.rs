@@ -13,10 +13,10 @@
 //! turned away.
 
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
+use std::time::Instant;
 
 use serde_json::{Map, Value};
 
@@ -37,7 +37,7 @@ pub mod browser;
 mod console;
 mod writer;
 
-use writer::{Outgoing, Writer, DRAIN_TIMEOUT};
+use writer::{DRAIN_TIMEOUT, Outgoing, Writer};
 
 /// Say something operational, where a boot can see it.
 ///

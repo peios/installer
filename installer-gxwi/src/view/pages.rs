@@ -1,8 +1,8 @@
 //! Construct each browser page from the corresponding MSIP turn.
 
 use super::{
-    Action, Choice, DISKS, DOING, Disk, Field, INTERFACES, NETWORK, PLANNED, Page, Phase, Planned,
-    Row, SUMMARY, LOG_TAIL_LINES, element, enabled, purpose, rows, said, table_rows, text,
+    Action, Choice, DISKS, DOING, Disk, Field, INTERFACES, LOG_TAIL_LINES, NETWORK, PLANNED, Page,
+    Phase, Planned, Row, SUMMARY, element, enabled, purpose, rows, said, table_rows, text,
 };
 use msip::element::types;
 use msip::msg::Turn;

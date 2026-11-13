@@ -32,21 +32,14 @@
 //! medium's queue from the target and promote the installed machine's.
 //! See [`Real::settle_seed_queues`].
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::process::Command;
 
-use crate::copying;
-use crate::executor::{Disk, ESP_MIB, Executor, JobKind, Phase, Progress, Release, size_text};
+use crate::executor::{Disk, ESP_MIB, Executor, JobKind, Phase, Progress, Release};
 use crate::executor::{
     INSTALL_PHASES, REPAIR_BOOT_PHASES, REPAIR_FSCK_PHASES, REPAIR_SD_PHASES, UPGRADE_PHASES,
 };
 use crate::inspect;
-use crate::medium_packages::{self, LIVE_BOOT_PACKAGE, MEDIUM_REPO, REMOVALS_REL};
-
-/// How often a command that is being watched is looked in on.
-const WATCH_EVERY: Duration = Duration::from_millis(200);
 
 /// Written to the root inode at format time, and seeded onto the ESP's
 /// mount. Kept identical to the script's and to live-boot's, because a
@@ -55,7 +48,18 @@ const WATCH_EVERY: Duration = Duration::from_millis(200);
 const ROOT_SDDL: &str =
     "O:SYG:SYD:(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;WD)(A;OICIIO;GA;;;S-1-3-0)";
 
-const CMDLINE_TEMPLATE_REL: &str = "usr/share/disk-boot/cmdline";
+/// The installed system's package store, where its closures are, relative
+/// to its root.
+const STORE_REL: &str = "system/artifacts";
+
+/// Where the installed system keeps what its boot files are built from:
+/// its initramfs's profile and the initramfs image.
+const BOOT_REL: &str = "system/boot";
+
+/// What the medium says an installed system is composed from (peiso):
+/// the profiles of its SYSTEM and INITRAMFS closures.
+const INSTALL_SYSTEM: &str = "install/system.toml";
+const INSTALL_INITRAMFS: &str = "install/initramfs.toml";
 
 /// Where gxwid keeps this machine's key and certificate (gxwid(1)).
 const GXWI_KEYS: &str = "/var/state/gxwi";
@@ -85,9 +89,6 @@ impl Real {
     }
     fn root_mnt(&self) -> PathBuf {
         self.work.join("root")
-    }
-    fn lower_mnt(&self) -> PathBuf {
-        self.work.join("lower")
     }
     /// Where a disk is mounted read-only to be looked at, which is a
     /// different place from where it is mounted to be changed so that
@@ -132,96 +133,6 @@ impl Real {
             .ok_or_else(|| format!("{program} was killed"))
     }
 
-    /// Run a command as [`Real::run`] does, calling `watch` every so often
-    /// while it runs and once more when it is over. For a command that
-    /// takes long enough to be worth saying how far along it is, and does
-    /// not say so itself.
-    fn run_watched(
-        &self,
-        p: &dyn Progress,
-        program: &str,
-        args: &[&str],
-        watch: &mut dyn FnMut(),
-    ) -> Result<(), String> {
-        p.log(format!("$ {program} {}", args.join(" ")));
-        let mut child = Command::new(program)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("could not run {program}: {e}"))?;
-        // Both streams are read as they come. Left until the command is
-        // over, one that said more than a pipe holds would wait for ever
-        // to be read, and this would wait for ever for it to finish.
-        let said: Vec<_> = [
-            child
-                .stdout
-                .take()
-                .map(|s| Box::new(s) as Box<dyn Read + Send>),
-            child
-                .stderr
-                .take()
-                .map(|s| Box::new(s) as Box<dyn Read + Send>),
-        ]
-        .into_iter()
-        .flatten()
-        .map(|mut stream| {
-            std::thread::spawn(move || {
-                let mut all = Vec::new();
-                let _ = stream.read_to_end(&mut all);
-                all
-            })
-        })
-        .collect();
-        // The wait is another thread's, so that the end is heard the
-        // moment it comes and not at the next look.
-        let (ended, end) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = ended.send(child.wait());
-        });
-        let status = loop {
-            match end.recv_timeout(WATCH_EVERY) {
-                Ok(status) => break status,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => watch(),
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(format!("lost track of {program}"));
-                }
-            }
-        };
-        watch();
-        for stream in said {
-            let stream = stream.join().unwrap_or_default();
-            for line in String::from_utf8_lossy(&stream).lines() {
-                if !line.trim().is_empty() {
-                    p.log(format!("  {line}"));
-                }
-            }
-        }
-        match status
-            .map_err(|e| format!("could not wait for {program}: {e}"))?
-            .code()
-        {
-            Some(0) => Ok(()),
-            Some(c) => Err(format!("{program} failed (exit {c})")),
-            None => Err(format!("{program} was killed")),
-        }
-    }
-
-    /// Whether `name` is installed in the peipkg root at `root`.
-    ///
-    /// `peipkg info` answers with its exit status; its output is not
-    /// wanted here and is not logged, so a missing package is a quiet
-    /// `false` rather than a red line in the log for a question this
-    /// only asked to decide what to do next.
-    fn package_installed(&self, root: &str, name: &str) -> bool {
-        Command::new("peipkg")
-            .args(["--root", root, "info", name])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
     fn capture(&self, program: &str, args: &[&str]) -> Result<String, String> {
         let out = Command::new(program)
             .args(args)
@@ -233,34 +144,16 @@ impl Real {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
-    /// The release a peipkg root holds: its edition from the os-release
-    /// the edition package wrote, its version from peipkg's own record
-    /// of that package. `root` is `/` for the running medium.
-    ///
-    /// Derived the way `upgrade-peios` derives it, so the two agree on
-    /// which package an edition is.
-    fn release_in(root: &Path) -> Result<Release, String> {
-        let os_release = root.join("usr/lib/os-release");
-        let text = std::fs::read_to_string(&os_release)
-            .map_err(|_| "no Peios system here (no usr/lib/os-release)".to_string())?;
-        let edition = edition_of(&text)?;
-        let mut cmd = Command::new("peipkg");
-        if root != Path::new("/") {
-            cmd.arg("--root").arg(root);
-        }
-        let out = cmd
-            .args(["info", &edition])
-            .output()
-            .map_err(|e| format!("could not run peipkg: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "{edition} is not recorded as installed here: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
-        let version = version_of(&String::from_utf8_lossy(&out.stdout))
-            .ok_or_else(|| format!("peipkg info {edition} did not report a version"))?;
-        Ok(Release { edition, version })
+    /// The release the `/usr` tree at `usr` holds: its edition from the
+    /// os-release the edition package ships, and its version from the
+    /// closure's inventory of that package. A tree with no os-release, such
+    /// as a development image without an edition, is named by its closure.
+    fn release_in(usr: &Path) -> Result<Release, String> {
+        let inventory = ppk::read_inventory(usr)
+            .map_err(|e| format!("{}: {e:#}", usr.display()))?
+            .ok_or_else(|| format!("no Peios system here (no {}/inventory)", usr.display()))?;
+        let os_release = std::fs::read_to_string(usr.join("lib/os-release")).ok();
+        release_from(os_release.as_deref(), &inventory)
     }
 
     fn is_block_device(path: &str) -> bool {
@@ -327,7 +220,7 @@ impl Real {
     }
 
     fn unmount_all(&self, p: &dyn Progress) {
-        for m in [self.esp_mnt(), self.root_mnt(), self.lower_mnt()] {
+        for m in [self.esp_mnt(), self.root_mnt()] {
             let _ = self.run(p, "umount", &[m.to_string_lossy().as_ref()]);
         }
     }
@@ -449,116 +342,106 @@ impl Real {
         )
     }
 
-    /// Mount the shipped image read-only and copy it onto the target.
-    fn copy_system(&self, p: &dyn Progress) -> Result<(), String> {
-        let image = self.medium.join("rootfs.squashfs");
-        if !image.exists() {
-            return Err(format!(
-                "{} is not there; the install medium must be mounted to copy from",
-                image.display()
-            ));
+    /// The target's package store, where its closures are too.
+    fn target_store(&self) -> PathBuf {
+        self.root_mnt().join(STORE_REL)
+    }
+
+    /// Compose the installed system on the mounted target from the
+    /// medium: fetch every package its two closures need from the medium's
+    /// store into the target's, build the closures and name them `SYSTEM`
+    /// and `INITRAMFS` (PSPU 5.27), give the root what its skeleton file
+    /// says it holds outside `/usr`, and carry the medium's local policy.
+    fn install_system(&self, p: &dyn Progress) -> Result<(), String> {
+        let medium_store = self.medium.join("artifacts");
+        let store = self.target_store();
+        let closures = store.join(ppk::CLOSURE_SUBDIR);
+        let mut places = Vec::new();
+        for (name, file) in [
+            (ppk::SYSTEM, INSTALL_SYSTEM),
+            (ppk::INITRAMFS, INSTALL_INITRAMFS),
+        ] {
+            let path = self.medium.join(file);
+            let profile = ppk::Profile::read(&path).map_err(|_| {
+                format!(
+                    "this medium holds no {}; it was built from a spec with nothing to install",
+                    path.display()
+                )
+            })?;
+            let ids = ppk::resolve(
+                &profile.packages,
+                std::slice::from_ref(&medium_store),
+                profile.arch(),
+            )
+            .map_err(|e| format!("resolving {}: {e:#}", path.display()))?
+            .ids();
+            places.push((name, profile, ids));
         }
-        std::fs::create_dir_all(self.lower_mnt()).map_err(|e| e.to_string())?;
+        let mut all: Vec<&ppk::PackageId> = Vec::new();
+        for id in places.iter().flat_map(|(_, _, ids)| ids) {
+            if !all.contains(&id) {
+                all.push(id);
+            }
+        }
+        p.log(format!("copying {} packages from the medium", all.len()));
+        for (n, id) in all.iter().enumerate() {
+            ppk::fetch(id, &medium_store, &store).map_err(|e| format!("copying {id}: {e:#}"))?;
+            p.phase("phase.copy", ((n + 1) * 90 / all.len().max(1)) as u8);
+        }
+        for (name, profile, ids) in &places {
+            let closed = ppk::closure_for(
+                ids,
+                &profile.packages,
+                &store,
+                &closures,
+                ppk::UsrFiles::Hardlink,
+            )
+            .map_err(|e| format!("composing {name}: {e:#}"))?;
+            let identity: ppk::Identity = closed.identity.parse().map_err(|e| format!("{e:#}"))?;
+            ppk::name_closure(&closures, name, &identity)
+                .map_err(|e| format!("naming {name}: {e:#}"))?;
+            p.log(format!("{name} is {identity}"));
+        }
+        // The initramfs's profile stays on the disk, so that repairing the
+        // boot files can compose the initramfs again from the disk alone.
+        let boot = self.root_mnt().join(BOOT_REL);
+        std::fs::create_dir_all(&boot).map_err(|e| format!("{}: {e}", boot.display()))?;
+        std::fs::copy(
+            self.medium.join(INSTALL_INITRAMFS),
+            boot.join("initramfs.toml"),
+        )
+        .map_err(|e| format!("keeping the initramfs's profile: {e}"))?;
 
-        // Our own loop device, not `mount -o loop`: the live system
-        // booted from this very file, so a loop device is already bound
-        // to it and mount would reuse that one, whose superblock is
-        // already mounted where we cannot reach it (see loopdev).
-        let loopdev = crate::loopdev::LoopDevice::attach_readonly(&image)
-            .map_err(|e| format!("could not attach a loop device to {}: {e}", image.display()))?;
-        p.log(format!(
-            "{} attached to {}",
-            image.display(),
-            loopdev.path().display()
-        ));
-
-        // `policy=synth-ephemeral` is what live-boot mounts the lower
-        // with: the image ships no descriptors, so KACS synthesises one
-        // per inode in memory. That is what `cp -a` then carries onto
-        // the target -- the same descriptors the merged-view copy
-        // carried before.
-        self.mount(
+        // /usr is where the boot hook mounts SYSTEM; the rest of the root
+        // is the skeleton file's (PSPU 11).
+        let root = self.root_mnt();
+        std::fs::create_dir_all(root.join("usr")).map_err(|e| e.to_string())?;
+        let system = closures.join(ppk::SYSTEM);
+        self.run(
             p,
+            "skeleton",
             &[
-                "-o",
-                "ro,policy=synth-ephemeral",
-                "-t",
-                "squashfs",
-                loopdev.path().to_string_lossy().as_ref(),
-                self.lower_mnt().to_string_lossy().as_ref(),
+                "apply",
+                "--file",
+                system.join("share/skeleton").to_string_lossy().as_ref(),
+                root.to_string_lossy().as_ref(),
             ],
         )?;
-
-        let mut entries: Vec<PathBuf> = std::fs::read_dir(self.lower_mnt())
-            .map_err(|e| format!("cannot read the mounted image: {e}"))?
-            .flatten()
-            .map(|e| e.path())
-            .collect();
-        entries.sort();
-        if entries.is_empty() {
-            return Err("the mounted image is empty".into());
-        }
-
-        // -a and nothing else: owner, DACL, SACL, timestamps, links,
-        // exec and the xattr namespaces, all required — so anything that
-        // cannot be carried across is an error rather than a silent
-        // downgrade. -x for nested mounts, though a freshly-mounted
-        // squashfs has none: the image ships /proc, /sys, /dev and /run
-        // as the empty directories the boot will mount over.
-        //
-        // The phase follows how much has been written, not which entry
-        // is being copied: /usr is nearly all of it and comes almost
-        // last (see `copying`). What the image will come to is worked
-        // out first, and the target says how much of that it holds.
-        let target = self.root_mnt();
-        let measured = inspect::room(&target).and_then(|(before, block)| {
-            let total = copying::room_for(&self.lower_mnt(), block);
-            (total > 0).then_some((before, total))
-        });
-        match measured {
-            Some((_, total)) => p.log(format!("{} to copy", size_text(total))),
-            None => p.log("could not measure the image; the copy is reported by entry".into()),
-        }
-        let count = entries.len();
-        let mut reached = 0;
-        for (i, entry) in entries.iter().enumerate() {
-            if measured.is_none() {
-                p.phase("phase.copy", ((i * 100) / count) as u8);
-            }
-            let name = entry
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            p.log(format!("copying /{name}"));
-            self.run_watched(
+        let lcl = self.medium.join("lcl");
+        if lcl.is_dir() {
+            p.log("copying the medium's local policy".into());
+            self.run(
                 p,
                 "cp",
                 &[
-                    "-ax",
-                    entry.to_string_lossy().as_ref(),
-                    &format!("{}/", target.display()),
+                    "-a",
+                    lcl.to_string_lossy().as_ref(),
+                    &format!("{}/", root.display()),
                 ],
-                &mut || {
-                    let Some((before, total)) = measured else {
-                        return;
-                    };
-                    let Some(now) = inspect::used_bytes(&target) else {
-                        return;
-                    };
-                    // Only ever onward, and only when it has moved: each
-                    // report goes to every surface watching.
-                    let at = copying::percent(now.saturating_sub(before), total);
-                    if at > reached {
-                        reached = at;
-                        p.phase("phase.copy", at);
-                    }
-                },
-            )
-            .map_err(|e| format!("copying /{name}: {e}"))?;
+            )?;
         }
         p.phase("phase.copy", 100);
-        self.run(p, "umount", &[self.lower_mnt().to_string_lossy().as_ref()])
+        Ok(())
     }
 
     /// GXWI's key and certificate, from this medium into the system it
@@ -655,149 +538,25 @@ impl Real {
         std::fs::remove_dir_all(&staged).map_err(|e| format!("removing {}: {e}", staged.display()))
     }
 
-    /// Turn a copy of the medium into a system that boots from disk:
-    /// the package swap, then the boot files.
+    /// Turn a composed target into a system that boots from disk.
     fn make_bootable(&self, p: &dyn Progress, root_part: &str) -> Result<(), String> {
         p.phase("phase.boot", 5);
         self.settle_seed_queues(p)?;
-        self.swap_boot_packages(p)?;
         self.write_boot_files(p, root_part)
     }
 
-    /// Rewrite the boot files of a system already on the disk.
-    ///
-    /// Only the files: the kernel and the initramfs tree are packages
-    /// on the disk, and this regenerates the cmdline, the initramfs
-    /// image and the UKI from them. It does not reinstall disk-boot
-    /// from the medium -- a machine upgraded since it was installed
-    /// may hold a newer one than the medium does, and touching the
-    /// installed system's repository list is not what "repair boot
-    /// files" asked for.
-    ///
-    /// The one disk that still wants the swap is a half-finished
-    /// install, where the copy landed and boot setup died. Its removal
-    /// checkpoint survives even if live-boot has already been removed;
-    /// older media are also recognised by the live-boot package.
+    /// Rewrite the boot files of a system already on the disk, from what the
+    /// disk holds: its `INITRAMFS` closure's profile and `SYSTEM`'s kernel.
     fn repair_boot(&self, p: &dyn Progress, root_part: &str) -> Result<(), String> {
-        let root_s = self.root_mnt().to_string_lossy().into_owned();
         p.phase("phase.boot", 5);
-        if self
-            .root_mnt()
-            .join(REMOVALS_REL)
-            .try_exists()
-            .map_err(|e| format!("checking medium-only package checkpoint: {e}"))?
-            || self.package_installed(&root_s, LIVE_BOOT_PACKAGE)
-        {
-            p.log("the disk still carries medium installation state: finishing the install".into());
-            self.settle_seed_queues(p)?;
-            self.swap_boot_packages(p)?;
-        } else {
-            p.log("disk-boot is in place; regenerating the boot files from the disk".into());
-        }
         self.write_boot_files(p, root_part)
     }
 
-    /// Move the mounted system to the release this medium carries.
-    ///
-    /// The edition first, then everything else. The edition step is
-    /// `upgrade-peios`' first step done here rather than by it, for one
-    /// reason: a medium is a read-only artifact whose repository index
-    /// is fixed at manufacture, so an image older than the trusted age
-    /// is stale and cannot become fresh, and `--allow-stale` is how the
-    /// one operation that knows that is expected says so. upgrade-peios
-    /// has no way to pass it on. Its second half -- staging the new
-    /// release's seeds for the next boot -- is exactly what
-    /// `--seeds-only` runs, so that part is still its.
-    ///
-    /// The second `peipkg upgrade` names nothing and so reconciles
-    /// every root under the target, the initramfs included, against
-    /// the medium: the edition floors its dependencies rather than
-    /// pinning them, so upgrading it alone brings forward only what its
-    /// floors demand, and the point of an upgrade from a fresh build is
-    /// to see the whole of it.
-    fn upgrade(&self, p: &dyn Progress) -> Result<Release, String> {
-        let root = self.root_mnt();
-        let root_s = root.to_string_lossy().into_owned();
-        p.phase("phase.upgrade", 2);
-        let have = Self::release_in(&root)?;
-        let carry = Self::release_in(Path::new("/"))?;
-        if have.edition != carry.edition {
-            return Err(format!(
-                "{} cannot be moved to {}",
-                have.edition, carry.edition
-            ));
-        }
-        if !crate::version::is_newer(&carry.version, &have.version)? {
-            return Err(format!(
-                "nothing to do: the disk holds {} and this medium carries {}",
-                have.version, carry.version
-            ));
-        }
-        p.log(format!("upgrading {} to {}", have.text(), carry.text()));
-        self.run(
-            p,
-            "peipkg",
-            &["--root", &root_s, "repo", "add", MEDIUM_REPO],
-        )?;
-        p.phase("phase.upgrade", 10);
-        let result = (|| {
-            self.run(
-                p,
-                "peipkg",
-                &[
-                    "--root",
-                    &root_s,
-                    "upgrade",
-                    &carry.edition,
-                    "--bypass-alternate-upgrade",
-                    "--yes",
-                    "--allow-stale",
-                ],
-            )?;
-            p.phase("phase.upgrade", 45);
-            self.run(p, "upgrade-peios", &["--root", &root_s, "--seeds-only"])?;
-            p.phase("phase.upgrade", 55);
-            self.run(
-                p,
-                "peipkg",
-                &["--root", &root_s, "upgrade", "--yes", "--allow-stale"],
-            )?;
-            p.phase("phase.upgrade", 95);
-            Ok(())
-        })();
-        // The medium will not be there when the target boots, so its
-        // repository must not stay configured whether or not the
-        // upgrade got through.
-        let removed = self.run(
-            p,
-            "peipkg",
-            &["--root", &root_s, "repo", "remove", MEDIUM_REPO],
-        );
-        result.and(removed)?;
-        let now = Self::release_in(&root)?;
-        p.phase("phase.upgrade", 100);
-        Ok(now)
-    }
-
-    /// Remove the medium's declared temporary packages and install disk-boot.
-    fn swap_boot_packages(&self, p: &dyn Progress) -> Result<(), String> {
-        medium_packages::finish_copy(&self.root_mnt(), |args| {
-            if args.get(2) == Some(&"list") {
-                self.capture("peipkg", args)
-            } else {
-                self.run(p, "peipkg", args).map(|()| String::new())
-            }
-        })
-    }
-
-    /// Write the cmdline, rebuild the initramfs and place the UKI, all
-    /// from what is on the disk.
+    /// Write the cmdline, build the initramfs and place the UKI, all from
+    /// what is on the disk.
     fn write_boot_files(&self, p: &dyn Progress, root_part: &str) -> Result<(), String> {
         let root = self.root_mnt();
-        let root_s = root.to_string_lossy().into_owned();
-        let irf_root = format!("{root_s}/boot/initramfs");
-
-        p.phase("phase.boot", 45);
+        p.phase("phase.boot", 20);
         // The kernel has no udev here, so /dev/disk/by-uuid is empty and
         // the UUID has to be read from the device itself.
         let uuid = self
@@ -806,56 +565,106 @@ impl Real {
             .find(|l| !l.trim().is_empty())
             .map(|l| l.trim().to_string())
             .ok_or_else(|| format!("could not read the UUID of {root_part}"))?;
-
-        let template_path = root.join(CMDLINE_TEMPLATE_REL);
-        let template = std::fs::read_to_string(&template_path).map_err(|_| {
-            format!("the target has no {CMDLINE_TEMPLATE_REL}; the disk-boot install did not land")
-        })?;
+        // The consoles this medium was booted with, which the installed
+        // system keeps, then the root.
+        let consoles: Vec<String> = std::fs::read_to_string("/proc/cmdline")
+            .unwrap_or_default()
+            .split_whitespace()
+            .filter(|word| word.starts_with("console="))
+            .map(str::to_owned)
+            .collect();
+        let mut cmdline = consoles.join(" ");
+        if !cmdline.is_empty() {
+            cmdline.push(' ');
+        }
+        cmdline.push_str(&format!("root=UUID={uuid}\n"));
         std::fs::create_dir_all(root.join("lcl/etc/boot")).map_err(|e| e.to_string())?;
-        let cmdline = format!("{} root=UUID={}\n", template.trim(), uuid);
         std::fs::write(root.join("lcl/etc/boot/cmdline"), &cmdline).map_err(|e| e.to_string())?;
         p.log(format!("cmdline: {}", cmdline.trim()));
 
-        // The swap is verified rather than assumed: an installer that
-        // silently half does its job is worse than one that stops.
-        let hooks = Path::new(&irf_root).join("usr/libexec/prelude/hooks.d");
-        if !hooks.join("mount-root-disk.sh").is_file() {
-            return Err("the target's initramfs has no disk-boot root-mount hook".into());
+        // The initramfs, composed in scratch from the disk's store. Copied,
+        // not linked: the scratch is a tmpfs, the store is on the disk.
+        p.phase("phase.boot", 40);
+        let store = self.target_store();
+        let profile_path = root.join(BOOT_REL).join("initramfs.toml");
+        let profile = ppk::Profile::read(&profile_path)
+            .map_err(|e| format!("{}: {e:#}", profile_path.display()))?;
+        let ids = ppk::resolve(
+            &profile.packages,
+            std::slice::from_ref(&store),
+            profile.arch(),
+        )
+        .map_err(|e| format!("resolving the initramfs from the disk: {e:#}"))?
+        .ids();
+        let irf = self.work.join("initramfs");
+        let _ = std::fs::remove_dir_all(&irf);
+        let extras = ppk::Extras {
+            symlinks: profile.symlinks.clone(),
+            dirs: profile.dirs.clone(),
+            files: ppk::UsrFiles::Copy,
+            ..ppk::Extras::default()
+        };
+        ppk::compose_env_for(&ids, &profile.packages, &store, &irf, &extras)
+            .map_err(|e| format!("composing the initramfs: {e:#}"))?;
+        let skeleton = irf.join("usr/share/skeleton");
+        if skeleton.is_file() {
+            self.run(
+                p,
+                "skeleton",
+                &[
+                    "apply",
+                    "--file",
+                    skeleton.to_string_lossy().as_ref(),
+                    irf.to_string_lossy().as_ref(),
+                ],
+            )?;
         }
-        if hooks.join("mount-root.sh").is_file() {
-            return Err("the target's initramfs still carries live-boot's root-mount hook".into());
+        let hooks = irf.join("usr/libexec/prelude/hooks.d");
+        if !hooks.join("ppk-disk-root").is_file() {
+            return Err("the installed system's initramfs has no disk-root boot hook".into());
         }
-
+        if hooks.join("ppk-live-root").is_file() {
+            return Err(
+                "the installed system's initramfs holds the live medium's boot hook".into(),
+            );
+        }
         p.phase("phase.boot", 60);
-        let target_initramfs = format!("{root_s}/system/boot/initramfs.cpio.zst");
+        let image = root.join(BOOT_REL).join("initramfs.cpio.zst");
         self.run(
             p,
             "mkirf",
             &[
-                &irf_root,
-                &target_initramfs,
+                irf.to_string_lossy().as_ref(),
+                image.to_string_lossy().as_ref(),
                 "--compress",
                 "zstd",
-                "--exclude",
-                "var/state/peipkg",
-                "--exclude",
-                "lcl/conf/peipkg",
             ],
         )?;
+        let _ = std::fs::remove_dir_all(&irf);
 
         p.phase("phase.boot", 85);
-        let kernel = self.kernel_path(&root_s)?;
+        // One kernel per closure, at a fixed path (PSPU 5.14).
+        let kernel = store
+            .join(ppk::CLOSURE_SUBDIR)
+            .join(ppk::SYSTEM)
+            .join("lib/modules/vmlinuz");
+        if !kernel.is_file() {
+            return Err(format!(
+                "the SYSTEM closure has no kernel at {}",
+                kernel.display()
+            ));
+        }
         std::fs::create_dir_all(self.esp_mnt().join("EFI/BOOT")).map_err(|e| e.to_string())?;
         self.run(
             p,
             "mkuki",
             &[
                 "--kernel",
-                &kernel,
+                kernel.to_string_lossy().as_ref(),
                 "--initramfs",
-                &target_initramfs,
+                image.to_string_lossy().as_ref(),
                 "--cmdline-file",
-                &format!("{root_s}/lcl/etc/boot/cmdline"),
+                &format!("{}/lcl/etc/boot/cmdline", root.display()),
                 "--out",
                 &format!("{}/EFI/BOOT/BOOTX64.EFI", self.esp_mnt().display()),
             ],
@@ -863,36 +672,6 @@ impl Real {
         self.run(p, "sync", &[])?;
         p.phase("phase.boot", 100);
         Ok(())
-    }
-
-    /// The kernel to bundle into the UKI, found on the TARGET at
-    /// `usr/lib/modules/*/vmlinuz-*`. Globbed rather than hardcoded --
-    /// the release is in both the directory and the filename -- and an
-    /// image carrying two is a refusal rather than a guess.
-    fn kernel_path(&self, root: &str) -> Result<String, String> {
-        let modules = format!("{root}/usr/lib/modules");
-        let mut found: Vec<PathBuf> = Vec::new();
-        for release in std::fs::read_dir(&modules)
-            .map_err(|e| format!("cannot read {modules}: {e}"))?
-            .flatten()
-        {
-            let Ok(entries) = std::fs::read_dir(release.path()) else {
-                continue;
-            };
-            for f in entries.flatten() {
-                let name = f.file_name().to_string_lossy().into_owned();
-                if name.starts_with("vmlinuz-") && f.path().is_file() {
-                    found.push(f.path());
-                }
-            }
-        }
-        match found.len() {
-            0 => Err(format!("no kernel found under {modules}/*/vmlinuz-*")),
-            1 => Ok(found.remove(0).to_string_lossy().into_owned()),
-            n => Err(format!(
-                "{n} kernels found under {modules}; refusing to guess"
-            )),
-        }
     }
 }
 
@@ -926,8 +705,8 @@ impl Executor for Real {
 
     fn medium_release(&self) -> Result<Release, String> {
         // The medium is the running system: what it carries is what it
-        // booted, and its package database says which release that is.
-        Self::release_in(Path::new("/"))
+        // booted, and its closure's inventory says which release that is.
+        Self::release_in(Path::new("/usr"))
     }
 
     /// Mount the disk's root where nothing can write to it, read which
@@ -997,12 +776,26 @@ pub fn edition_of(os_release: &str) -> Result<String, String> {
     }
 }
 
-/// The `version:` line of `peipkg info`.
-pub fn version_of(info: &str) -> Option<String> {
-    info.lines()
-        .find_map(|l| l.strip_prefix("version:"))
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
+/// The release a closure is: its edition from `os_release`, and the
+/// edition package's version from `inventory`. A closure with no
+/// os-release, such as a development image's without an edition, is named
+/// by its identity.
+pub fn release_from(
+    os_release: Option<&str>,
+    inventory: &ppk::Inventory,
+) -> Result<Release, String> {
+    let Some(text) = os_release else {
+        return Ok(Release {
+            edition: "Peios".to_owned(),
+            version: inventory.identity.hex()[..12].to_owned(),
+        });
+    };
+    let edition = edition_of(text)?;
+    let version = (inventory.packages.iter())
+        .find(|package| package.id.name() == edition)
+        .map(|package| package.id.version().to_owned())
+        .ok_or_else(|| format!("{edition} is not in this system's closure"))?;
+    Ok(Release { edition, version })
 }
 
 /// What e2fsck's exit status says, as the sentence for the finish
@@ -1048,21 +841,17 @@ impl Real {
                 p.log(format!("created {esp} (ESP) and {root} (root)"));
                 self.format(p, &esp, &root)?;
                 self.mount_target(p, &esp, &root)?;
-                self.copy_system(p)?;
+                self.install_system(p)?;
                 self.carry_machine_key(p, Path::new(GXWI_KEYS));
                 self.make_bootable(p, &root)?;
                 p.log("done — reboot with the install medium removed".into());
                 Ok(None)
             }
-            JobKind::Upgrade => {
-                let (esp, root) = Self::partitions(target)?;
-                self.mount_target(p, &esp, &root)?;
-                let to = self.upgrade(p)?;
-                p.phase("phase.boot", 5);
-                self.write_boot_files(p, &root)?;
-                p.log("done — reboot with the install medium removed".into());
-                Ok(Some(format!("Reboot to start {}.", to.text())))
-            }
+            JobKind::Upgrade => Err(
+                "upgrading an installed system from a medium isn't supported yet; it comes with \
+                 the upgrade tooling"
+                    .to_owned(),
+            ),
             JobKind::RepairBoot => {
                 let (esp, root) = Self::partitions(target)?;
                 self.mount_target(p, &esp, &root)?;
