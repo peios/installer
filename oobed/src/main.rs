@@ -1,6 +1,6 @@
 use std::os::unix::net::UnixListener;
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use msip_serve::{Server, serve};
 use oobed::TAG;

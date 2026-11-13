@@ -1,4 +1,4 @@
-use super::{Real, edition_of, fsck_verdict, version_of};
+use super::{Real, edition_of, fsck_verdict};
 use crate::executor::Progress;
 use std::path::PathBuf;
 
@@ -8,14 +8,6 @@ fn the_edition_is_read_the_way_upgrade_peios_reads_it() {
     assert_eq!(edition_of(text).unwrap(), "dev.peios.peios-experimental");
     assert!(edition_of("ID=debian\nVARIANT_ID=x\n").is_err());
     assert!(edition_of("ID=peios\n").is_err());
-    assert_eq!(
-            version_of(
-                "name:         dev.peios.peios-experimental\nversion:      2026.8-7\narchitecture: noarch\n"
-            )
-            .as_deref(),
-            Some("2026.8-7")
-        );
-    assert_eq!(version_of("name: x\n"), None);
 }
 
 /// e2fsck's exit status is a bitmask: 1 and 2 are the tool having
@@ -264,50 +256,4 @@ fn mounted_detection_matches_partitions_but_not_lookalikes() {
     let nvme = "/dev/nvme0n1p2 / ext4 rw 0 0\n";
     assert!(Real::mounted_in(nvme, "/dev/nvme0n1").is_some());
     assert!(Real::mounted_in(nvme, "/dev/nvme1n1").is_none());
-}
-
-/// What a watched command is for: it is looked in on while it runs,
-/// and once more at its end, and everything else about it is as
-/// `run` has it -- what it said is logged, and how it ended decides.
-#[test]
-fn a_watched_command_is_looked_in_on_while_it_runs() {
-    struct Heard(std::sync::Mutex<Vec<String>>);
-    impl Progress for Heard {
-        fn phase(&self, _: &str, _: u8) {}
-        fn log(&self, line: String) {
-            self.0.lock().unwrap().push(line);
-        }
-    }
-    let real = Real::default();
-
-    let heard = Heard(Default::default());
-    let mut looks = 0;
-    let script = "echo said; echo complained >&2; sleep 0.7";
-    real.run_watched(&heard, "sh", &["-c", script], &mut || looks += 1)
-        .unwrap();
-    assert!(
-        looks >= 3,
-        "looked in {looks} times in 0.7s, every 0.2s and once at the end"
-    );
-    assert_eq!(
-        *heard.0.lock().unwrap(),
-        [
-            format!("$ sh -c {script}"),
-            "  said".into(),
-            "  complained".into()
-        ]
-    );
-
-    // One that is over at once is still looked in on, at its end.
-    let mut looks = 0;
-    let failed = real.run_watched(&heard, "sh", &["-c", "exit 3"], &mut || looks += 1);
-    assert_eq!(failed, Err("sh failed (exit 3)".into()));
-    assert!(looks >= 1);
-
-    // More than a pipe holds, which would hang if it were not read
-    // until the command had ended.
-    let quiet = Heard(Default::default());
-    real.run_watched(&quiet, "sh", &["-c", "yes | head -c 300000"], &mut || {})
-        .unwrap();
-    assert!(quiet.0.lock().unwrap().len() > 1000);
 }

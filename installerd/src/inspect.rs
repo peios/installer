@@ -22,18 +22,18 @@
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
-use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use crate::contents::{Partition, UNVERSIONED_PEIOS};
 use crate::executor::{Disk, Release};
 use crate::loopdev::LoopDevice;
-use crate::real::{edition_of, version_of};
+use crate::real::{edition_of, release_from};
 
 /// How a partition's `release` is read once it is mounted: the real
-/// executor's `peipkg`-backed reading ([`release_at`]), or a test's.
+/// executor's reading of its `SYSTEM` closure ([`release_at`]), or a test's.
 pub type ReleaseIn<'a> = &'a dyn Fn(&Path) -> Result<Release, String>;
 
 /// What stopped a filesystem being looked into.
@@ -54,72 +54,33 @@ impl Failure {
     }
 }
 
-/// Where peipkg keeps its database, under the root it manages.
-const PACKAGE_DB: &str = "var/state/peipkg";
+/// Where an installed system's store names the closure that is its `/usr`
+/// (PSPU 5.27), under its root.
+const SYSTEM_NAME: &str = "system/artifacts/closures/SYSTEM";
 
-/// The Peios release on the filesystem at `root`, which may be one
-/// that nothing can write to.
-///
-/// Which release a root holds is peipkg's to say, and peipkg cannot be
-/// asked of a read-only root: its database is SQLite in write-ahead
-/// mode, which will not open where it cannot make its companion files,
-/// so `peipkg --root` against a read-only mount fails with "unable to
-/// open database file" whatever is in it. The database is therefore
-/// copied out to `scratch`, which is on a tmpfs, and peipkg is asked
-/// there. The disk is read and nothing else.
-pub fn release_at(root: &Path, scratch: &Path) -> Result<Release, String> {
-    let text = plain(root, "usr/lib/os-release")
-        .and_then(|at| read_regular_text(&at).ok())
-        .ok_or("no Peios system here (no usr/lib/os-release)")?;
-    let edition = edition_of(&text)?;
-
-    let _ = std::fs::remove_dir_all(scratch);
-    let copy = scratch.join(PACKAGE_DB);
-    std::fs::create_dir_all(&copy).map_err(|e| format!("{}: {e}", copy.display()))?;
-    // The database, and its write-ahead log if the system was not shut
-    // down cleanly: what was committed to the log is part of the truth.
-    let mut found = false;
-    for name in ["db.sqlite", "db.sqlite-wal", "db.sqlite-shm"] {
-        if let Some(from) = plain(root, &format!("{PACKAGE_DB}/{name}")) {
-            let mut source =
-                open_regular(&from).map_err(|e| format!("reading {}: {e}", from.display()))?;
-            let mut destination = File::create(copy.join(name))
-                .map_err(|e| format!("copying {}: {e}", from.display()))?;
-            io::copy(&mut source, &mut destination)
-                .map_err(|e| format!("reading {}: {e}", from.display()))?;
-            let permissions = source
-                .metadata()
-                .map_err(|e| format!("reading {}: {e}", from.display()))?
-                .permissions();
-            destination
-                .set_permissions(permissions)
-                .map_err(|e| format!("copying {}: {e}", from.display()))?;
-            found |= name == "db.sqlite";
-        }
+/// The Peios release on the filesystem at `root`, which may be one that
+/// nothing can write to: what its `SYSTEM` closure's os-release and
+/// inventory say. The disk is untrusted, so nothing on the way is followed
+/// but the name itself, which must name a closure beside it, and the
+/// inventory and os-release must be plain files. `_scratch` is unused: the
+/// closure is read in place.
+pub fn release_at(root: &Path, _scratch: &Path) -> Result<Release, String> {
+    let named = std::fs::read_link(root.join(SYSTEM_NAME))
+        .map_err(|_| "no Peios system here (no SYSTEM closure)".to_string())?;
+    let hex = named.to_str().unwrap_or_default();
+    if hex.len() != 64 || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("its SYSTEM name doesn't name a closure".into());
     }
-    if !found {
-        let _ = std::fs::remove_dir_all(scratch);
-        return Err(format!(
-            "no package database here (no {PACKAGE_DB}/db.sqlite)"
-        ));
+    let tree = format!("system/artifacts/closures/{hex}");
+    if plain(root, &format!("{tree}/inventory")).is_none() {
+        return Err("its SYSTEM closure has no inventory".into());
     }
-    let out = Command::new("peipkg")
-        .arg("--root")
-        .arg(scratch)
-        .args(["info", &edition])
-        .output()
-        .map_err(|e| format!("could not run peipkg: {e}"));
-    let _ = std::fs::remove_dir_all(scratch);
-    let out = out?;
-    if !out.status.success() {
-        return Err(format!(
-            "{edition} is not recorded as installed here: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    let version = version_of(&String::from_utf8_lossy(&out.stdout))
-        .ok_or_else(|| format!("peipkg info {edition} did not report a version"))?;
-    Ok(Release { edition, version })
+    let inventory = ppk::read_inventory(&root.join(&tree))
+        .map_err(|e| format!("reading its SYSTEM closure: {e:#}"))?
+        .ok_or("its SYSTEM closure has no inventory")?;
+    let os_release =
+        plain(root, &format!("{tree}/lib/os-release")).and_then(|at| read_regular_text(&at).ok());
+    release_from(os_release.as_deref(), &inventory)
 }
 
 /// Extra mount options for a filesystem this can look into, or `None`
@@ -543,44 +504,55 @@ mod tests {
         }
     }
 
-    /// What can be refused before peipkg is asked anything is.
+    /// A release is read from what the disk's store names SYSTEM, and only
+    /// from plain files beneath a name that names a closure.
     #[test]
-    fn a_release_is_read_only_from_a_peios_tree_with_a_package_database() {
+    fn a_release_is_read_from_the_system_closure() {
         let scratch = tree("scratch");
-        let other = tree("other");
-        put(&other, "usr/lib/os-release", "ID=debian\n");
+        let root = tree("installed");
         assert!(
-            release_at(&other, &scratch)
+            release_at(&root, &scratch)
+                .unwrap_err()
+                .contains("no SYSTEM closure")
+        );
+
+        let store = root.join("system/artifacts");
+        let closures = store.join("closures");
+        std::fs::create_dir_all(&closures).unwrap();
+        std::os::unix::fs::symlink("elsewhere", closures.join("SYSTEM")).unwrap();
+        assert!(
+            release_at(&root, &scratch)
+                .unwrap_err()
+                .contains("doesn't name a closure")
+        );
+        std::fs::remove_file(closures.join("SYSTEM")).unwrap();
+
+        // A closure of one package, with no os-release: named by its identity.
+        let files = tree("files");
+        put(&files, "bin/hello", "hello");
+        let id: ppk::PackageId = "dev.peios.hello@1.0-1?arch=x86_64".parse().unwrap();
+        ppk::pack(&id, &files, &store).unwrap();
+        let closed = ppk::closure(std::slice::from_ref(&id), &store, &closures).unwrap();
+        let identity: ppk::Identity = closed.identity.parse().unwrap();
+        ppk::name_closure(&closures, ppk::SYSTEM, &identity).unwrap();
+        let release = release_at(&root, &scratch).unwrap();
+        assert_eq!(release.edition, "Peios");
+        assert_eq!(release.version, identity.hex()[..12]);
+
+        // An os-release that isn't Peios's is no Peios system.
+        let files = tree("files-other");
+        put(&files, "lib/os-release", "ID=debian\n");
+        let other: ppk::PackageId = "dev.peios.other@1.0-1?arch=x86_64".parse().unwrap();
+        ppk::pack(&other, &files, &store).unwrap();
+        let closed = ppk::closure(std::slice::from_ref(&other), &store, &closures).unwrap();
+        ppk::name_closure(&closures, ppk::SYSTEM, &closed.identity.parse().unwrap()).unwrap();
+        assert!(
+            release_at(&root, &scratch)
                 .unwrap_err()
                 .contains("not a Peios system")
         );
-        let bare = tree("bare");
-        assert!(
-            release_at(&bare, &scratch)
-                .unwrap_err()
-                .contains("no usr/lib/os-release")
-        );
-        put(
-            &bare,
-            "usr/lib/os-release",
-            "ID=peios\nVARIANT_ID=experimental\n",
-        );
-        assert!(
-            release_at(&bare, &scratch)
-                .unwrap_err()
-                .contains("no package database")
-        );
-        // A database that is a link out of the disk is no database.
-        std::fs::create_dir_all(bare.join("var/state/peipkg")).unwrap();
-        std::os::unix::fs::symlink("/etc/passwd", bare.join("var/state/peipkg/db.sqlite")).unwrap();
-        assert!(
-            release_at(&bare, &scratch)
-                .unwrap_err()
-                .contains("no package database")
-        );
-        // Nothing is left behind of what was copied to be read.
-        assert!(!scratch.join("var").exists());
-        for dir in [scratch, other, bare] {
+
+        for dir in [scratch, root] {
             std::fs::remove_dir_all(dir).ok();
         }
     }
