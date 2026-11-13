@@ -60,6 +60,8 @@ const BOOT_REL: &str = "system/boot";
 /// the profiles of its SYSTEM and INITRAMFS closures.
 const INSTALL_SYSTEM: &str = "install/system.toml";
 const INSTALL_INITRAMFS: &str = "install/initramfs.toml";
+/// How many packages are copied from the medium at once.
+const COPY_BATCH: usize = 20;
 
 /// Where gxwid keeps this machine's key and certificate (gxwid(1)).
 const GXWI_KEYS: &str = "/var/state/gxwi";
@@ -377,16 +379,21 @@ impl Real {
             .ids();
             places.push((name, profile, ids));
         }
-        let mut all: Vec<&ppk::PackageId> = Vec::new();
+        let mut all: Vec<ppk::PackageId> = Vec::new();
         for id in places.iter().flat_map(|(_, _, ids)| ids) {
-            if !all.contains(&id) {
-                all.push(id);
+            if !all.contains(id) {
+                all.push(id.clone());
             }
         }
         p.log(format!("copying {} packages from the medium", all.len()));
-        for (n, id) in all.iter().enumerate() {
-            ppk::fetch(id, &medium_store, &store).map_err(|e| format!("copying {id}: {e:#}"))?;
-            p.phase("phase.copy", ((n + 1) * 90 / all.len().max(1)) as u8);
+        // In batches: ppk syncs the disk a few times for each batch, and
+        // the progress moves once for each.
+        let mut copied = 0;
+        for batch in all.chunks(COPY_BATCH) {
+            ppk::fetch_all(batch, &medium_store, &store)
+                .map_err(|e| format!("copying from the medium: {e:#}"))?;
+            copied += batch.len();
+            p.phase("phase.copy", (copied * 90 / all.len().max(1)) as u8);
         }
         for (name, profile, ids) in &places {
             let closed = ppk::closure_for(
