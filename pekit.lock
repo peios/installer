@@ -10,7 +10,7 @@
       "prefix": "github.com/peios/ppk",
       "git": "https://github.com/peios/ppk",
       "dir": "",
-      "rev": "917f7997b51b55fe0664a5537e5a5baa1f33b9b5"
+      "rev": "64b76c78e4bf39227f739326bec6264f3e85d400"
     },
     {
       "prefix": "github.com/peios/peios-sdk",
@@ -103,8 +103,8 @@
       "path": "github.com/peios/ppk",
       "git": "https://github.com/peios/ppk",
       "dir": "",
-      "commit": "917f7997b51b55fe0664a5537e5a5baa1f33b9b5",
-      "tree": "f6bb795918dd78a24f749ffdf01d14c00ce9f781f4a4f5c4b04ebc38a9337c1e"
+      "commit": "64b76c78e4bf39227f739326bec6264f3e85d400",
+      "tree": "ab07ca6a9cc13337fd3ba01cf20e324c5f0781300fe471b529b78459ef218210"
     }
   ]
 }
