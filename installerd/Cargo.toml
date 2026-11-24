@@ -15,7 +15,7 @@ msip-serve = { path = "../msip-serve" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 libc = "0.2"
-ppk = { git = "https://github.com/peios/ppk", rev = "64b76c78e4bf39227f739326bec6264f3e85d400" }
+ppk = { git = "https://github.com/peios/ppk", rev = "e5d0af9aeb98bc8e541e750c93bf3c4cc735a194" }
 
 [lib]
 name = "installerd"
